@@ -20,6 +20,7 @@ import { getPhotoUrl } from '../services/config';
 import { UserAvatar } from './UserAvatar';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 import { preloadRoute } from '../routes';
+import { SystemLogBellButton } from './SystemLogBellButton';
 
 interface HTELayoutProps {
   children?: React.ReactNode;
@@ -274,7 +275,14 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
               </div>
             </div>
 
-
+            {/* Right Header: Notification Bell with System Log History */}
+            <div className="flex items-center gap-2">
+              <SystemLogBellButton
+                currentUserRole="hte"
+                currentUserId={currentUser?.id}
+                theme="dark"
+              />
+            </div>
           </div>
         </header>
 

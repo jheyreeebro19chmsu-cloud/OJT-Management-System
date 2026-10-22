@@ -22,18 +22,32 @@ import {
   Paperclip,
   Search,
   Send,
+  Files,
+  Plus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, Link } from 'react-router-dom';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
-import { TraineeDocuments, TraineeDocumentItem } from '../types';
+import { TraineeDocuments, TraineeDocumentItem, TraineeDocumentFile } from '../types';
 import { uploadDocumentToStorage, saveDocumentPassStatus, fetchEmployeeDocuments } from '../services/supabaseService';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl } from '../utils/attachmentHelper';
+import { logActivity } from '../services/activityLogService';
 
 export const STANDARD_REQUIRED_DOCS = REQUIRED_TRAINEE_DOCUMENTS;
+
+export interface SubmitDialogFile {
+  id: string;
+  file?: File;
+  name: string;
+  size: number | string;
+  previewUrl?: string;
+  dataUrl?: string;
+  fileUrl?: string;
+  fileType?: string;
+}
 
 interface PreviewModalState {
   key?: string;
@@ -46,13 +60,14 @@ interface PreviewModalState {
   status: 'passed' | 'pending';
   description?: string;
   notes?: string;
+  files?: TraineeDocumentFile[];
+  activeFileIndex?: number;
 }
 
 interface SubmitDialogState {
   docKey: string;
   title: string;
-  file: File;
-  previewUrl: string;
+  files: SubmitDialogFile[];
   description: string;
   notes: string;
   instructorDocName?: string;
@@ -422,43 +437,175 @@ export function Documents() {
     };
   };
 
-  const onSelectFile = (docKey: string, title: string, file: File | null, instructorDocName?: string) => {
-    if (!file) return;
+  const onSelectFiles = (
+    docKey: string,
+    title: string,
+    fileList: FileList | File[] | null,
+    instructorDocName?: string,
+    isAppending: boolean = false
+  ) => {
+    if (!fileList || fileList.length === 0) return;
+    const rawFiles = Array.from(fileList);
 
     const targetReq = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
     const maxBytes = targetReq?.maxFileSize || 10 * 1024 * 1024;
     const maxMB = Math.round(maxBytes / (1024 * 1024)) || 10;
 
-    const check = isFileTypeAllowed(file, targetReq?.allowedFileTypes);
-    if (!check.allowed) {
-      toast.error(check.reason || 'Unsupported file format');
-      return;
-    }
+    const validFiles: SubmitDialogFile[] = [];
+    for (const file of rawFiles) {
+      const check = isFileTypeAllowed(file, targetReq?.allowedFileTypes);
+      if (!check.allowed) {
+        toast.error(`"${file.name}": ${check.reason || 'Unsupported format'}`);
+        continue;
+      }
+      if (file.size < 200) {
+        toast.error(`"${file.name}": File is empty or corrupted (under 200 bytes).`);
+        continue;
+      }
+      if (file.size > maxBytes) {
+        toast.error(`"${file.name}": File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds limit of ${maxMB}MB.`);
+        continue;
+      }
 
-    if (file.size < 200) {
-      toast.error('The selected file is empty or corrupted (under 200 bytes). Please upload a valid document or picture.');
-      return;
-    }
-
-    if (file.size > maxBytes) {
-      toast.error(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the ${maxMB}MB limit for "${title}". Please upload a file up to ${maxMB}MB.`);
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setSubmitDialog({
-        docKey,
-        title,
+      validFiles.push({
+        id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         file,
-        previewUrl: e.target?.result as string,
-        description: submittedDocs[docKey]?.description || (instructorDocName ? `Submitted compliance for ${title} based on instructor requirement.` : ''),
-        notes: submittedDocs[docKey]?.notes || '',
-        instructorDocName,
-        markAsPassed: false,
+        name: file.name,
+        size: file.size,
+        fileType: file.type || 'application/octet-stream',
       });
-    };
-    reader.readAsDataURL(file);
+    }
+
+    if (validFiles.length === 0) return;
+
+    let baseFiles: SubmitDialogFile[] = [];
+    const existingDoc = submittedDocs[docKey];
+    if (isAppending && existingDoc) {
+      if (existingDoc.files && existingDoc.files.length > 0) {
+        baseFiles = existingDoc.files.map((f, i) => ({
+          id: f.id || `prev-${i}`,
+          name: f.name,
+          size: f.size || 0,
+          dataUrl: f.dataUrl,
+          fileUrl: f.fileUrl,
+          fileType: f.fileType,
+        }));
+      } else if (existingDoc.name) {
+        baseFiles = [
+          {
+            id: 'prev-0',
+            name: existingDoc.name,
+            size: existingDoc.size || 0,
+            dataUrl: existingDoc.dataUrl,
+            fileUrl: existingDoc.fileUrl,
+            fileType: existingDoc.fileType,
+          },
+        ];
+      }
+    }
+
+    const allFiles = [...baseFiles, ...validFiles];
+
+    setSubmitDialog({
+      docKey,
+      title,
+      files: allFiles,
+      description:
+        submittedDocs[docKey]?.description ||
+        (instructorDocName ? `Submitted compliance for ${title} based on instructor requirement.` : ''),
+      notes: submittedDocs[docKey]?.notes || '',
+      instructorDocName,
+      markAsPassed: false,
+    });
+  };
+
+  const handleDialogAddMoreFiles = (fileList: FileList | null) => {
+    if (!fileList || !submitDialog) return;
+    const targetReq = allDocRequirements.find(
+      (d) => d.key === submitDialog.docKey || d.id === submitDialog.docKey
+    );
+    const maxBytes = targetReq?.maxFileSize || 10 * 1024 * 1024;
+    const maxMB = Math.round(maxBytes / (1024 * 1024)) || 10;
+
+    const validFiles: SubmitDialogFile[] = [];
+    for (const file of Array.from(fileList)) {
+      const check = isFileTypeAllowed(file, targetReq?.allowedFileTypes);
+      if (!check.allowed) {
+        toast.error(`"${file.name}": ${check.reason || 'Unsupported format'}`);
+        continue;
+      }
+      if (file.size < 200) {
+        toast.error(`"${file.name}": File is empty or corrupted.`);
+        continue;
+      }
+      if (file.size > maxBytes) {
+        toast.error(`"${file.name}": File exceeds ${maxMB}MB limit.`);
+        continue;
+      }
+      validFiles.push({
+        id: `add-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        file,
+        name: file.name,
+        size: file.size,
+        fileType: file.type || 'application/octet-stream',
+      });
+    }
+
+    if (validFiles.length > 0) {
+      setSubmitDialog({
+        ...submitDialog,
+        files: [...submitDialog.files, ...validFiles],
+      });
+      toast.success(`Added ${validFiles.length} file${validFiles.length > 1 ? 's' : ''} to upload list.`);
+    }
+  };
+
+  const handleDialogRemoveFile = (index: number) => {
+    if (!submitDialog) return;
+    const updated = submitDialog.files.filter((_, i) => i !== index);
+    if (updated.length === 0) {
+      setSubmitDialog(null);
+    } else {
+      setSubmitDialog({
+        ...submitDialog,
+        files: updated,
+      });
+    }
+  };
+
+  const handlePreviewDoc = (docKey: string, doc: TraineeDocumentItem, item: any) => {
+    const filesList: TraineeDocumentFile[] =
+      doc.files && doc.files.length > 0
+        ? doc.files
+        : [
+            {
+              id: 'file-1',
+              name: doc.name || `${item.key}_document.pdf`,
+              size: doc.size,
+              dataUrl: resolveDocDataUrl(docKey, doc),
+              fileUrl: resolveSafeDocumentViewUrl(resolveDocDataUrl(docKey, doc)),
+              fileType: doc.fileType,
+              uploadedAt: doc.uploadedAt,
+            },
+          ];
+
+    const firstFile = filesList[0];
+    const initialUrl = resolveSafeDocumentViewUrl(firstFile.fileUrl || firstFile.dataUrl || resolveDocDataUrl(docKey, doc));
+
+    setPreviewDoc({
+      key: docKey,
+      title: item.title,
+      subtitle: item.subtitle,
+      fileName: firstFile.name,
+      dataUrl: initialUrl,
+      uploadedAt: doc.uploadedAt,
+      fileSize: firstFile.size || doc.size,
+      status: doc.status || 'passed',
+      description: doc.description,
+      notes: doc.notes,
+      files: filesList,
+      activeFileIndex: 0,
+    });
   };
 
   const handleDragOver = (e: React.DragEvent, key: string) => {
@@ -477,178 +624,199 @@ export function Documents() {
     e.preventDefault();
     e.stopPropagation();
     setDragOverKey(null);
-    const file = e.dataTransfer.files?.[0];
-    if (file) {
-      onSelectFile(item.key, item.title, file, item.instructorDoc?.fileName);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      onSelectFiles(item.key, item.title, e.dataTransfer.files, item.instructorDoc?.fileName);
     }
   };
 
-  const handleFileUpload = (
+  const handleFileUpload = async (
     docKey: string,
-    file: File | null,
+    dialogFiles: SubmitDialogFile[],
     customDescription?: string,
     customNotes?: string,
     markAsPassed: boolean = false
   ) => {
-    if (!file) return;
-
-    const targetReq = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
-    const maxBytes = targetReq?.maxFileSize || 10 * 1024 * 1024;
-    const maxMB = Math.round(maxBytes / (1024 * 1024)) || 10;
-
-    const check = isFileTypeAllowed(file, targetReq?.allowedFileTypes);
-    if (!check.allowed) {
-      toast.error(check.reason || 'Unsupported file format');
-      return;
-    }
-
-    if (file.size < 200) {
-      toast.error('The selected file is empty or corrupted (under 200 bytes). Please upload a valid document or picture.');
-      return;
-    }
-
-    if (file.size > maxBytes) {
-      toast.error(`File size (${(file.size / (1024 * 1024)).toFixed(1)}MB) exceeds the ${maxMB}MB limit. Please upload a file up to ${maxMB}MB.`);
+    if (!dialogFiles || dialogFiles.length === 0) {
+      toast.error('Please select at least one file to upload.');
       return;
     }
 
     setUploadingKey(docKey);
     const meta = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
-    const reader = new FileReader();
+    const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
 
-    reader.onload = async (e) => {
-      try {
-        const dataUrl = e.target?.result as string;
-        const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    try {
+      const processedFiles: TraineeDocumentFile[] = [];
 
-        // Cache in sessionStorage for current session preview without hitting 5MB localStorage limit
-        try {
-          sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
-          sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
-          sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
-          if (meta?.id) {
-            sessionStorage.setItem(`ojt_doc_data_${meta.id}`, dataUrl);
-          }
-        } catch {}
+      for (let idx = 0; idx < dialogFiles.length; idx++) {
+        const item = dialogFiles[idx];
 
-        // Attempt cloud storage upload for permanent URL (with 35-second timeout race so it never hangs)
-        let remoteUrl = '';
-        try {
-          const storedUrl = await Promise.race([
-            uploadDocumentToStorage(empId, docKey, file, file.name),
-            new Promise<string>((_, reject) =>
-              setTimeout(() => reject(new Error('Storage upload timed out')), 35000)
-            ),
-          ]);
-          if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
-            remoteUrl = storedUrl;
-            try {
-              localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
-            } catch {}
-          }
-        } catch (uploadErr) {
-          console.warn('Document storage upload notice (using local base64 fallback):', uploadErr);
-        }
-
-        const passStatus: 'passed' | 'submitted' = markAsPassed ? 'passed' : 'submitted';
-        const newDocItem: TraineeDocumentItem = {
-          name: file.name,
-          size: file.size,
-          dataUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''), // Keep dataUrl small in state/localStorage
-          fileUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''), // Public or local URL
-          fileType: file.type || 'application/octet-stream',
-          uploadedAt: new Date().toISOString(),
-          status: passStatus,
-          description: (customDescription ?? submittedDocs[docKey]?.description ?? '').trim(),
-          notes: (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim(),
-          source: 'portal',
-        };
-
-        const updatedDocs: TraineeDocuments = {
-          ...submittedDocs,
-          [docKey]: newDocItem,
-        };
-
-        const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
-
-        const newUploadedCount = allDocRequirements.filter((k) => {
-          const item = k.key === docKey ? newDocItem : updatedDocs[k.key];
-          return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
-        }).length;
-        const allDocsPassed =
-          newUploadedCount === totalRequired &&
-          allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
-        const finalDocStatus = allDocsPassed ? 'passed' : 'submitted';
-
-        setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: newDocItem }));
-
-        if (employee) {
-          updateEmployee(employee.id, {
-            submittedDocuments: updatedDocs,
-            documentsPassed: allDocsPassed,
-            documentsStatus: finalDocStatus,
-          });
-        }
-
-        if (targetEmpId) {
-          // Direct persistent database save for document pass / upload status
-          saveDocumentPassStatus(targetEmpId, {
-            docKey,
-            status: passStatus,
-            allPassed: allDocsPassed,
-            documentsStatus: finalDocStatus,
-            submittedDocuments: updatedDocs,
-            documentItem: newDocItem,
-          }).catch(console.warn);
-
-          submitRequiredDocument(meta?.id || docKey, targetEmpId, {
-            fileName: file.name,
-            fileUrl: remoteUrl || dataUrl,
-            fileDataUrl: dataUrl,
-            fileSize: file.size,
-            fileType: file.type,
-            note: (customNotes ?? '').trim(),
-            notes: (customDescription ?? '').trim(),
+        if (item.file) {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(item.file!);
           });
 
-          // Dispatch real-time custom event so Instructor portal / tabs immediately reflect new submission
           try {
-            window.dispatchEvent(
-              new CustomEvent('ojt_document_submitted', {
-                detail: {
-                  employeeId: targetEmpId,
-                  studentName: employee?.name || currentUser?.name || '',
-                  docKey,
-                  docTitle: meta?.title || docKey,
-                  documentItem: newDocItem,
-                  submittedAt: newDocItem.uploadedAt,
-                },
-              })
-            );
+            sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`, dataUrl);
+            if (idx === 0) {
+              sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+              sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
+              sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
+              if (meta?.id) {
+                sessionStorage.setItem(`ojt_doc_data_${meta.id}`, dataUrl);
+              }
+            }
           } catch {}
+
+          let remoteUrl = '';
+          try {
+            const storedUrl = await Promise.race([
+              uploadDocumentToStorage(empId, `${docKey}_${idx}_${Date.now()}`, item.file, item.file.name),
+              new Promise<string>((_, reject) =>
+                setTimeout(() => reject(new Error('Storage upload timed out')), 35000)
+              ),
+            ]);
+            if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
+              remoteUrl = storedUrl;
+              try {
+                if (idx === 0) {
+                  localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
+                }
+              } catch {}
+            }
+          } catch (uploadErr) {
+            console.warn('Document storage upload notice (using local base64 fallback):', uploadErr);
+          }
+
+          processedFiles.push({
+            id: item.id || `file-${Date.now()}-${idx}`,
+            name: item.name,
+            size: item.size,
+            dataUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''),
+            fileUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''),
+            fileType: item.fileType || item.file.type || 'application/octet-stream',
+            uploadedAt: new Date().toISOString(),
+          });
+        } else {
+          processedFiles.push({
+            id: item.id || `file-${Date.now()}-${idx}`,
+            name: item.name,
+            size: item.size,
+            dataUrl: item.dataUrl,
+            fileUrl: item.fileUrl,
+            fileType: item.fileType,
+            uploadedAt: new Date().toISOString(),
+          });
         }
-
-        toast.success(
-          markAsPassed
-            ? `${meta?.title || 'Document'} passed & recorded according to requirement!`
-            : `✓ "${meta?.title || 'Document'}" updated & submitted to your Instructor for review!`
-        );
-      } catch (err) {
-        console.error('Document submission error:', err);
-        toast.error('Could not complete submission. Please try again.');
-      } finally {
-        setUploadingKey(null);
-        setSubmitDialog(null);
       }
-    };
 
-    reader.onerror = () => {
+      const passStatus: 'passed' | 'submitted' = markAsPassed ? 'passed' : 'submitted';
+      const primaryFile = processedFiles[0];
+      const count = processedFiles.length;
+      const displayName =
+        count > 1 ? `${count} Files (${primaryFile.name})` : primaryFile.name;
+      const totalBytes = processedFiles.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
+
+      const newDocItem: TraineeDocumentItem = {
+        name: displayName,
+        size: totalBytes,
+        dataUrl: primaryFile.dataUrl,
+        fileUrl: primaryFile.fileUrl,
+        fileType: primaryFile.fileType,
+        uploadedAt: new Date().toISOString(),
+        status: passStatus,
+        description: (customDescription ?? submittedDocs[docKey]?.description ?? '').trim(),
+        notes: (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim(),
+        source: 'portal',
+        files: processedFiles,
+      };
+
+      const updatedDocs: TraineeDocuments = {
+        ...submittedDocs,
+        [docKey]: newDocItem,
+      };
+
+      const newUploadedCount = allDocRequirements.filter((k) => {
+        const item = k.key === docKey ? newDocItem : updatedDocs[k.key];
+        return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
+      }).length;
+      const allDocsPassed =
+        newUploadedCount === totalRequired &&
+        allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
+      const finalDocStatus = allDocsPassed ? 'passed' : 'submitted';
+
+      setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: newDocItem }));
+
+      if (employee) {
+        updateEmployee(employee.id, {
+          submittedDocuments: updatedDocs,
+          documentsPassed: allDocsPassed,
+          documentsStatus: finalDocStatus,
+        });
+      }
+
+      if (targetEmpId) {
+        saveDocumentPassStatus(targetEmpId, {
+          docKey,
+          status: passStatus,
+          allPassed: allDocsPassed,
+          documentsStatus: finalDocStatus,
+          submittedDocuments: updatedDocs,
+          documentItem: newDocItem,
+        }).catch(console.warn);
+
+        submitRequiredDocument(meta?.id || docKey, targetEmpId, {
+          fileName: displayName,
+          fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
+          fileDataUrl: primaryFile.dataUrl,
+          fileSize: totalBytes,
+          fileType: primaryFile.fileType,
+          note: (customNotes ?? '').trim(),
+          notes: (customDescription ?? '').trim(),
+        });
+
+        try {
+          window.dispatchEvent(
+            new CustomEvent('ojt_document_submitted', {
+              detail: {
+                employeeId: targetEmpId,
+                studentName: employee?.name || currentUser?.name || '',
+                docKey,
+                docTitle: meta?.title || docKey,
+                documentItem: newDocItem,
+                submittedAt: newDocItem.uploadedAt,
+                filesCount: count,
+              },
+            })
+          );
+        } catch {}
+      }
+
+      logActivity({
+        type: 'document_upload',
+        title: `Document Uploaded: ${meta?.title || docKey}`,
+        description: `Submitted ${count} file${count > 1 ? 's' : ''} [${processedFiles.map((f) => f.name).join(', ')}] for compliance verification`,
+        userId: targetEmpId,
+        userName: employee?.name || currentUser?.name || 'Trainee',
+        userRole: 'employee',
+      });
+
+      toast.success(
+        markAsPassed
+          ? `${meta?.title || 'Document'} (${count} file${count > 1 ? 's' : ''}) recorded!`
+          : `✓ "${meta?.title || 'Document'}" (${count} file${count > 1 ? 's' : ''}) submitted to your Instructor for review!`
+      );
+    } catch (err) {
+      console.error('Document submission error:', err);
+      toast.error('Could not complete submission. Please try again.');
+    } finally {
       setUploadingKey(null);
       setSubmitDialog(null);
-      toast.error('Failed to read file. Please try again.');
-    };
-
-    reader.readAsDataURL(file);
+    }
   };
 
   const handleRemoveDoc = (docKey: string) => {
@@ -1115,14 +1283,18 @@ export function Documents() {
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div
                               className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
-                                docCategory === 'picture'
+                                doc.files && doc.files.length > 1
+                                  ? 'bg-purple-100 text-purple-700'
+                                  : docCategory === 'picture'
                                   ? 'bg-emerald-100 text-emerald-700'
                                   : docCategory === 'doc'
                                   ? 'bg-indigo-100 text-indigo-700'
                                   : 'bg-blue-100 text-blue-700'
                               }`}
                             >
-                              {docCategory === 'picture' ? (
+                              {doc.files && doc.files.length > 1 ? (
+                                <Files size={16} />
+                              ) : docCategory === 'picture' ? (
                                 <ImageIcon size={15} />
                               ) : docCategory === 'doc' ? (
                                 <FileText size={15} />
@@ -1131,14 +1303,21 @@ export function Documents() {
                               )}
                             </div>
                             <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
-                                {doc.name}
-                              </p>
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
+                                  {doc.name}
+                                </p>
+                                {doc.files && doc.files.length > 1 && (
+                                  <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                    {doc.files.length} Files Attached
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
                                 <span>{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Attached'}</span>
                                 {doc.size ? <span>• {formatFileSize(doc.size)}</span> : null}
                                 <span className="uppercase font-semibold text-slate-500">
-                                  ({docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
+                                  ({doc.files && doc.files.length > 1 ? 'Multi-File' : docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
                                 </span>
                               </div>
                               {(doc.description || doc.notes) && (
@@ -1155,25 +1334,11 @@ export function Documents() {
                           <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
                             <button
                               type="button"
-                              onClick={() => {
-                                const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
-                                setPreviewDoc({
-                                  key: item.key,
-                                  title: item.title,
-                                  subtitle: item.subtitle,
-                                  fileName: doc?.name || `${item.key}_document.pdf`,
-                                  dataUrl: resolvedUrl,
-                                  uploadedAt: doc?.uploadedAt,
-                                  fileSize: doc?.size,
-                                  status: doc?.status || 'passed',
-                                  description: doc?.description,
-                                  notes: doc?.notes,
-                                });
-                              }}
+                              onClick={() => handlePreviewDoc(item.key, doc, item)}
                               className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-blue-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                              title="Preview attached file"
+                              title="Preview attached file(s)"
                             >
-                              <Eye size={13} /> View
+                              <Eye size={13} /> {doc.files && doc.files.length > 1 ? `View (${doc.files.length})` : 'View'}
                             </button>
 
                             <button
@@ -1188,11 +1353,35 @@ export function Documents() {
                               <Download size={13} /> Download
                             </button>
 
+                            <label
+                              htmlFor={`add-more-slot-file-${item.key}`}
+                              className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                              title="Add more files to this document"
+                            >
+                              <Plus size={13} /> Add More
+                            </label>
+                            <input
+                              type="file"
+                              multiple
+                              id={`add-more-slot-file-${item.key}`}
+                              accept={
+                                item.allowedFileTypes?.length
+                                  ? `${item.allowedFileTypes.map((t: string) => (t.startsWith('.') ? t : `.${t}`)).join(',')},image/*,.jpg,.jpeg,.png,.webp,.jfif,.img,.bmp,.heic,.pdf,.doc,.docx,.docs,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+                                  : '.pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,.img,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream'
+                              }
+                              onChange={(e) => {
+                                onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, true);
+                                e.target.value = '';
+                              }}
+                              className="hidden"
+                              disabled={isUploading}
+                            />
+
                             <button
                               type="button"
                               onClick={() => handleRemoveDoc(item.key)}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
-                              title="Remove file"
+                              title="Remove document"
                               aria-label={`Remove ${item.title}`}
                             >
                               <Trash2 size={14} />
@@ -1213,12 +1402,12 @@ export function Documents() {
                             </div>
                             <div className="min-w-0">
                               <p className="text-xs font-semibold text-slate-700 group-hover:text-blue-700 transition-colors">
-                                {isUploading ? 'Uploading attachment...' : 'Attach document file (Click or drag & drop)'}
+                                {isUploading ? 'Uploading attachment...' : 'Attach document file(s) (Click or drag & drop)'}
                               </p>
                               <p className="text-[10px] text-slate-400">
                                 Accepted: {item.allowedFileTypes?.length
                                   ? item.allowedFileTypes.map((t: string) => t.replace('.', '').toUpperCase()).join(', ')
-                                  : 'PDF, Word (DOC/DOCX), or Pictures'} up to {item.maxFileSize ? Math.round(item.maxFileSize / (1024 * 1024)) : 10}MB
+                                  : 'PDF, Word (DOC/DOCX), or Pictures'} up to {item.maxFileSize ? Math.round(item.maxFileSize / (1024 * 1024)) : 10}MB • You can select multiple files
                               </p>
                             </div>
                           </div>
@@ -1227,6 +1416,7 @@ export function Documents() {
                           </span>
                           <input
                             type="file"
+                            multiple
                             id={`attach-file-slot-${item.key}`}
                             accept={
                               item.allowedFileTypes?.length
@@ -1234,8 +1424,7 @@ export function Documents() {
                                 : '.pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,.img,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream'
                             }
                             onChange={(e) => {
-                              const file = e.target.files?.[0] || null;
-                              onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
+                              onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
                               e.target.value = '';
                             }}
                             className="hidden"
@@ -1273,27 +1462,49 @@ export function Documents() {
 
                       {/* Primary Action Button */}
                       {hasFile ? (
-                        <>
+                        <div className="flex items-center gap-1.5">
                           <label
-                            htmlFor={`replace-doc-${item.key}`}
-                            className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 shadow-2xs"
+                            htmlFor={`add-more-main-${item.key}`}
+                            className="py-1.5 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer border border-indigo-200 shadow-2xs"
+                            title="Add more files to this requirement"
                           >
-                            <RefreshCw size={12} className={isUploading ? 'animate-spin' : ''} />
-                            {isUploading ? 'Uploading...' : 'Replace'}
+                            <Plus size={12} />
+                            Add More
                           </label>
                           <input
                             type="file"
-                            id={`replace-doc-${item.key}`}
+                            multiple
+                            id={`add-more-main-${item.key}`}
                             accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                             onChange={(e) => {
-                              const file = e.target.files?.[0] || null;
-                              onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
+                              onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, true);
                               e.target.value = '';
                             }}
                             className="hidden"
                             disabled={isUploading}
                           />
-                        </>
+
+                          <label
+                            htmlFor={`replace-doc-${item.key}`}
+                            className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 shadow-2xs"
+                            title="Replace all attached files"
+                          >
+                            <RefreshCw size={12} className={isUploading ? 'animate-spin' : ''} />
+                            {isUploading ? 'Uploading...' : 'Replace All'}
+                          </label>
+                          <input
+                            type="file"
+                            multiple
+                            id={`replace-doc-${item.key}`}
+                            accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                            onChange={(e) => {
+                              onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
+                              e.target.value = '';
+                            }}
+                            className="hidden"
+                            disabled={isUploading}
+                          />
+                        </div>
                       ) : (
                         <label
                           htmlFor={`attach-doc-btn-${item.key}`}
@@ -1304,14 +1515,14 @@ export function Documents() {
                           }`}
                         >
                           <Paperclip size={13} className={isUploading ? 'animate-spin' : ''} />
-                          {isUploading ? 'Uploading...' : 'Attach File'}
+                          {isUploading ? 'Uploading...' : 'Attach File(s)'}
                           <input
                             type="file"
+                            multiple
                             id={`attach-doc-btn-${item.key}`}
                             accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
                             onChange={(e) => {
-                              const file = e.target.files?.[0] || null;
-                              onSelectFile(item.key, item.title, file, (item as any).instructorDoc?.fileName);
+                              onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
                               e.target.value = '';
                             }}
                             className="hidden"
@@ -1357,13 +1568,72 @@ export function Documents() {
                 </button>
               </div>
 
-              <div className="p-3 bg-blue-50/60 rounded-2xl border border-blue-100 flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-700 truncate max-w-[260px]">
-                  📄 {submitDialog.file.name}
-                </span>
-                <span className="text-slate-500 font-mono">
-                  {formatFileSize(submitDialog.file.size)}
-                </span>
+              {/* Selected Files List with + Add More button */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-xs font-bold text-slate-800">
+                      Selected Files ({submitDialog.files.length})
+                    </span>
+                    <span className="text-[10px] text-slate-500">
+                      • Total: {formatFileSize(submitDialog.files.reduce((sum, f) => sum + (Number(f.size) || 0), 0))}
+                    </span>
+                  </div>
+
+                  <label
+                    htmlFor="dialog-add-more-input"
+                    className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                    title="Add more files to this document requirement"
+                  >
+                    <Plus size={13} /> Add More Files
+                  </label>
+                  <input
+                    type="file"
+                    multiple
+                    id="dialog-add-more-input"
+                    accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                    onChange={(e) => {
+                      handleDialogAddMoreFiles(e.target.files);
+                      e.target.value = '';
+                    }}
+                    className="hidden"
+                  />
+                </div>
+
+                <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1">
+                  {submitDialog.files.map((fileItem, idx) => {
+                    const cat = getFileCategory(fileItem.name);
+                    return (
+                      <div
+                        key={fileItem.id || idx}
+                        className="p-2.5 bg-slate-50 hover:bg-blue-50/50 rounded-xl border border-slate-200 flex items-center justify-between gap-2.5 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <div className="min-w-0">
+                            <p className="font-semibold text-slate-800 truncate text-xs" title={fileItem.name}>
+                              {fileItem.name}
+                            </p>
+                            <span className="text-[10px] text-slate-400">
+                              {formatFileSize(fileItem.size)} • {cat === 'picture' ? 'Image' : cat === 'doc' ? 'Word Document' : 'PDF'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDialogRemoveFile(idx)}
+                          className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer shrink-0"
+                          title="Remove file"
+                        >
+                          <X size={14} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
 
               {submitDialog.instructorDocName && (
@@ -1424,7 +1694,7 @@ export function Documents() {
                   onClick={() => {
                     handleFileUpload(
                       submitDialog.docKey,
-                      submitDialog.file,
+                      submitDialog.files,
                       submitDialog.description,
                       submitDialog.notes,
                       false
@@ -1438,7 +1708,7 @@ export function Documents() {
                     </>
                   ) : (
                     <>
-                      <Send size={14} /> Submit to Instructor for Review
+                      <Send size={14} /> Submit {submitDialog.files.length} File{submitDialog.files.length > 1 ? 's' : ''} to Instructor
                     </>
                   )}
                 </button>
@@ -1462,7 +1732,9 @@ export function Documents() {
               <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white print:pb-2 print:border-slate-800">
                 <div>
                   <h3 className="font-bold text-slate-900 text-base">{previewDoc.title}</h3>
-                  <p className="text-xs text-slate-500 truncate max-w-xs sm:max-w-md">{previewDoc.fileName}</p>
+                  <p className="text-xs text-slate-500 truncate max-w-xs sm:max-w-md">
+                    {previewDoc.fileName} {previewDoc.files && previewDoc.files.length > 1 ? `(File ${(previewDoc.activeFileIndex ?? 0) + 1} of ${previewDoc.files.length})` : ''}
+                  </p>
                 </div>
 
                 <div className="flex items-center gap-2 no-print">
@@ -1508,6 +1780,47 @@ export function Documents() {
                   </button>
                 </div>
               </div>
+
+              {/* Multi-File Tab Bar */}
+              {previewDoc.files && previewDoc.files.length > 1 && (
+                <div className="px-6 py-2.5 bg-indigo-50/60 border-b border-indigo-100 flex items-center gap-2 overflow-x-auto no-scrollbar">
+                  <span className="text-[11px] font-extrabold text-indigo-900 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
+                    <Files size={13} className="text-indigo-600" /> Attached Files ({previewDoc.files.length}):
+                  </span>
+                  {previewDoc.files.map((fileItem, idx) => {
+                    const isActive = (previewDoc.activeFileIndex ?? 0) === idx;
+                    return (
+                      <button
+                        key={fileItem.id || idx}
+                        type="button"
+                        onClick={() => {
+                          const resolvedUrl = resolveSafeDocumentViewUrl(fileItem.fileUrl || fileItem.dataUrl || '');
+                          setPreviewDoc({
+                            ...previewDoc,
+                            activeFileIndex: idx,
+                            fileName: fileItem.name,
+                            dataUrl: resolvedUrl,
+                            fileSize: fileItem.size,
+                          });
+                        }}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                          isActive
+                            ? 'bg-blue-600 text-white shadow-blue-200 ring-2 ring-blue-400'
+                            : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                        }`}
+                      >
+                        <span className="opacity-80">{idx + 1}.</span>
+                        <span className="max-w-[150px] truncate">{fileItem.name}</span>
+                        {fileItem.size ? (
+                          <span className={`text-[10px] ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
+                            ({formatFileSize(fileItem.size)})
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
 
               {/* Document Meta Ribbon */}
               <div className="px-6 py-2.5 bg-slate-50 border-b border-slate-100 text-xs flex flex-wrap items-center justify-between gap-3">

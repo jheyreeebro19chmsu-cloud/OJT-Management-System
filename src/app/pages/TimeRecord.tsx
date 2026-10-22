@@ -43,6 +43,7 @@ import {
 import { authAPI } from '../services/authApi';
 import type { TimeRecord as TimeRecordType } from '../types';
 import { isInvalidHteCompany } from '../utils/hteLocation';
+import { logActivity } from '../services/activityLogService';
 
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
@@ -597,6 +598,16 @@ export function TimeRecord() {
         `${slotTitle} recorded at ${formatTime(timeStr)}${totalHours > 0 ? ` • Total: ${totalHours.toFixed(2)} hrs rendered today` : ''}`
       );
       setPageState('completed');
+
+      // Record in system log history
+      logActivity({
+        type: slot.includes('arrival') ? 'clock_in' : 'clock_out',
+        title: `${slotTitle} Recorded`,
+        description: `Punch registered at ${formatTime(timeStr)} with facial verification (${geofencePassed ? 'within geofence' : 'outside premises'})`,
+        userId: targetEmpId,
+        userName: currentEmp?.name || currentUser?.name || 'Trainee',
+        userRole: 'employee',
+      });
 
       // Asynchronously upload photo and sync to backend
       if (imageData) {

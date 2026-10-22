@@ -34,6 +34,7 @@ import { getCampusLocation } from '../utils/campusLocations';
 import { resolveHteLocation, isInvalidHteCompany, isTraineeRole } from '../utils/hteLocation';
 import { TRAINEE_REQUIRED_HOURS, normalizeTraineeRequiredHours } from '../data/ojtConstants';
 import { buildDefaultReportsForTrainee } from '../utils/monitoringReportGenerator';
+import { logActivity } from '../services/activityLogService';
 
 const STORAGE_KEYS = {
   EMPLOYEES: 'ojt_employees',
@@ -3043,7 +3044,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } catch { }
   };
 
-  const login = async (identifier: string, password: string): Promise<User | null> => {
+  const loginInternal = async (identifier: string, password: string): Promise<User | null> => {
     const rawId = (identifier || '').trim();
     const normalizedId = rawId.toLowerCase();
     if (!rawId || !password) return null;
@@ -3336,7 +3337,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
-  const loginWithOAuthUser = async (authUser: any, explicitRole?: 'admin' | 'hte' | 'trainee' | null): Promise<User | null> => {
+  const login = async (identifier: string, password: string): Promise<User | null> => {
+    const user = await loginInternal(identifier, password);
+    if (user) {
+      logActivity({
+        type: 'login',
+        title: 'User Logged In',
+        description: `Signed in as ${user.name} (${user.role === 'admin' ? 'Instructor' : user.role === 'hte' ? 'HTE' : 'Trainee'})`,
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+      });
+    }
+    return user;
+  };
+
+  const loginWithOAuthUserInternal = async (authUser: any, explicitRole?: 'admin' | 'hte' | 'trainee' | null): Promise<User | null> => {
     if (!authUser) return null;
     const authEmail = (authUser.email || '').trim().toLowerCase();
     const authId = authUser.id || '';
@@ -3535,7 +3551,32 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return null;
   };
 
+  const loginWithOAuthUser = async (authUser: any, explicitRole?: 'admin' | 'hte' | 'trainee' | null): Promise<User | null> => {
+    const user = await loginWithOAuthUserInternal(authUser, explicitRole);
+    if (user) {
+      logActivity({
+        type: 'login',
+        title: 'User Logged In via Google',
+        description: `Authenticated as ${user.name} (${user.role === 'admin' ? 'Instructor' : user.role === 'hte' ? 'HTE' : 'Trainee'})`,
+        userId: user.id,
+        userName: user.name,
+        userRole: user.role,
+      });
+    }
+    return user;
+  };
+
   const logout = () => {
+    if (currentUser) {
+      logActivity({
+        type: 'logout',
+        title: 'User Logged Out',
+        description: `${currentUser.name} signed out of session`,
+        userId: currentUser.id,
+        userName: currentUser.name,
+        userRole: currentUser.role,
+      });
+    }
     clearAuthStorage();
     setCurrentUser(null);
     setTokenExpiresAt(null);

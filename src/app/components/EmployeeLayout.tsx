@@ -10,6 +10,7 @@ import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
 import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRequirements';
 import { computeTraineeOjtNotifications, TraineeOjtNotification } from '../utils/traineeNotifications';
 import { isQuestionnaireAnswered, countAnsweredQuestions } from '../types';
+import { SystemLogBellButton } from './SystemLogBellButton';
 
 
 const navItems = [
@@ -349,22 +350,29 @@ export function EmployeeLayout() {
               </div>
             </div>
 
-            {/* Right Header: Notification Bell */}
+            {/* Right Header: Notification Bell with System Log History */}
             <div className="flex items-center gap-2 relative">
-              <button
-                type="button"
-                onClick={() => setNotifTrayOpen((prev) => !prev)}
-                className="relative p-2 rounded-xl text-blue-100 hover:text-white hover:bg-[#1E3A66] transition-colors cursor-pointer"
-                title="OJT Shift & Hours Notifications"
-                aria-label="View notifications"
-              >
-                <Bell size={20} />
-                {unreadCount > 0 && (
-                  <span className="absolute -top-0.5 -right-0.5 min-w-5 h-5 px-1 bg-amber-500 text-slate-950 font-black text-[10px] rounded-full flex items-center justify-center shadow-md animate-pulse border-2 border-[#152B4D]">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
+              <SystemLogBellButton
+                currentUserRole="employee"
+                currentUserId={employee?.id || currentUser?.id}
+                theme="dark"
+                extraNotifications={ojtNotifications}
+                readExtraNotifIds={readNotifIds}
+                onMarkExtraNotifRead={handleMarkAsRead}
+                shiftSummary={{
+                  schedule: '8:00 AM – 5:00 PM',
+                  statusText: todayRecord?.timeOut
+                    ? 'Shift Completed'
+                    : todayRecord?.timeIn
+                      ? 'Currently Clocked In'
+                      : 'Not Clocked In',
+                  statusVariant: todayRecord?.timeOut
+                    ? 'completed'
+                    : todayRecord?.timeIn
+                      ? 'clocked_in'
+                      : 'not_clocked_in',
+                }}
+              />
             </div>
           </div>
         </header>
@@ -376,155 +384,6 @@ export function EmployeeLayout() {
           </div>
         </main>
       </div>
-
-      {/* OJT Shift & Hours Notifications Slide-Over Tray */}
-      <AnimatePresence>
-        {notifTrayOpen && (
-          <>
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setNotifTrayOpen(false)}
-              className="fixed inset-0 bg-slate-950/50 backdrop-blur-xs z-[1000] no-print"
-            />
-            <motion.aside
-              initial={{ x: '100%' }}
-              animate={{ x: 0 }}
-              exit={{ x: '100%' }}
-              transition={{ type: 'spring', damping: 25, stiffness: 280 }}
-              className="fixed inset-y-0 right-0 z-[1001] w-full sm:w-96 bg-white shadow-2xl flex flex-col no-print border-l border-gray-200"
-            >
-              {/* Tray Header */}
-              <div className="p-4 bg-gradient-to-r from-[#152B4D] to-[#1E3A66] text-white flex items-center justify-between shadow-xs">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center">
-                    <Bell size={18} className="text-amber-300" />
-                  </div>
-                  <div>
-                    <h3 className="font-bold text-sm text-white">OJT Hours & Shift Alerts</h3>
-                    <p className="text-[11px] text-blue-200">Real-time attendance & schedule status</p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setNotifTrayOpen(false)}
-                  className="p-1.5 rounded-lg text-white/80 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
-                >
-                  <X size={18} />
-                </button>
-              </div>
-
-              {/* Trainee Shift Summary Bar */}
-              <div className="px-4 py-3 bg-slate-50 border-b border-gray-100 flex items-center justify-between text-xs">
-                <div>
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Shift Schedule</span>
-                  <span className="font-semibold text-slate-800">8:00 AM – 5:00 PM</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 block">Today's Status</span>
-                  <span className={`font-bold px-2 py-0.5 rounded-md text-[11px] ${
-                    todayRecord?.timeOut
-                      ? 'bg-blue-100 text-blue-800'
-                      : todayRecord?.timeIn
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-amber-100 text-amber-800'
-                  }`}>
-                    {todayRecord?.timeOut
-                      ? 'Shift Completed'
-                      : todayRecord?.timeIn
-                        ? 'Currently Clocked In'
-                        : 'Not Clocked In'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Notification List */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-3">
-                {ojtNotifications.length === 0 ? (
-                  <div className="text-center py-12 px-4">
-                    <div className="w-12 h-12 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center mx-auto mb-3 border border-emerald-100">
-                      <CheckCircle size={24} />
-                    </div>
-                    <p className="font-bold text-sm text-gray-800">You're All Caught Up!</p>
-                    <p className="text-xs text-gray-500 mt-1 max-w-xs mx-auto">
-                      No urgent shift alerts right now. Shift proximity notices (e.g. 4:20 PM clock-out warnings) and required hours milestones will appear here.
-                    </p>
-                  </div>
-                ) : (
-                  ojtNotifications.map((n) => {
-                    const isRead = readNotifIds.includes(n.id);
-                    const isHigh = n.urgency === 'high';
-                    const isSuccess = n.urgency === 'success';
-
-                    return (
-                      <div
-                        key={n.id}
-                        className={`p-3.5 rounded-2xl border transition-all ${
-                          isHigh
-                            ? 'bg-amber-50/90 border-amber-300 ring-1 ring-amber-400/30'
-                            : isSuccess
-                              ? 'bg-emerald-50/80 border-emerald-200'
-                              : 'bg-blue-50/70 border-blue-200'
-                        } ${isRead ? 'opacity-75' : 'shadow-xs'}`}
-                      >
-                        <div className="flex items-start justify-between gap-2">
-                          <div className="flex items-center gap-1.5">
-                            {isHigh ? (
-                              <Clock size={15} className="text-amber-600 shrink-0" />
-                            ) : isSuccess ? (
-                              <Sparkles size={15} className="text-emerald-600 shrink-0" />
-                            ) : (
-                              <AlertTriangle size={15} className="text-blue-600 shrink-0" />
-                            )}
-                            <h4 className="font-bold text-xs text-gray-900 leading-snug">{n.title}</h4>
-                          </div>
-                          <span className="text-[10px] text-gray-400 shrink-0 font-medium">{n.timeLabel}</span>
-                        </div>
-
-                        <p className="text-xs text-gray-700 mt-1.5 leading-relaxed">{n.message}</p>
-
-                        <div className="mt-3 flex items-center justify-between pt-2 border-t border-black/5 gap-2">
-                          {n.actionRoute && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handleMarkAsRead(n.id);
-                                setNotifTrayOpen(false);
-                                navigate(n.actionRoute!);
-                              }}
-                              className="px-3 py-1.5 bg-gradient-to-r from-[#152B4D] to-[#1E3A66] hover:opacity-95 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs transition-all cursor-pointer"
-                            >
-                              <span>{n.actionText || 'Take Action'}</span>
-                              <ChevronRight size={13} />
-                            </button>
-                          )}
-
-                          {!isRead && (
-                            <button
-                              type="button"
-                              onClick={() => handleMarkAsRead(n.id)}
-                              className="text-[11px] text-gray-500 hover:text-gray-800 font-medium px-2 py-1 rounded-lg hover:bg-black/5 cursor-pointer ml-auto"
-                            >
-                              Mark as read
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-
-              {/* Tray Footer */}
-              <div className="p-3 bg-gray-50 border-t border-gray-100 flex items-center justify-between text-[11px] text-gray-500">
-                <span>Standard CHMSU OJT Hours</span>
-                <span className="font-semibold text-gray-700">{employee?.requiredHours || 600} Required Total</span>
-              </div>
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
 
       <LogoutConfirmModal
         isOpen={showLogoutModal}

@@ -51,6 +51,16 @@ export interface Employee {
   submittedDocuments?: TraineeDocuments;
 }
 
+export interface TraineeDocumentFile {
+  id: string;
+  name: string;
+  size?: string | number;
+  dataUrl?: string;
+  fileUrl?: string;
+  fileType?: string;
+  uploadedAt?: string;
+}
+
 export interface TraineeDocumentItem {
   name: string;
   size?: string | number;
@@ -65,6 +75,7 @@ export interface TraineeDocumentItem {
   reviewedBy?: string;
   reviewedAt?: string;
   source?: 'registration' | 'portal';
+  files?: TraineeDocumentFile[];
 }
 
 export interface TraineeDocuments {

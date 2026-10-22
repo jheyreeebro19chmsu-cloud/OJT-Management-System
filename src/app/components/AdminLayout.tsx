@@ -28,6 +28,7 @@ import { isSecurityApiConfigured } from '../services/securityApi';
 import { isSupabaseConfigured } from '../lib/supabase';
 import { getPendingTraineeRequests, subscribeToPendingRequests } from '../services/accountSync';
 import { LogoutConfirmModal } from './ui/LogoutConfirmModal';
+import { SystemLogBellButton } from './SystemLogBellButton';
 import { preloadRoute, preloadAllAdminRoutes } from '../routes';
 
 
@@ -401,7 +402,12 @@ export function AdminLayout() {
                 CHMSU OJT System — Instructor
               </NavLink>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
+              <SystemLogBellButton
+                currentUserRole="admin"
+                currentUserId={employee?.id || currentUser?.id}
+                theme="light"
+              />
               <div className="hidden sm:flex items-center gap-3">
                 <UserAvatar
                   photo={employee?.photo || currentUser?.photo}

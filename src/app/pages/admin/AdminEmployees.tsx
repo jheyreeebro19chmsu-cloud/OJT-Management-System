@@ -1,4 +1,4 @@
-import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2, Filter, Upload, FilePlus } from 'lucide-react';
+import { Users, Search, Plus, Trash2, Camera, CheckCircle, XCircle, Eye, X, User, MapPin, Shield, Printer, FileText, Download, FileCheck, CheckCircle2, ExternalLink, MoreVertical, RefreshCw, Building, ChevronLeft, ChevronRight, Edit3, Check, AlertTriangle, GraduationCap, Clock, ShieldCheck, CheckSquare, Square, Send, UserMinus, Sparkles, Building2, Filter, Upload, FilePlus, Files } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { useLocation, useSearchParams } from 'react-router-dom';
@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { FaceCapture } from '../../components/FaceCapture';
 import { isSecurityApiConfigured, registerFace } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
-import { Employee, TraineeDocuments } from '../../types';
+import { Employee, TraineeDocuments, TraineeDocumentFile } from '../../types';
 import { getPhotoUrl } from '../../services/config';
 import { saveDocumentPassStatus, uploadDocumentToStorage } from '../../services/supabaseService';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
@@ -82,7 +82,17 @@ export function AdminEmployees() {
   const [modalMode, setModalMode] = useState<ModalMode>(null);
   const [selectedEmp, setSelectedEmp] = useState<Employee | null>(null);
   const [faceEnrollOpen, setFaceEnrollOpen] = useState(false);
-  const [previewInstructorDoc, setPreviewInstructorDoc] = useState<{ studentName: string; studentId: string; title: string; fileName?: string; fileUrl?: string; note?: string; date?: string } | null>(null);
+  const [previewInstructorDoc, setPreviewInstructorDoc] = useState<{
+    studentName: string;
+    studentId: string;
+    title: string;
+    fileName?: string;
+    fileUrl?: string;
+    note?: string;
+    date?: string;
+    files?: TraineeDocumentFile[];
+    activeFileIndex?: number;
+  } | null>(null);
   // Blob URL used to render the previewed document (base64 PDFs often fail to render as data: URLs in iframes)
   const [previewFrameUrl, setPreviewFrameUrl] = useState('');
   useEffect(() => {
@@ -4341,12 +4351,21 @@ export function AdminEmployees() {
 
                                           {doc?.name ? (
                                             <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
-                                              <span
-                                                className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
-                                                title={doc.name}
-                                              >
-                                                📎 {doc.name}
-                                              </span>
+                                              {doc.files && doc.files.length > 1 ? (
+                                                <span
+                                                  className="inline-flex items-center gap-1 font-bold text-[11px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-2 py-0.5 rounded-md"
+                                                  title={`${doc.files.length} files attached`}
+                                                >
+                                                  <Files size={12} /> {doc.files.length} Files Attached
+                                                </span>
+                                              ) : (
+                                                <span
+                                                  className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                                  title={doc.name}
+                                                >
+                                                  📎 {doc.name}
+                                                </span>
+                                              )}
                                               {doc.size ? (
                                                 <span className="text-[10px] text-slate-500 font-medium">
                                                   {(Number(doc.size) / 1024).toFixed(0)} KB
@@ -4385,23 +4404,45 @@ export function AdminEmployees() {
                                       <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
                                         <button
                                           type="button"
-                                          onClick={() =>
+                                          onClick={() => {
+                                            const filesList: TraineeDocumentFile[] =
+                                              doc?.files && doc.files.length > 0
+                                                ? doc.files
+                                                : doc?.name || doc?.dataUrl || doc?.fileUrl
+                                                ? [
+                                                    {
+                                                      id: 'file-1',
+                                                      name: doc.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
+                                                      size: doc.size,
+                                                      dataUrl: doc.dataUrl,
+                                                      fileUrl: doc.fileUrl,
+                                                      fileType: doc.fileType,
+                                                      uploadedAt: doc.uploadedAt,
+                                                    },
+                                                  ]
+                                                : [];
+
+                                            const activeFile = filesList[0];
+                                            const targetUrl = resolveSafeDocumentViewUrl(activeFile?.fileUrl || activeFile?.dataUrl || doc?.fileUrl || doc?.dataUrl) || undefined;
+
                                             setPreviewInstructorDoc({
                                               studentName: selectedEmp.name,
                                               studentId: selectedEmp.employeeId,
                                               title: `${docItem.num}. ${docItem.title}`,
-                                              fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
-                                              fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
+                                              fileName: activeFile?.name || doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
+                                              fileUrl: targetUrl,
                                               note: doc?.name
-                                                ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
+                                                ? `Uploaded File${filesList.length > 1 ? `s (${filesList.length})` : ''}: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
                                                 : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
                                               date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
-                                            })
-                                          }
+                                              files: filesList,
+                                              activeFileIndex: 0,
+                                            });
+                                          }}
                                           className="py-1.5 px-3 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
                                           title={hasFile ? 'Preview attached document' : 'View requirement'}
                                         >
-                                          <Eye size={13} /> {hasFile ? 'Preview' : 'View Doc'}
+                                          <Eye size={13} /> {hasFile ? (doc?.files && doc.files.length > 1 ? `Preview (${doc.files.length})` : 'Preview') : 'View Doc'}
                                         </button>
 
                                         {hasFile && (doc?.dataUrl || doc?.fileUrl) && (
@@ -5815,6 +5856,46 @@ export function AdminEmployees() {
                 )}
               </div>
             </div>
+
+            {/* Multi-File Tab Bar for Instructor Review */}
+            {previewInstructorDoc.files && previewInstructorDoc.files.length > 1 && (
+              <div className="px-4 sm:px-6 py-2.5 bg-indigo-50 border-b border-indigo-100 flex items-center gap-2 overflow-x-auto no-scrollbar">
+                <span className="text-[11px] font-extrabold text-indigo-900 uppercase tracking-wider shrink-0 flex items-center gap-1.5">
+                  <Files size={13} className="text-indigo-600" /> Files ({previewInstructorDoc.files.length}):
+                </span>
+                {previewInstructorDoc.files.map((fileItem, idx) => {
+                  const isActive = (previewInstructorDoc.activeFileIndex ?? 0) === idx;
+                  return (
+                    <button
+                      key={fileItem.id || idx}
+                      type="button"
+                      onClick={() => {
+                        const targetUrl = resolveSafeDocumentViewUrl(fileItem.fileUrl || fileItem.dataUrl || '') || undefined;
+                        setPreviewInstructorDoc({
+                          ...previewInstructorDoc,
+                          activeFileIndex: idx,
+                          fileName: fileItem.name,
+                          fileUrl: targetUrl,
+                        });
+                      }}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs ${
+                        isActive
+                          ? 'bg-violet-600 text-white shadow-violet-200 ring-2 ring-violet-400'
+                          : 'bg-white hover:bg-slate-100 text-slate-700 border border-slate-200'
+                      }`}
+                    >
+                      <span>{idx + 1}.</span>
+                      <span className="max-w-[150px] truncate">{fileItem.name}</span>
+                      {fileItem.size ? (
+                        <span className={`text-[10px] ${isActive ? 'text-violet-100' : 'text-slate-400'}`}>
+                          ({(Number(fileItem.size) / 1024).toFixed(0)} KB)
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {/* File preview */}
             <div className="flex-1 overflow-y-auto p-4 bg-gray-50 flex items-center justify-center min-h-[350px]">
