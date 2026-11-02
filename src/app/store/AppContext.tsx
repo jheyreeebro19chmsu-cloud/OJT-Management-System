@@ -1407,29 +1407,44 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setIsLoading(true);
 
           // Wait for Supabase Auth session restoration so RLS evaluates with authenticated instructor privileges
+          const pathname = typeof window !== 'undefined' ? window.location.pathname : '';
+          const isOAuthCallbackRoute = pathname.startsWith('/oauth-callback');
+          const isRegisterRoute = pathname.startsWith('/register');
+          const isAuthRoute =
+            pathname === '/' ||
+            pathname.startsWith('/login') ||
+            isRegisterRoute ||
+            pathname.startsWith('/reset-password') ||
+            isOAuthCallbackRoute;
+
+          if (isOAuthCallbackRoute && !currentUser) {
+            if (isMounted) {
+              setIsLoading(false);
+            }
+            return;
+          }
+
           try {
             await supabase.auth.getSession();
           } catch {}
 
           // Run one-time Supabase migration to normalize 'Administrator' → 'OJT Instructor'
-          try {
-            if (localStorage.getItem('ojt_migrated_instructor_positions') !== 'done') {
-              // import lazily to avoid circular imports at module level
-              const { migrateAdministratorPosition } = await import('../services/supabaseService');
-              migrateAdministratorPosition().catch(() => { });
-              localStorage.setItem('ojt_migrated_instructor_positions', 'done');
+          if (!isAuthRoute || currentUser) {
+            try {
+              if (localStorage.getItem('ojt_migrated_instructor_positions') !== 'done') {
+                // import lazily to avoid circular imports at module level
+                const { migrateAdministratorPosition } = await import('../services/supabaseService');
+                migrateAdministratorPosition().catch(() => { });
+                localStorage.setItem('ojt_migrated_instructor_positions', 'done');
+              }
+            } catch {
+              // ignore migration errors
             }
-          } catch {
-            // ignore migration errors
           }
 
-          const isAuthRoute = typeof window !== 'undefined' && (
-            window.location.pathname.startsWith('/register') ||
-            window.location.pathname.startsWith('/login') ||
-            window.location.pathname.startsWith('/reset-password')
-          );
+          const shouldFetchFullDashboardData = !isAuthRoute || Boolean(currentUser);
 
-          // Fetch all data from Supabase in parallel and update state dynamically
+          // Fetch data from Supabase in parallel without saturating sockets on the unauthenticated login page
           Promise.allSettled([
             supabaseService.fetchEmployees().then((emp) => {
               if (isMounted && emp && emp.length > 0) {
@@ -1465,7 +1480,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 }
               }
             }),
-            (!isAuthRoute || currentUser
+            (shouldFetchFullDashboardData
               ? supabaseService.fetchTimeRecords().then((recs) => {
                   if (isMounted && recs && recs.length > 0) {
                     setTimeRecords((prev) => {
@@ -1476,39 +1491,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   }
                 }).catch(() => {})
               : Promise.resolve()),
-            supabaseService.fetchGeofenceZones().then((zones) => {
-              if (isMounted && zones) {
-                const sanitized = sanitizeGeofenceZones(zones);
-                if (sanitized.length > 0) {
-                  setGeofenceZones(sanitized);
-                  saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitized);
-                }
-              }
-            }),
-            supabaseService.fetchSettings().then((st) => {
-              if (isMounted && st) {
-                setSettings((prev) => {
-                  const mergedYears = Array.from(new Set([
-                    ...(prev.academicYears || ['2025-2026', '2026-2027']),
-                    ...(st.academicYears || []),
-                    '2025-2026',
-                    '2026-2027',
-                  ]));
-                  const activeYear = (st.activeAcademicYear && st.activeAcademicYear !== '2025-2026')
-                    ? st.activeAcademicYear
-                    : (prev.activeAcademicYear || '2026-2027');
-                  const next = {
-                    ...prev,
-                    ...st,
-                    academicYears: mergedYears,
-                    activeAcademicYear: activeYear,
-                  };
-                  saveToStorage(STORAGE_KEYS.SETTINGS, next);
-                  return next;
-                });
-              }
-            }),
-            (!isAuthRoute || currentUser
+            (shouldFetchFullDashboardData || isRegisterRoute
+              ? supabaseService.fetchGeofenceZones().then((zones) => {
+                  if (isMounted && zones) {
+                    const sanitized = sanitizeGeofenceZones(zones);
+                    if (sanitized.length > 0) {
+                      setGeofenceZones(sanitized);
+                      saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitized);
+                    }
+                  }
+                }).catch(() => {})
+              : Promise.resolve()),
+            (shouldFetchFullDashboardData
+              ? supabaseService.fetchSettings().then((st) => {
+                  if (isMounted && st) {
+                    setSettings((prev) => {
+                      const mergedYears = Array.from(new Set([
+                        ...(prev.academicYears || ['2025-2026', '2026-2027']),
+                        ...(st.academicYears || []),
+                        '2025-2026',
+                        '2026-2027',
+                      ]));
+                      const activeYear = (st.activeAcademicYear && st.activeAcademicYear !== '2025-2026')
+                        ? st.activeAcademicYear
+                        : (prev.activeAcademicYear || '2026-2027');
+                      const next = {
+                        ...prev,
+                        ...st,
+                        academicYears: mergedYears,
+                        activeAcademicYear: activeYear,
+                      };
+                      saveToStorage(STORAGE_KEYS.SETTINGS, next);
+                      return next;
+                    });
+                  }
+                }).catch(() => {})
+              : Promise.resolve()),
+            (shouldFetchFullDashboardData
               ? supabaseService.fetchEvaluations().then((ev) => {
                   if (isMounted && ev && ev.length > 0) {
                     setEvaluations(ev);
@@ -1516,35 +1535,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   }
                 }).catch(() => {})
               : Promise.resolve()),
-            supabaseService.fetchAnnouncements().then((ann) => {
-              if (isMounted && ann && ann.length > 0) {
-                setAnnouncements(ann);
-                saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, ann);
-                const fromAnn = extractCommentsFromAnnouncements(ann);
-                if (fromAnn.length > 0) {
-                  setAnnouncementComments((prev) => {
-                    const merged = deduplicateComments([...fromAnn, ...prev]);
-                    saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
-                    return merged;
-                  });
-                }
-              }
-            }),
-            supabaseService.fetchAnnouncementSubmissions().then((subs) => {
-              if (isMounted && subs && subs.length > 0) setAnnouncementSubmissions(subs);
-            }),
-            supabaseService.fetchAnnouncementComments().then((comms) => {
-              if (isMounted && comms && comms.length > 0) {
-                setAnnouncementComments((prev) => {
-                  const merged = deduplicateComments([...comms, ...prev]);
-                  saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
-                  return merged;
-                });
-              }
-            }),
-            supabaseService.fetchHostFeedback().then((fb) => {
-              if (isMounted && fb && fb.length > 0) setHostFeedback(fb);
-            }),
+            (shouldFetchFullDashboardData
+              ? supabaseService.fetchAnnouncements().then((ann) => {
+                  if (isMounted && ann && ann.length > 0) {
+                    setAnnouncements(ann);
+                    saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, ann);
+                    const fromAnn = extractCommentsFromAnnouncements(ann);
+                    if (fromAnn.length > 0) {
+                      setAnnouncementComments((prev) => {
+                        const merged = deduplicateComments([...fromAnn, ...prev]);
+                        saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+                        return merged;
+                      });
+                    }
+                  }
+                }).catch(() => {})
+              : Promise.resolve()),
+            (shouldFetchFullDashboardData
+              ? supabaseService.fetchAnnouncementSubmissions().then((subs) => {
+                  if (isMounted && subs && subs.length > 0) setAnnouncementSubmissions(subs);
+                }).catch(() => {})
+              : Promise.resolve()),
+            (shouldFetchFullDashboardData
+              ? supabaseService.fetchAnnouncementComments().then((comms) => {
+                  if (isMounted && comms && comms.length > 0) {
+                    setAnnouncementComments((prev) => {
+                      const merged = deduplicateComments([...comms, ...prev]);
+                      saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+                      return merged;
+                    });
+                  }
+                }).catch(() => {})
+              : Promise.resolve()),
+            (shouldFetchFullDashboardData
+              ? supabaseService.fetchHostFeedback().then((fb) => {
+                  if (isMounted && fb && fb.length > 0) setHostFeedback(fb);
+                }).catch(() => {})
+              : Promise.resolve()),
             supabaseService.fetchHostSupervisors().then((sup) => {
               if (isMounted && Array.isArray(sup)) {
                 const filtered = sup.filter(
@@ -1554,47 +1581,53 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, filtered);
               }
             }),
-            supabaseService.fetchRequiredDocumentsFromStorage().then((reqDocs) => {
-              if (isMounted && reqDocs && reqDocs.length > 0) {
-                setRequiredDocuments((prev) => {
-                  const merged = [...reqDocs];
-                  for (const p of prev) {
-                    if (!merged.some((m) => m.id === p.id || m.title.toLowerCase().trim() === p.title.toLowerCase().trim())) {
-                      merged.push(p);
+            (shouldFetchFullDashboardData
+              ? supabaseService.fetchRequiredDocumentsFromStorage().then((reqDocs) => {
+                  if (isMounted && reqDocs && reqDocs.length > 0) {
+                    setRequiredDocuments((prev) => {
+                      const merged = [...reqDocs];
+                      for (const p of prev) {
+                        if (!merged.some((m) => m.id === p.id || m.title.toLowerCase().trim() === p.title.toLowerCase().trim())) {
+                          merged.push(p);
+                        }
+                      }
+                      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, merged);
+                      return merged;
+                    });
+                  }
+                }).catch(() => {})
+              : Promise.resolve()),
+            (shouldFetchFullDashboardData
+              ? supabaseService.fetchMonitoringReportsFromStorage().then((remoteReports) => {
+                  if (isMounted && Array.isArray(remoteReports) && remoteReports.length > 0) {
+                    setMonitoringReports((prev) => {
+                      const merged = supabaseService.mergeMonitoringReportsList(remoteReports, prev);
+                      saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
+                      return merged;
+                    });
+                  }
+                }).catch(() => {})
+              : Promise.resolve()),
+            (shouldFetchFullDashboardData
+              ? supabaseService.fetchDttrStoreFromStorage().then((dttrStore) => {
+                  if (isMounted && dttrStore) {
+                    if (Array.isArray(dttrStore.monthlyDttrs) && dttrStore.monthlyDttrs.length > 0) {
+                      setMonthlyDttrs((prev) => {
+                        const merged = supabaseService.mergeMonthlyDttrsList(dttrStore.monthlyDttrs, prev);
+                        saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, merged);
+                        return merged;
+                      });
+                    }
+                    if (Array.isArray(dttrStore.timeRecords) && dttrStore.timeRecords.length > 0) {
+                      setTimeRecords((prev) => {
+                        const merged = mergeTimeRecords(dttrStore.timeRecords, prev);
+                        saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+                        return merged;
+                      });
                     }
                   }
-                  saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, merged);
-                  return merged;
-                });
-              }
-            }),
-            supabaseService.fetchMonitoringReportsFromStorage().then((remoteReports) => {
-              if (isMounted && Array.isArray(remoteReports) && remoteReports.length > 0) {
-                setMonitoringReports((prev) => {
-                  const merged = supabaseService.mergeMonitoringReportsList(remoteReports, prev);
-                  saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
-                  return merged;
-                });
-              }
-            }),
-            supabaseService.fetchDttrStoreFromStorage().then((dttrStore) => {
-              if (isMounted && dttrStore) {
-                if (Array.isArray(dttrStore.monthlyDttrs) && dttrStore.monthlyDttrs.length > 0) {
-                  setMonthlyDttrs((prev) => {
-                    const merged = supabaseService.mergeMonthlyDttrsList(dttrStore.monthlyDttrs, prev);
-                    saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, merged);
-                    return merged;
-                  });
-                }
-                if (Array.isArray(dttrStore.timeRecords) && dttrStore.timeRecords.length > 0) {
-                  setTimeRecords((prev) => {
-                    const merged = mergeTimeRecords(dttrStore.timeRecords, prev);
-                    saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-                    return merged;
-                  });
-                }
-              }
-            }),
+                }).catch(() => {})
+              : Promise.resolve()),
           ]).finally(() => {
             if (isMounted) {
               setIsLoading(false);
@@ -1942,6 +1975,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!useSupabase && !isSupabaseConfigured()) return;
     if (!currentUser) return;
+
+    // Fetch full dashboard data immediately upon sign-in or session restoration
+    refreshData({ force: true });
 
     const onFocus = () => {
       refreshData();

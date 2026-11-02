@@ -18,8 +18,21 @@ export default function OAuthCallback() {
     try {
       setRetrying(true);
       const searchParams = new URLSearchParams(window.location.search);
-      const targetRole = searchParams.get('role') || localStorage.getItem('pending_oauth_role') || 'hte';
+      const targetRole =
+        searchParams.get('role') ||
+        localStorage.getItem('pending_oauth_role') ||
+        sessionStorage.getItem('pending_oauth_role') ||
+        'trainee';
       localStorage.setItem('pending_oauth_role', targetRole);
+      try {
+        sessionStorage.setItem('pending_oauth_role', targetRole);
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && key.includes('code-verifier')) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch {}
       const redirectOrigin =
         typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
@@ -30,7 +43,7 @@ export default function OAuthCallback() {
       const { error: retryErr } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${redirectOrigin}/oauth-callback?role=${targetRole}`,
+          redirectTo: `${redirectOrigin}/oauth-callback`,
           queryParams: {
             prompt: 'select_account',
           },
@@ -66,18 +79,38 @@ export default function OAuthCallback() {
         const hashParams = new URLSearchParams(hashString);
 
         const urlError = searchParams.get('error') || hashParams.get('error');
+        const urlErrorCode = searchParams.get('error_code') || hashParams.get('error_code');
         const urlErrorDesc = searchParams.get('error_description') || hashParams.get('error_description');
 
-        if (urlError || urlErrorDesc) {
+        if (urlError || urlErrorCode || urlErrorDesc) {
           const rawMsg = urlErrorDesc
             ? decodeURIComponent(urlErrorDesc.replace(/\+/g, ' '))
             : urlError;
           console.error('Google OAuth URL error:', rawMsg);
           clearTimeout(watchdogTimer);
 
+          window.history.replaceState({}, document.title, window.location.pathname);
+
+          const isBadOAuthState =
+            urlErrorCode === 'bad_oauth_state' ||
+            rawMsg?.toLowerCase().includes('oauth state not found') ||
+            rawMsg?.toLowerCase().includes('expired');
+
+          if (isBadOAuthState) {
+            const lastRetry = Number(sessionStorage.getItem('ojt_oauth_state_retried_at') || '0');
+            if (Date.now() - lastRetry > 20000) {
+              sessionStorage.setItem('ojt_oauth_state_retried_at', String(Date.now()));
+              setStatusMessage('Refreshing Google sign-in session...');
+              handleRetryGoogle();
+              return;
+            }
+          }
+
           let friendlyMsg = rawMsg;
           if (rawMsg?.toLowerCase().includes('unable to exchange external code')) {
             friendlyMsg = 'The Google authorization code expired or could not be exchanged by the authentication server. This usually happens if the authorization timed out, the page was refreshed, or Google OAuth credentials in Supabase need verification.';
+          } else if (isBadOAuthState) {
+            friendlyMsg = 'Your Google sign-in state expired. Please click Retry with Google below to continue.';
           } else if (rawMsg) {
             friendlyMsg = `Google Sign-In notice: ${rawMsg}`;
           }
@@ -189,7 +222,11 @@ export default function OAuthCallback() {
           authUser.user_metadata?.picture ||
           '';
         const urlRole = (searchParams.get('role') || hashParams.get('role') || '').trim().toLowerCase();
-        const storedRole = (localStorage.getItem('pending_oauth_role') || '').trim().toLowerCase();
+        const storedRole = (
+          localStorage.getItem('pending_oauth_role') ||
+          sessionStorage.getItem('pending_oauth_role') ||
+          ''
+        ).trim().toLowerCase();
         const pendingRole = urlRole || storedRole;
 
         setStatusMessage('Checking system records for your account...');
@@ -203,6 +240,10 @@ export default function OAuthCallback() {
               setIsSuccess(true);
               setStatusMessage(`Welcome back, ${loggedInUser.name}! Signing you in...`);
               localStorage.removeItem('pending_oauth_role');
+              try {
+                sessionStorage.removeItem('pending_oauth_role');
+                sessionStorage.removeItem('ojt_oauth_state_retried_at');
+              } catch {}
               localStorage.removeItem('oauth_email');
               localStorage.removeItem('oauth_name');
               localStorage.removeItem('oauth_given_name');

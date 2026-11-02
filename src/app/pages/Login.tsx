@@ -115,13 +115,6 @@ export function Login() {
   const matchedEmployee = employees.find((e) => e.email.toLowerCase() === email.toLowerCase());
   const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
 
-  useEffect(() => {
-    // Pre-warm Supabase connection so TLS handshake and GoTrue container are warm
-    if (isSupabaseConfigured()) {
-      supabase.auth.getSession().catch(() => {});
-    }
-  }, []);
-
   const handleGoogleSignInWithRole = async (targetRole: 'trainee' | 'admin' | 'hte') => {
     setError('');
     setGoogleLoading(true);
@@ -134,14 +127,26 @@ export function Login() {
         return;
       }
       localStorage.setItem('pending_oauth_role', targetRole);
+      try {
+        sessionStorage.setItem('pending_oauth_role', targetRole);
+        // Clear any stale PKCE code-verifier keys before starting a fresh OAuth handshake
+        for (let i = localStorage.length - 1; i >= 0; i--) {
+          const key = localStorage.key(i);
+          if (key && key.includes('code-verifier')) {
+            localStorage.removeItem(key);
+          }
+        }
+      } catch {}
+
       const redirectOrigin =
         typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
+
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${redirectOrigin}/oauth-callback?role=${targetRole}`,
+          redirectTo: `${redirectOrigin}/oauth-callback`,
           queryParams: {
             prompt: 'select_account',
           },
@@ -158,6 +163,80 @@ export function Login() {
       setLoadingRole(null);
     }
   };
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const searchParams = new URLSearchParams(window.location.search);
+      const hashRaw = window.location.hash.startsWith('#')
+        ? window.location.hash.substring(1)
+        : window.location.hash;
+      const hashParams = new URLSearchParams(hashRaw);
+
+      // 1. If an OAuth callback code or access_token landed on `/` or `/login`, forward to `/oauth-callback`
+      if (searchParams.get('code') || hashParams.get('access_token')) {
+        navigate(`/oauth-callback${window.location.search}${window.location.hash}`, { replace: true });
+        return;
+      }
+
+      // 2. Check for any OAuth URL error captured on load (e.g. bad_oauth_state)
+      let capturedError: { error?: string; errorCode?: string; errorDescription?: string } | null = null;
+      try {
+        const rawStored = sessionStorage.getItem('ojt_oauth_url_error');
+        if (rawStored) {
+          sessionStorage.removeItem('ojt_oauth_url_error');
+          capturedError = JSON.parse(rawStored);
+        }
+      } catch {}
+
+      const urlError = searchParams.get('error') || hashParams.get('error') || capturedError?.error || '';
+      const urlErrorCode = searchParams.get('error_code') || hashParams.get('error_code') || capturedError?.errorCode || '';
+      const urlErrorDesc =
+        searchParams.get('error_description') ||
+        hashParams.get('error_description') ||
+        capturedError?.errorDescription ||
+        '';
+
+      if (urlError || urlErrorCode || urlErrorDesc) {
+        // Ensure address bar is clean
+        if (window.location.search.includes('error') || window.location.hash.includes('error')) {
+          window.history.replaceState({}, document.title, window.location.pathname);
+        }
+        setGoogleLoading(false);
+        setLoadingRole(null);
+
+        const isBadOAuthState =
+          urlErrorCode === 'bad_oauth_state' ||
+          urlErrorDesc.toLowerCase().includes('oauth state not found') ||
+          urlErrorDesc.toLowerCase().includes('expired');
+
+        const pendingRole = (
+          localStorage.getItem('pending_oauth_role') ||
+          sessionStorage.getItem('pending_oauth_role') ||
+          ''
+        ).trim() as 'trainee' | 'admin' | 'hte';
+
+        if (isBadOAuthState && (pendingRole === 'trainee' || pendingRole === 'admin' || pendingRole === 'hte')) {
+          const lastRetry = Number(sessionStorage.getItem('ojt_oauth_state_retried_at') || '0');
+          if (Date.now() - lastRetry > 20000) {
+            sessionStorage.setItem('ojt_oauth_state_retried_at', String(Date.now()));
+            handleGoogleSignInWithRole(pendingRole);
+            return;
+          }
+        }
+
+        setError(
+          isBadOAuthState
+            ? 'Your previous Google sign-in session expired. Please click Continue with Google again.'
+            : urlErrorDesc || 'Google sign-in could not be completed. Please try again.'
+        );
+      }
+    }
+
+    // Pre-warm Supabase connection so TLS handshake and GoTrue container are warm
+    if (isSupabaseConfigured()) {
+      supabase.auth.getSession().catch(() => {});
+    }
+  }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
