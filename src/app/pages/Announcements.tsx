@@ -1,9 +1,13 @@
 import {
   Bell,
+  Calendar,
   Camera,
   CheckCircle,
   Clock,
+  Filter,
   MessageSquare,
+  RotateCcw,
+  Search,
   XCircle,
   Plus,
   Trash2,
@@ -16,6 +20,10 @@ import {
   Sparkles,
   X,
   Loader2,
+  ArrowUpDown,
+  Upload,
+  FileText,
+  Eye,
 } from 'lucide-react';
 import React, { useMemo, useState } from 'react';
 import { toast } from 'sonner';
@@ -23,8 +31,36 @@ import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
 import { authAPI } from '../services/authApi';
 import { API_BASE } from '../services/config';
-import type { Announcement } from '../types';
+import type { Announcement, TraineeDocumentFile } from '../types';
 import { AnnouncementAttachmentView } from '../components/AnnouncementAttachmentView';
+import { formatFileSize } from '../utils/attachmentHelper';
+
+function toLocalDateStr(isoStr?: string): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function toLocalTimeStr(isoStr?: string): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${h}:${min}`;
+}
+
+function isInstructorPost(ann: Announcement): boolean {
+  const role = (ann.createdByRole || '').toLowerCase();
+  const by = (ann.createdBy || '').toLowerCase();
+  if (role === 'admin') return true;
+  if (role === 'host' || role === 'hte' || role === 'employee') return false;
+  return by.includes('instructor') || by.includes('admin') || by.includes('coordinator') || by.includes('prof');
+}
 
 const TYPE_CONFIG: Record<
   Announcement['type'],
@@ -63,6 +99,7 @@ const TYPE_CONFIG: Record<
 export function Announcements() {
   const {
     currentUser,
+    employees,
     getCurrentEmployee,
     getActiveAnnouncements,
     getAnnouncementSubmission,
@@ -73,6 +110,7 @@ export function Announcements() {
     getAnnouncementComments,
     addAnnouncementComment,
     deleteAnnouncementComment,
+    addRequiredDocument,
     settings,
   } = useApp();
 
@@ -81,8 +119,8 @@ export function Announcements() {
 
   const isInstructor = Boolean(
     currentUser?.role === 'admin' ||
-    currentUser?.role === 'instructor' ||
-    (currentUser?.position && currentUser.position.toLowerCase().includes('instructor')) ||
+    (currentUser as any)?.role === 'instructor' ||
+    ((currentUser as any)?.position && String((currentUser as any).position).toLowerCase().includes('instructor')) ||
     (employee?.position && employee.position.toLowerCase().includes('instructor')) ||
     (employee as any)?.role === 'instructor'
   );
@@ -92,6 +130,7 @@ export function Announcements() {
 
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, string | undefined>>({});
+  const [filesDrafts, setFilesDrafts] = useState<Record<string, TraineeDocumentFile[]>>({});
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [submittingComments, setSubmittingComments] = useState<Record<string, boolean>>({});
 
@@ -101,15 +140,58 @@ export function Announcements() {
     title: string;
     content: string;
     photo: string;
+    files: TraineeDocumentFile[];
+    requiresSubmission: boolean;
     type: Announcement['type'];
     targetRole: Announcement['targetRole'];
-  }>({
-    title: '',
-    content: '',
-    photo: '',
-    type: 'info',
-    targetRole: 'all',
+    customDate: string;
+    customTime: string;
+  }>(() => {
+    const now = new Date();
+    return {
+      title: '',
+      content: '',
+      photo: '',
+      files: [],
+      requiresSubmission: false,
+      type: 'info',
+      targetRole: 'all',
+      customDate: toLocalDateStr(now.toISOString()),
+      customTime: toLocalTimeStr(now.toISOString()),
+    };
   });
+
+  // Filter State (Instructor, Date & Time)
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'instructor' | 'hte'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | Announcement['type']>('all');
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [filterDate, setFilterDate] = useState('');
+  const [timePeriod, setTimePeriod] = useState<'all' | 'morning' | 'afternoon' | 'evening'>('all');
+  const [filterTime, setFilterTime] = useState('');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() ||
+      sourceFilter !== 'all' ||
+      typeFilter !== 'all' ||
+      datePreset !== 'all' ||
+      filterDate ||
+      timePeriod !== 'all' ||
+      filterTime ||
+      sortOrder !== 'newest'
+  );
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setSourceFilter('all');
+    setTypeFilter('all');
+    setDatePreset('all');
+    setFilterDate('');
+    setTimePeriod('all');
+    setFilterTime('');
+    setSortOrder('newest');
+  };
 
   const handlePostComment = async (announcementId: string) => {
     if (submittingComments[announcementId]) return;
@@ -140,23 +222,152 @@ export function Announcements() {
     return getActiveAnnouncements(isInstructor ? 'admin' : 'employee');
   }, [getActiveAnnouncements, isInstructor]);
 
-  const onPickPhoto = async (announcementId: string, file?: File) => {
-    if (!file) return;
-    const b64 = await readAsDataUrl(file);
-    setPhotoDrafts((prev) => ({ ...prev, [announcementId]: b64 }));
+  const instructorAnnouncementsCount = useMemo(
+    () => announcements.filter((a) => isInstructorPost(a)).length,
+    [announcements]
+  );
+
+  const filteredAnnouncements = useMemo(() => {
+    const now = new Date();
+    const todayStr = toLocalDateStr(now.toISOString());
+
+    const filtered = announcements.filter((ann) => {
+      // 1. Source / Instructor filter
+      if (sourceFilter === 'instructor' && !isInstructorPost(ann)) return false;
+      if (sourceFilter === 'hte' && isInstructorPost(ann)) return false;
+
+      // 2. Announcement Type filter
+      if (typeFilter !== 'all' && ann.type !== typeFilter) return false;
+
+      // 3. Search query (title, content, author)
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const matchTitle = (ann.title || '').toLowerCase().includes(q);
+        const matchContent = (ann.content || '').toLowerCase().includes(q);
+        const matchAuthor = (ann.createdBy || '').toLowerCase().includes(q);
+        if (!matchTitle && !matchContent && !matchAuthor) return false;
+      }
+
+      const createdDate = new Date(ann.createdAt);
+      const annDateStr = toLocalDateStr(ann.createdAt);
+      const annTimeStr = toLocalTimeStr(ann.createdAt);
+
+      // 4. Specific Date filter (YYYY-MM-DD)
+      if (filterDate) {
+        if (annDateStr !== filterDate) return false;
+      } else if (datePreset !== 'all') {
+        if (datePreset === 'today') {
+          if (annDateStr !== todayStr) return false;
+        } else if (datePreset === 'week') {
+          const diffDays = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
+          if (diffDays < 0 || diffDays > 7) return false;
+        } else if (datePreset === 'month') {
+          if (
+            createdDate.getFullYear() !== now.getFullYear() ||
+            createdDate.getMonth() !== now.getMonth()
+          ) {
+            return false;
+          }
+        }
+      }
+
+      // 5. Time of Day filter
+      if (timePeriod !== 'all' && !isNaN(createdDate.getTime())) {
+        const hr = createdDate.getHours();
+        if (timePeriod === 'morning' && !(hr >= 0 && hr < 12)) return false;
+        if (timePeriod === 'afternoon' && !(hr >= 12 && hr < 17)) return false;
+        if (timePeriod === 'evening' && !(hr >= 17 && hr <= 23)) return false;
+      }
+
+      // 6. Specific Time filter (HH:mm)
+      if (filterTime) {
+        const [fHour, fMin] = filterTime.split(':');
+        const [aHour] = annTimeStr.split(':');
+        if (fMin === '00') {
+          if (aHour !== fHour) return false;
+        } else {
+          if (annTimeStr !== filterTime) return false;
+        }
+      }
+
+      return true;
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      const tA = new Date(a.createdAt).getTime();
+      const tB = new Date(b.createdAt).getTime();
+      return sortOrder === 'newest' ? tB - tA : tA - tB;
+    });
+  }, [
+    announcements,
+    sourceFilter,
+    typeFilter,
+    searchQuery,
+    filterDate,
+    datePreset,
+    timePeriod,
+    filterTime,
+    sortOrder,
+  ]);
+
+  const onPickFiles = async (announcementId: string, fileList?: FileList | null) => {
+    if (!fileList || fileList.length === 0) return;
+    const selected = Array.from(fileList);
+    const processed: TraineeDocumentFile[] = [];
+    for (const f of selected) {
+      const b64 = await readAsDataUrl(f);
+      processed.push({
+        id: `file-${Date.now()}-${processed.length}`,
+        name: f.name,
+        fileType: f.type || 'application/octet-stream',
+        size: f.size,
+        uploadedAt: new Date().toISOString(),
+        dataUrl: b64,
+        fileUrl: b64,
+      });
+    }
+    setFilesDrafts((prev) => {
+      const next = [...(prev[announcementId] || []), ...processed];
+      const first = next[0];
+      if (first) {
+        const serialized = first.fileType.startsWith('image/')
+          ? first.dataUrl
+          : JSON.stringify({
+              url: first.dataUrl || first.fileUrl,
+              name: first.name,
+              type: first.fileType.includes('pdf') || first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'doc',
+              size: formatFileSize(Number(first.size)),
+            });
+        setPhotoDrafts((p) => ({ ...p, [announcementId]: serialized }));
+      }
+      return { ...prev, [announcementId]: next };
+    });
+    toast.success(`${processed.length} file${processed.length > 1 ? 's' : ''} attached`);
   };
 
   const submit = (announcement: Announcement) => {
     if (!activeUser) return;
     const message = (messageDrafts[announcement.id] || '').trim();
+    const attachedFiles = filesDrafts[announcement.id] || [];
     const photo = photoDrafts[announcement.id];
-    if (!message && !photo) return;
+    if (!message && !photo && attachedFiles.length === 0) {
+      toast.error('Please enter a response or attach at least one file.');
+      return;
+    }
+
+    const effectiveMessage =
+      message ||
+      (attachedFiles.length > 0
+        ? `Submitted ${attachedFiles.length} file${attachedFiles.length > 1 ? 's' : ''}: ${attachedFiles.map((f) => f.name).join(', ')}`
+        : 'Submitted');
 
     if (API_BASE) {
       const formData = new FormData();
       formData.append('announcement_id', announcement.id);
       formData.append('user_id', String(activeUser.id));
-      formData.append('message', message);
+      formData.append('message', effectiveMessage);
       if (photo && photo.startsWith('data:')) {
         fetch(photo)
           .then((r) => r.blob())
@@ -165,60 +376,111 @@ export function Announcements() {
             authAPI
               .submitAnnouncementResponse(announcement.id, Number(activeUser.id), formData)
               .then(() => {
-                submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
-                toast.success('Response submitted!');
+                submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
+                toast.success('File(s) & response submitted!');
               })
               .catch(() => {
-                submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
-                toast.success('Response submitted!');
+                submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
+                toast.success('File(s) & response submitted!');
               });
           })
           .catch(() => {
-            submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
-            toast.success('Response submitted!');
+            submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
+            toast.success('File(s) & response submitted!');
           });
       } else {
         authAPI
           .submitAnnouncementResponse(announcement.id, Number(activeUser.id), formData)
           .then(() => {
-            submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
-            toast.success('Response submitted!');
+            submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
+            toast.success('File(s) & response submitted!');
           })
           .catch(() => {
-            submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
-            toast.success('Response submitted!');
+            submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
+            toast.success('File(s) & response submitted!');
           });
       }
     } else {
-      submitAnnouncementResponse(announcement.id, activeUser.id, message, photo);
-      toast.success('Response submitted!');
+      submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
+      toast.success('File(s) & response submitted!');
     }
     setMessageDrafts((prev) => ({ ...prev, [announcement.id]: '' }));
     setPhotoDrafts((prev) => ({ ...prev, [announcement.id]: undefined }));
+    setFilesDrafts((prev) => ({ ...prev, [announcement.id]: [] }));
   };
 
   const handleCreatePost = async () => {
+    if (!isInstructor) {
+      toast.error('Trainees cannot post announcements. You can comment on announcements below.');
+      return;
+    }
     if (!newPost.title.trim() || !newPost.content.trim()) {
       toast.error('Please provide both a title and details.');
       return;
     }
     setIsSubmittingPost(true);
     try {
+      let postCreatedAt = new Date().toISOString();
+      if (newPost.customDate) {
+        const timePart = newPost.customTime || toLocalTimeStr(new Date().toISOString()) || '08:00';
+        const parsed = new Date(`${newPost.customDate}T${timePart}`);
+        if (!isNaN(parsed.getTime())) {
+          postCreatedAt = parsed.toISOString();
+        }
+      }
+
+      const hasFiles = newPost.files.length > 0 || Boolean(newPost.photo);
+
       addAnnouncement({
         title: newPost.title.trim(),
         content: newPost.content.trim(),
         photo: newPost.photo || undefined,
+        files: newPost.files.length > 0 ? newPost.files : undefined,
+        requiresSubmission: newPost.requiresSubmission || hasFiles,
         type: newPost.type,
         targetRole: newPost.targetRole,
         isPinned: false,
-        createdAt: new Date().toISOString(),
+        createdAt: postCreatedAt,
         createdBy: authorName,
         createdByRole: authorRole,
         academicYear: settings?.activeAcademicYear,
       });
 
-      toast.success(isInstructor ? 'Instructor announcement posted!' : 'Trainee announcement posted!');
-      setNewPost({ title: '', content: '', photo: '', type: 'info', targetRole: 'all' });
+      // Automatically sync attached file(s) to Trainees' Documents requirements so it appears in their Documents account too
+      if (newPost.files.length > 0) {
+        const primaryFile = newPost.files[0];
+        addRequiredDocument('', {
+          title: newPost.title.trim(),
+          description: newPost.content.trim(),
+          submittedBy: authorName,
+          submittedByRole: 'admin',
+          fileName: primaryFile.name,
+          fileType: primaryFile.fileType,
+          fileSize: primaryFile.size,
+          dataUrl: primaryFile.dataUrl,
+          fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
+          files: newPost.files,
+          notes: `Synced from Instructor Announcement (${newPost.files.length} file${newPost.files.length > 1 ? 's' : ''})`,
+        });
+      }
+
+      toast.success(
+        newPost.files.length > 0
+          ? `Instructor announcement & ${newPost.files.length} file(s) synced to Trainee accounts!`
+          : 'Instructor announcement posted!'
+      );
+      const now = new Date();
+      setNewPost({
+        title: '',
+        content: '',
+        photo: '',
+        files: [],
+        requiresSubmission: false,
+        type: 'info',
+        targetRole: 'all',
+        customDate: toLocalDateStr(now.toISOString()),
+        customTime: toLocalTimeStr(now.toISOString()),
+      });
       setIsPosting(false);
     } catch (err: any) {
       toast.error('Failed to post announcement: ' + (err?.message || 'Error'));
@@ -260,7 +522,9 @@ export function Announcements() {
             <h2 className="text-xl font-black tracking-tight">Announcements & Feed</h2>
           </div>
           <p className="text-xs text-blue-200">
-            Official announcements, updates, notices, and reminders for OJT Trainees & Instructors.
+            {isInstructor
+              ? 'Official announcements, updates, notices, and reminders for OJT Trainees & Instructors.'
+              : 'Official announcements, updates, and reminders from OJT Instructors. Join the discussion in the comments.'}
           </p>
         </div>
 
@@ -278,7 +542,8 @@ export function Announcements() {
         )}
       </div>
 
-      {/* Post Box (Available for both Trainees and Instructors) */}
+      {/* Post Box (Only accessible by Instructors / Admins - Trainees can only comment) */}
+      {isInstructor && (
       <div className="bg-white rounded-2xl border border-slate-200/80 p-5 shadow-xs space-y-3">
         {!isPosting ? (
           <div className="flex items-center gap-3">
@@ -287,7 +552,15 @@ export function Announcements() {
             </div>
             <button
               type="button"
-              onClick={() => setIsPosting(true)}
+              onClick={() => {
+                const now = new Date();
+                setNewPost((p) => ({
+                  ...p,
+                  customDate: toLocalDateStr(now.toISOString()),
+                  customTime: toLocalTimeStr(now.toISOString()),
+                }));
+                setIsPosting(true);
+              }}
               className="flex-1 text-left px-4 py-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-xl text-slate-500 text-xs sm:text-sm font-medium transition-colors border border-slate-200 flex items-center justify-between cursor-pointer"
             >
               <span>
@@ -324,7 +597,7 @@ export function Announcements() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
               <div>
                 <label className="text-[11px] font-bold text-slate-600 block mb-1">Announcement Type</label>
                 <select
@@ -351,6 +624,30 @@ export function Announcements() {
                   <option value="admin">🎓 Instructors / Staff Only</option>
                 </select>
               </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1 mb-1">
+                  <Calendar size={11} className="text-blue-600" /> Announcement Date
+                </label>
+                <input
+                  type="date"
+                  value={newPost.customDate}
+                  onChange={(e) => setNewPost((p) => ({ ...p, customDate: e.target.value }))}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium"
+                />
+              </div>
+
+              <div>
+                <label className="text-[11px] font-bold text-slate-600 flex items-center gap-1 mb-1">
+                  <Clock size={11} className="text-indigo-600" /> Announcement Time
+                </label>
+                <input
+                  type="time"
+                  value={newPost.customTime}
+                  onChange={(e) => setNewPost((p) => ({ ...p, customTime: e.target.value }))}
+                  className="w-full px-3 py-1.5 text-xs border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500 bg-slate-50 font-medium"
+                />
+              </div>
             </div>
 
             <div>
@@ -375,45 +672,122 @@ export function Announcements() {
               />
             </div>
 
-            {/* Photo Attachment Preview */}
-            {newPost.photo && (
-              <div className="relative inline-block border border-slate-200 rounded-xl overflow-hidden group">
-                <img src={newPost.photo} alt="Preview" className="h-24 w-auto object-cover" />
-                <button
-                  type="button"
-                  onClick={() => setNewPost((p) => ({ ...p, photo: '' }))}
-                  className="absolute top-1 right-1 p-1 bg-black/60 hover:bg-black/80 text-white rounded-full transition-colors cursor-pointer"
-                >
-                  <X size={12} />
-                </button>
+            {/* Attached File(s) Preview */}
+            {newPost.files.length > 0 && (
+              <div className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-blue-700">
+                    📎 {newPost.files.length} File{newPost.files.length > 1 ? 's' : ''} Attached (Automatically synced to Trainees' accounts)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setNewPost((p) => ({ ...p, photo: '', files: [] }))}
+                    className="text-[10px] font-bold text-rose-600 hover:underline cursor-pointer"
+                  >
+                    Clear All
+                  </button>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  {newPost.files.map((f, idx) => (
+                    <div
+                      key={`${f.name}-${idx}`}
+                      className="inline-flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900"
+                    >
+                      <FileText size={13} className="text-blue-600 shrink-0" />
+                      <span className="font-semibold truncate max-w-[180px]">{f.name}</span>
+                      <span className="text-[10px] text-blue-600">({formatFileSize(Number(f.size))})</span>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setNewPost((p) => {
+                            const next = p.files.filter((_, i) => i !== idx);
+                            const first = next[0];
+                            const nextPhoto = first
+                              ? first.fileType.startsWith('image/')
+                                ? first.dataUrl || ''
+                                : JSON.stringify({
+                                    url: first.dataUrl || first.fileUrl,
+                                    name: first.name,
+                                    type: first.fileType.includes('pdf') || first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'doc',
+                                    size: formatFileSize(Number(first.size)),
+                                  })
+                              : '';
+                            return { ...p, files: next, photo: nextPhoto };
+                          })
+                        }
+                        className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                      >
+                        <X size={12} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 
-            <div className="flex items-center justify-between pt-1">
-              <label className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors text-slate-700 font-medium">
-                <Camera size={14} className="text-blue-600" />
-                <span>Attach Photo / Image</span>
-                <input
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={async (e) => {
-                    const f = e.target.files?.[0];
-                    if (f) {
-                      const b64 = await readAsDataUrl(f);
-                      const testImg = new Image();
-                      testImg.onload = () => {
-                        setNewPost((p) => ({ ...p, photo: b64 }));
-                        toast.success(`Attached ${f.name}`);
-                      };
-                      testImg.onerror = () => {
-                        toast.error(`"${f.name}" is not a valid or readable image. Please select a valid photo.`);
-                      };
-                      testImg.src = b64;
-                    }
-                  }}
-                />
-              </label>
+            <div className="flex items-center justify-between pt-1 flex-wrap gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <label className="text-xs flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 bg-slate-50 cursor-pointer hover:bg-slate-100 transition-colors text-slate-700 font-medium">
+                  <Upload size={14} className="text-blue-600" />
+                  <span>Attach File(s) / Template(s)</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const selected = Array.from(e.target.files || []);
+                      if (selected.length === 0) return;
+                      const processed: TraineeDocumentFile[] = [];
+                      for (const f of selected) {
+                        const b64 = await readAsDataUrl(f);
+                        processed.push({
+                          id: `file-${Date.now()}-${processed.length}`,
+                          name: f.name,
+                          fileType: f.type || 'application/octet-stream',
+                          size: f.size,
+                          uploadedAt: new Date().toISOString(),
+                          dataUrl: b64,
+                          fileUrl: b64,
+                        });
+                      }
+                      setNewPost((p) => {
+                        const combined = [...p.files, ...processed];
+                        const first = combined[0];
+                        const primarySerialized = first
+                          ? first.fileType.startsWith('image/')
+                            ? first.dataUrl || ''
+                            : JSON.stringify({
+                                url: first.dataUrl || first.fileUrl,
+                                name: first.name,
+                                type: first.fileType.includes('pdf') || first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'doc',
+                                size: formatFileSize(Number(first.size)),
+                              })
+                          : '';
+                        return {
+                          ...p,
+                          title: p.title.trim() ? p.title : first ? first.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ') : p.title,
+                          files: combined,
+                          photo: primarySerialized,
+                          requiresSubmission: true,
+                        };
+                      });
+                      toast.success(`Attached ${processed.length} file${processed.length > 1 ? 's' : ''}`);
+                      e.target.value = '';
+                    }}
+                  />
+                </label>
+
+                <label className="inline-flex items-center gap-1.5 text-xs text-slate-700 font-medium cursor-pointer select-none px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200">
+                  <input
+                    type="checkbox"
+                    checked={newPost.requiresSubmission}
+                    onChange={(e) => setNewPost((p) => ({ ...p, requiresSubmission: e.target.checked }))}
+                    className="rounded text-blue-600 focus:ring-blue-500"
+                  />
+                  <span>Allow Trainees to Upload File(s)</span>
+                </label>
+              </div>
 
               <div className="flex items-center gap-2">
                 <button
@@ -437,24 +811,224 @@ export function Announcements() {
           </div>
         )}
       </div>
+      )}
 
-      {announcements.length === 0 ? (
-        <div className="rounded-2xl bg-white border border-slate-200/80 p-8 text-center text-sm text-slate-500 shadow-xs">
+      {/* Instructor Announcement Date & Time Filter Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200/80 p-4 shadow-xs space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-slate-800">
+              <Filter size={14} className="text-blue-600" />
+              Filter Announcements (Date & Time)
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setSourceFilter('all')}
+                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                  sourceFilter === 'all'
+                    ? 'bg-slate-900 text-white shadow-2xs'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                }`}
+              >
+                All ({announcements.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceFilter('instructor')}
+                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all inline-flex items-center gap-1 cursor-pointer ${
+                  sourceFilter === 'instructor'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                }`}
+              >
+                <GraduationCap size={12} />
+                Instructor Announcements ({instructorAnnouncementsCount})
+              </button>
+              {announcements.length > instructorAnnouncementsCount && (
+                <button
+                  type="button"
+                  onClick={() => setSourceFilter('hte')}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                    sourceFilter === 'hte'
+                      ? 'bg-purple-600 text-white shadow-2xs'
+                      : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                  }`}
+                >
+                  HTE / Other ({announcements.length - instructorAnnouncementsCount})
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold text-slate-500">
+              Showing <strong className="text-slate-800">{filteredAnnouncements.length}</strong> of {announcements.length}
+            </span>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer"
+              >
+                <RotateCcw size={11} />
+                Reset Filter
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+          {/* Search Input */}
+          <div className="relative sm:col-span-2 lg:col-span-1">
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+              Search
+            </label>
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Title, keyword, instructor..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Date Filter (Preset + Specific Date Picker) */}
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Calendar size={11} className="text-blue-600" /> Filter by Date
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => {
+                  setFilterDate(e.target.value);
+                  if (e.target.value) setDatePreset('all');
+                }}
+                className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+              />
+              {filterDate && (
+                <button
+                  type="button"
+                  onClick={() => setFilterDate('')}
+                  title="Clear date"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-lg cursor-pointer shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Quick Date Range */}
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Calendar size={11} className="text-emerald-600" /> Date Period
+            </label>
+            <select
+              value={filterDate ? 'custom' : datePreset}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'custom') return;
+                setFilterDate('');
+                setDatePreset(val as any);
+              }}
+              className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+            >
+              <option value="all">All Dates</option>
+              <option value="today">Today</option>
+              <option value="week">Last 7 Days</option>
+              <option value="month">This Month</option>
+              {filterDate && <option value="custom">Selected: {filterDate}</option>}
+            </select>
+          </div>
+
+          {/* Time Filter (Specific Time + Time of Day) */}
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Clock size={11} className="text-indigo-600" /> Filter by Time
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="time"
+                value={filterTime}
+                onChange={(e) => setFilterTime(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+              />
+              {filterTime && (
+                <button
+                  type="button"
+                  onClick={() => setFilterTime('')}
+                  title="Clear time"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-lg cursor-pointer shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Time of Day & Sort Order */}
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <ArrowUpDown size={11} className="text-amber-600" /> Time of Day & Sort
+            </label>
+            <div className="flex items-center gap-1">
+              <select
+                value={timePeriod}
+                onChange={(e) => setTimePeriod(e.target.value as any)}
+                className="w-1/2 px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+              >
+                <option value="all">All Times</option>
+                <option value="morning">Morning (AM)</option>
+                <option value="afternoon">Afternoon (12–5 PM)</option>
+                <option value="evening">Evening (5 PM+)</option>
+              </select>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as any)}
+                className="w-1/2 px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {filteredAnnouncements.length === 0 ? (
+        <div className="rounded-2xl bg-white border border-slate-200/80 p-8 text-center text-sm text-slate-500 shadow-xs space-y-2">
           <Megaphone size={36} className="mx-auto text-slate-300 mb-2" />
-          No announcements yet. Be the first to post an update!
+          <p className="font-semibold text-slate-700">
+            {hasActiveFilters
+              ? 'No announcements match your selected Date & Time filter.'
+              : isInstructor
+              ? 'No announcements yet. Be the first to post an update!'
+              : 'No announcements posted yet. Check back later for updates from your instructors.'}
+          </p>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer"
+            >
+              <RotateCcw size={12} />
+              Show All Announcements
+            </button>
+          )}
         </div>
       ) : (
-        announcements.map((announcement) => {
+        filteredAnnouncements.map((announcement) => {
           const submission = activeUser ? getAnnouncementSubmission(announcement.id, activeUser.id) : null;
           const status = activeUser ? getAnnouncementSubmissionStatus(announcement, activeUser.id) : 'pending';
           const typeConf = TYPE_CONFIG[announcement.type || 'info'] || TYPE_CONFIG.info;
 
-          const canDelete = Boolean(
-            isInstructor ||
-            announcement.createdBy === authorName ||
-            announcement.createdBy === activeUser?.name ||
-            (announcement.createdByRole === 'employee' && !isInstructor && announcement.createdBy === activeUser?.name)
-          );
+          const canDelete = Boolean(isInstructor);
 
           return (
             <div key={announcement.id} className="rounded-2xl bg-white border border-slate-200/80 p-5 space-y-3.5 shadow-xs transition-shadow hover:shadow-sm">
@@ -467,7 +1041,7 @@ export function Announcements() {
                     </span>
 
                     {/* Author Role Badge */}
-                    {announcement.createdByRole === 'admin' ? (
+                    {isInstructorPost(announcement) ? (
                       <span className="text-[10px] font-bold text-blue-800 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1">
                         <GraduationCap size={11} className="text-blue-600" />
                         Instructor: {announcement.createdBy}
@@ -489,11 +1063,23 @@ export function Announcements() {
                       </span>
                     )}
 
-                    <span className="text-[10px] text-slate-400 font-mono">
+                    {/* Date Badge */}
+                    <span className="text-[10px] text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full font-mono inline-flex items-center gap-1">
+                      <Calendar size={10} className="text-blue-600" />
                       {new Date(announcement.createdAt).toLocaleDateString('en-US', {
                         month: 'short',
                         day: 'numeric',
                         year: 'numeric',
+                      })}
+                    </span>
+
+                    {/* Time Badge */}
+                    <span className="text-[10px] text-slate-600 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-full font-mono inline-flex items-center gap-1">
+                      <Clock size={10} className="text-indigo-600" />
+                      {new Date(announcement.createdAt).toLocaleTimeString('en-US', {
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
                       })}
                     </span>
                   </div>
@@ -546,8 +1132,12 @@ export function Announcements() {
                   </div>
                 </div>
               </div>
-              {announcement.photo && (
-                <AnnouncementAttachmentView photo={announcement.photo} allowDownload={true} />
+              {(announcement.photo || (announcement.files && announcement.files.length > 0)) && (
+                <AnnouncementAttachmentView
+                  photo={announcement.photo}
+                  files={announcement.files}
+                  allowDownload={true}
+                />
               )}
               {announcement.reminder && (
                 <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-xl p-2">
@@ -561,64 +1151,144 @@ export function Announcements() {
                 </div>
               )}
 
-              {announcement.requiresSubmission && (
-                <div className="rounded-xl border border-gray-200 p-3 space-y-2">
-                  <p className="text-xs font-semibold text-gray-700 flex items-center gap-1">
-                    <MessageSquare size={12} /> Your response
-                  </p>
+              {(announcement.requiresSubmission || Boolean(announcement.photo || (announcement.files && announcement.files.length > 0))) && (
+                <div className="rounded-xl border border-gray-200 p-3.5 space-y-3 bg-slate-50/40">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <p className="text-xs font-bold text-gray-800 flex items-center gap-1.5">
+                      <Upload size={13} className="text-blue-600" />
+                      {isInstructor ? 'Trainee File & Response Submissions' : 'Upload Your File(s) & Response'}
+                    </p>
+                    {submission && (
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                        ✓ Submitted {submission.files && submission.files.length > 1 ? `(${submission.files.length} files)` : ''}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Trainee's own submission review */}
                   {submission && (
-                    <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                    <div className="bg-white border border-slate-200 rounded-xl p-3 space-y-2 shadow-2xs">
                       <div className="flex items-center justify-between">
-                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Submission History</p>
+                        <p className="text-[10px] font-bold text-blue-700 uppercase tracking-wider">
+                          Your Submitted Record (Reviewable by You & Instructor)
+                        </p>
                         <p className="text-[10px] text-slate-400 font-medium">
                           Sent: {new Date(submission.submittedAt).toLocaleString()}
                         </p>
                       </div>
-                      <div className="flex items-start gap-3">
-                        <div className="flex-1">
-                          <p className="text-xs text-slate-700 bg-white p-2 rounded-lg border border-slate-100 italic">
-                            "{submission.message || 'No message provided'}"
-                          </p>
-                        </div>
-                        {submission.photo && (
-                          <div className="shrink-0 relative group">
-                            <img
-                              src={submission.photo}
-                              alt="Your submission"
-                              className="w-16 h-16 rounded-lg object-cover border border-slate-200 shadow-sm"
-                            />
-                            <div className="absolute inset-0 bg-black/5 opacity-0 group-hover:opacity-100 transition-opacity rounded-lg" />
-                          </div>
-                        )}
-                      </div>
+                      {submission.message && (
+                        <p className="text-xs text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-100 italic">
+                          "{submission.message}"
+                        </p>
+                      )}
+                      {(submission.photo || (submission.files && submission.files.length > 0)) && (
+                        <AnnouncementAttachmentView
+                          photo={submission.photo}
+                          files={submission.files}
+                          allowDownload={true}
+                        />
+                      )}
                     </div>
                   )}
+
+                  {/* Instructor view of all Trainee Submissions on this announcement */}
+                  {isInstructor && (
+                    <div className="space-y-2 pt-1">
+                      {employees
+                        .filter((e) => e.active && e.position !== 'OJT Instructor')
+                        .map((emp) => {
+                          const empSub = getAnnouncementSubmission(announcement.id, emp.id);
+                          if (!empSub) return null;
+                          return (
+                            <div key={emp.id} className="bg-white border border-blue-200/80 rounded-xl p-3 space-y-2 shadow-2xs">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-bold text-slate-900">
+                                  👤 {emp.name} <span className="text-[10px] font-normal text-slate-500">({emp.employeeId})</span>
+                                </span>
+                                <span className="text-[10px] text-slate-400">
+                                  {new Date(empSub.submittedAt).toLocaleString()}
+                                </span>
+                              </div>
+                              {empSub.message && (
+                                <p className="text-xs text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                  {empSub.message}
+                                </p>
+                              )}
+                              {(empSub.photo || (empSub.files && empSub.files.length > 0)) && (
+                                <AnnouncementAttachmentView
+                                  photo={empSub.photo}
+                                  files={empSub.files}
+                                  allowDownload={true}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+
+                  {/* Upload single or multiple files + message */}
                   <textarea
                     value={messageDrafts[announcement.id] || ''}
                     onChange={(e) => setMessageDrafts((prev) => ({ ...prev, [announcement.id]: e.target.value }))}
-                    rows={3}
-                    placeholder="Type your response..."
-                    className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    rows={2}
+                    placeholder="Type a note or response (optional if attaching files)..."
+                    className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                   />
-                  <div className="flex items-center gap-2">
-                    <label className="text-xs flex items-center gap-1 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50 cursor-pointer">
-                      <Camera size={12} />
-                      Upload Photo
+
+                  {(filesDrafts[announcement.id] || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1.5">
+                      {(filesDrafts[announcement.id] || []).map((f, idx) => (
+                        <div
+                          key={`${f.name}-${idx}`}
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900"
+                        >
+                          <FileText size={12} className="text-blue-600 shrink-0" />
+                          <span className="font-semibold truncate max-w-[160px]">{idx + 1}. {f.name}</span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setFilesDrafts((prev) => ({
+                                ...prev,
+                                [announcement.id]: (prev[announcement.id] || []).filter((_, i) => i !== idx),
+                              }))
+                            }
+                            className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                          >
+                            <X size={11} />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <label className="text-xs font-semibold flex items-center gap-1.5 px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer transition-colors">
+                      <Upload size={13} />
+                      <span>{(filesDrafts[announcement.id] || []).length > 0 ? '+ Add More Files' : 'Upload File(s) (Single or Multiple)'}</span>
                       <input
                         type="file"
-                        accept="image/*"
+                        multiple
+                        accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
                         className="hidden"
-                        onChange={(e) => onPickPhoto(announcement.id, e.target.files?.[0])}
+                        onChange={(e) => {
+                          onPickFiles(announcement.id, e.target.files);
+                          e.target.value = '';
+                        }}
                       />
                     </label>
-                    {photoDrafts[announcement.id] && <span className="text-[11px] text-green-700">Photo selected</span>}
+                    {(filesDrafts[announcement.id] || []).length > 0 && (
+                      <span className="text-[11px] font-bold text-emerald-700">
+                        {(filesDrafts[announcement.id] || []).length} file(s) ready
+                      </span>
+                    )}
                     <button
                       type="button"
                       onClick={() => submit(announcement)}
-                      className="ml-auto px-5 py-2.5 rounded-xl bg-blue-600 text-white text-sm font-bold hover:bg-blue-700 transition-all shadow-lg shadow-blue-100 flex items-center gap-2"
+                      className="ml-auto px-4 py-2 rounded-xl bg-blue-600 text-white text-xs sm:text-sm font-bold hover:bg-blue-700 transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
                     >
-                      <CheckCircle size={16} />
-                      Turn In
+                      <CheckCircle size={15} />
+                      <span>{submission ? 'Update Submission' : 'Turn In File(s)'}</span>
                     </button>
                   </div>
                 </div>
@@ -657,19 +1327,21 @@ export function Announcements() {
                           <span className="text-[10px] text-gray-400">
                             {new Date(c.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                           </span>
-                          <button
-                            type="button"
-                            title="Delete comment across all accounts"
-                            onClick={async () => {
-                              if (window.confirm('Delete this comment across all accounts?')) {
-                                await deleteAnnouncementComment(announcement.id, c.id);
-                                toast.success('Comment deleted!');
-                              }
-                            }}
-                            className="text-gray-300 hover:text-red-500 transition-colors p-0.5 rounded cursor-pointer"
-                          >
-                            <Trash2 size={11} />
-                          </button>
+                          {(isInstructor || c.employeeId === activeUser.id || c.authorName === authorName) && (
+                            <button
+                              type="button"
+                              title="Delete comment"
+                              onClick={async () => {
+                                if (window.confirm('Delete this comment?')) {
+                                  await deleteAnnouncementComment(announcement.id, c.id);
+                                  toast.success('Comment deleted!');
+                                }
+                              }}
+                              className="text-gray-300 hover:text-red-500 transition-colors p-0.5 rounded cursor-pointer"
+                            >
+                              <Trash2 size={11} />
+                            </button>
+                          )}
                         </div>
                       </div>
                       <p className="text-gray-700 leading-relaxed">{c.content}</p>

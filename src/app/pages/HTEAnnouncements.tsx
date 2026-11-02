@@ -21,6 +21,9 @@ import {
   Building,
   Upload,
   Loader2,
+  Filter,
+  RotateCcw,
+  ArrowUpDown,
 } from 'lucide-react';
 import React, { useState, useMemo, useRef } from 'react';
 import { toast } from 'sonner';
@@ -29,6 +32,25 @@ import { useApp } from '../store/AppContext';
 import { Announcement } from '../types';
 import { AnnouncementAttachmentView } from '../components/AnnouncementAttachmentView';
 import { formatFileSize, parseAnnouncementAttachment } from '../utils/attachmentHelper';
+
+function toLocalDateStr(isoStr?: string): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function toLocalTimeStr(isoStr?: string): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${h}:${min}`;
+}
 
 const TYPE_CONFIG: Record<
   Announcement['type'],
@@ -118,9 +140,34 @@ export function HTEAnnouncements() {
   // Filters & State
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'my_posts' | 'university' | 'attachments'>('all');
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [filterDate, setFilterDate] = useState('');
+  const [timePeriod, setTimePeriod] = useState<'all' | 'morning' | 'afternoon' | 'evening'>('all');
+  const [filterTime, setFilterTime] = useState('');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
   const [showModal, setShowModal] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const hasActiveFilters = Boolean(
+    searchTerm.trim() ||
+      activeFilter !== 'all' ||
+      datePreset !== 'all' ||
+      filterDate ||
+      timePeriod !== 'all' ||
+      filterTime ||
+      sortOrder !== 'newest'
+  );
+
+  const resetFilters = () => {
+    setSearchTerm('');
+    setActiveFilter('all');
+    setDatePreset('all');
+    setFilterDate('');
+    setTimePeriod('all');
+    setFilterTime('');
+    setSortOrder('newest');
+  };
 
   // Form State
   const [title, setTitle] = useState('');
@@ -158,7 +205,10 @@ export function HTEAnnouncements() {
   }, [announcements, authorName, companyName]);
 
   const filtered = useMemo(() => {
-    return hteAnnouncements.filter((a) => {
+    const now = new Date();
+    const todayStr = toLocalDateStr(now.toISOString());
+
+    const list = hteAnnouncements.filter((a) => {
       const matchesSearch =
         a.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
         a.content.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -167,23 +217,82 @@ export function HTEAnnouncements() {
       if (!matchesSearch) return false;
 
       if (activeFilter === 'my_posts') {
-        return (
+        const isHtePost =
           a.createdBy === authorName ||
           a.createdBy === companyName ||
           (a as any).createdByRole === 'host' ||
-          (a as any).createdByRole === 'hte'
-        );
+          (a as any).createdByRole === 'hte';
+        if (!isHtePost) return false;
       }
       if (activeFilter === 'university') {
-        return (a as any).createdByRole === 'admin' || (!a.createdByRole && a.createdBy !== authorName);
+        const isUnivPost = (a as any).createdByRole === 'admin' || (!a.createdByRole && a.createdBy !== authorName);
+        if (!isUnivPost) return false;
       }
       if (activeFilter === 'attachments') {
-        return Boolean(a.photo);
+        if (!a.photo) return false;
+      }
+
+      const createdDate = new Date(a.createdAt);
+      const annDateStr = toLocalDateStr(a.createdAt);
+      const annTimeStr = toLocalTimeStr(a.createdAt);
+
+      if (filterDate) {
+        if (annDateStr !== filterDate) return false;
+      } else if (datePreset !== 'all') {
+        if (datePreset === 'today' && annDateStr !== todayStr) return false;
+        if (datePreset === 'week') {
+          const diffDays = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
+          if (diffDays < 0 || diffDays > 7) return false;
+        }
+        if (datePreset === 'month') {
+          if (
+            createdDate.getFullYear() !== now.getFullYear() ||
+            createdDate.getMonth() !== now.getMonth()
+          ) {
+            return false;
+          }
+        }
+      }
+
+      if (timePeriod !== 'all' && !isNaN(createdDate.getTime())) {
+        const hr = createdDate.getHours();
+        if (timePeriod === 'morning' && !(hr >= 0 && hr < 12)) return false;
+        if (timePeriod === 'afternoon' && !(hr >= 12 && hr < 17)) return false;
+        if (timePeriod === 'evening' && !(hr >= 17 && hr <= 23)) return false;
+      }
+
+      if (filterTime) {
+        const [fHour, fMin] = filterTime.split(':');
+        const [aHour] = annTimeStr.split(':');
+        if (fMin === '00') {
+          if (aHour !== fHour) return false;
+        } else {
+          if (annTimeStr !== filterTime) return false;
+        }
       }
 
       return true;
     });
-  }, [hteAnnouncements, searchTerm, activeFilter, authorName, companyName]);
+
+    return [...list].sort((a, b) => {
+      if (a.isPinned && !b.isPinned) return -1;
+      if (!a.isPinned && b.isPinned) return 1;
+      const tA = new Date(a.createdAt).getTime();
+      const tB = new Date(b.createdAt).getTime();
+      return sortOrder === 'newest' ? tB - tA : tA - tB;
+    });
+  }, [
+    hteAnnouncements,
+    searchTerm,
+    activeFilter,
+    authorName,
+    companyName,
+    filterDate,
+    datePreset,
+    timePeriod,
+    filterTime,
+    sortOrder,
+  ]);
 
   // Open Add Modal
   const handleOpenAdd = () => {
@@ -475,7 +584,7 @@ export function HTEAnnouncements() {
                   : 'bg-slate-100 text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
               }`}
             >
-              University Advisories
+              Instructor / University Advisories
             </button>
             <button
               onClick={() => setActiveFilter('attachments')}
@@ -488,6 +597,117 @@ export function HTEAnnouncements() {
               <Paperclip size={13} />
               <span>With Files / Photos</span>
             </button>
+            {hasActiveFilters && (
+              <button
+                onClick={resetFilters}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-all flex items-center gap-1"
+              >
+                <RotateCcw size={12} />
+                <span>Reset</span>
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Date & Time Filter Controls */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 pt-2 border-t border-slate-100">
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Calendar size={11} className="text-blue-600" /> Filter by Date
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => {
+                  setFilterDate(e.target.value);
+                  if (e.target.value) setDatePreset('all');
+                }}
+                className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+              />
+              {filterDate && (
+                <button
+                  type="button"
+                  onClick={() => setFilterDate('')}
+                  title="Clear date"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-lg cursor-pointer shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Calendar size={11} className="text-emerald-600" /> Date Period
+            </label>
+            <select
+              value={filterDate ? 'custom' : datePreset}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'custom') return;
+                setFilterDate('');
+                setDatePreset(val as any);
+              }}
+              className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+            >
+              <option value="all">All Dates</option>
+              <option value="today">Today</option>
+              <option value="week">Last 7 Days</option>
+              <option value="month">This Month</option>
+              {filterDate && <option value="custom">Selected: {filterDate}</option>}
+            </select>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Clock size={11} className="text-indigo-600" /> Filter by Time
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="time"
+                value={filterTime}
+                onChange={(e) => setFilterTime(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+              />
+              {filterTime && (
+                <button
+                  type="button"
+                  onClick={() => setFilterTime('')}
+                  title="Clear time"
+                  className="p-1.5 text-slate-400 hover:text-slate-600 bg-slate-100 rounded-lg cursor-pointer shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div>
+            <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <ArrowUpDown size={11} className="text-amber-600" /> Time of Day & Sort
+            </label>
+            <div className="flex items-center gap-1">
+              <select
+                value={timePeriod}
+                onChange={(e) => setTimePeriod(e.target.value as any)}
+                className="w-1/2 px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+              >
+                <option value="all">All Times</option>
+                <option value="morning">Morning (AM)</option>
+                <option value="afternoon">Afternoon (12–5 PM)</option>
+                <option value="evening">Evening (5 PM+)</option>
+              </select>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as any)}
+                className="w-1/2 px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+              </select>
+            </div>
           </div>
         </div>
       </div>
@@ -552,12 +772,21 @@ export function HTEAnnouncements() {
                 </div>
 
                 {/* Actions (Edit / Delete / Pin) */}
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto">
-                  <span className="text-xs text-slate-400 font-mono">
-                    {new Date(ann.createdAt).toLocaleDateString(undefined, {
+                <div className="flex items-center gap-2 shrink-0 self-end sm:self-auto flex-wrap">
+                  <span className="text-xs text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full font-mono inline-flex items-center gap-1">
+                    <Calendar size={11} className="text-blue-600" />
+                    {new Date(ann.createdAt).toLocaleDateString('en-US', {
                       year: 'numeric',
                       month: 'short',
                       day: 'numeric',
+                    })}
+                  </span>
+                  <span className="text-xs text-slate-600 bg-slate-100 border border-slate-200 px-2.5 py-0.5 rounded-full font-mono inline-flex items-center gap-1">
+                    <Clock size={11} className="text-indigo-600" />
+                    {new Date(ann.createdAt).toLocaleTimeString('en-US', {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      hour12: true,
                     })}
                   </span>
 

@@ -11,6 +11,12 @@ import {
   AlertTriangle,
   CheckCircle,
   Clock,
+  Calendar,
+  Filter,
+  Search,
+  RotateCcw,
+  ArrowUpDown,
+  GraduationCap,
   Eye,
   Download,
   Printer,
@@ -24,9 +30,36 @@ import { toast } from 'sonner';
 import { authAPI } from '../../services/authApi';
 import { useApp } from '../../store/AppContext';
 import { API_BASE } from '../../services/config';
-import { Announcement } from '../../types';
+import { Announcement, TraineeDocumentFile } from '../../types';
 import { AnnouncementAttachmentView } from '../../components/AnnouncementAttachmentView';
-import { formatFileSize, parseAnnouncementAttachment } from '../../utils/attachmentHelper';
+import { formatFileSize } from '../../utils/attachmentHelper';
+
+function toLocalDateStr(isoStr?: string): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function toLocalTimeStr(isoStr?: string): string {
+  if (!isoStr) return '';
+  const d = new Date(isoStr);
+  if (isNaN(d.getTime())) return '';
+  const h = String(d.getHours()).padStart(2, '0');
+  const min = String(d.getMinutes()).padStart(2, '0');
+  return `${h}:${min}`;
+}
+
+function isInstructorPost(ann: Announcement): boolean {
+  const role = (ann.createdByRole || '').toLowerCase();
+  const by = (ann.createdBy || '').toLowerCase();
+  if (role === 'admin') return true;
+  if (role === 'host' || role === 'hte' || role === 'employee') return false;
+  return by.includes('instructor') || by.includes('admin') || by.includes('coordinator') || by.includes('prof');
+}
 
 
 const TYPE_CONFIG: Record<
@@ -75,6 +108,7 @@ const BLANK_FORM = {
   title: '',
   content: '',
   photo: '',
+  files: [] as TraineeDocumentFile[],
   reminder: '',
   deadlineAt: '',
   comments: '',
@@ -83,6 +117,8 @@ const BLANK_FORM = {
   targetRole: 'all' as Announcement['targetRole'],
   isPinned: false,
   expiresAt: '',
+  customDate: '',
+  customTime: '',
 };
 
 export function AdminAnnouncements() {
@@ -98,6 +134,7 @@ export function AdminAnnouncements() {
     getAnnouncementComments,
     addAnnouncementComment,
     deleteAnnouncementComment,
+    addRequiredDocument,
     settings,
   } = useApp();
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
@@ -107,6 +144,38 @@ export function AdminAnnouncements() {
   const [showSubmissionsId, setShowSubmissionsId] = useState<string | null>(null);
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [submittingComments, setSubmittingComments] = useState<Record<string, boolean>>({});
+
+  // Date & Time Filter State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [sourceFilter, setSourceFilter] = useState<'all' | 'instructor' | 'hte'>('all');
+  const [typeFilter, setTypeFilter] = useState<'all' | Announcement['type']>('all');
+  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [filterDate, setFilterDate] = useState('');
+  const [timePeriod, setTimePeriod] = useState<'all' | 'morning' | 'afternoon' | 'evening'>('all');
+  const [filterTime, setFilterTime] = useState('');
+  const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  const hasActiveFilters = Boolean(
+    searchQuery.trim() ||
+      sourceFilter !== 'all' ||
+      typeFilter !== 'all' ||
+      datePreset !== 'all' ||
+      filterDate ||
+      timePeriod !== 'all' ||
+      filterTime ||
+      sortOrder !== 'newest'
+  );
+
+  const resetFilters = () => {
+    setSearchQuery('');
+    setSourceFilter('all');
+    setTypeFilter('all');
+    setDatePreset('all');
+    setFilterDate('');
+    setTimePeriod('all');
+    setFilterTime('');
+    setSortOrder('newest');
+  };
 
   const handlePostComment = async (announcementId: string) => {
     if (submittingComments[announcementId]) return;
@@ -136,7 +205,12 @@ export function AdminAnnouncements() {
   const upd = (key: string, val: string | boolean) => setForm((p) => ({ ...p, [key]: val }));
 
   const openAdd = () => {
-    setForm(BLANK_FORM);
+    const now = new Date();
+    setForm({
+      ...BLANK_FORM,
+      customDate: toLocalDateStr(now.toISOString()),
+      customTime: toLocalTimeStr(now.toISOString()),
+    });
     setEditId(null);
     setShowForm(true);
   };
@@ -150,11 +224,14 @@ export function AdminAnnouncements() {
       targetRole: ann.targetRole,
       isPinned: ann.isPinned,
       photo: ann.photo || '',
+      files: ann.files || [],
       reminder: ann.reminder || '',
       deadlineAt: ann.deadlineAt ? ann.deadlineAt.slice(0, 16) : '',
       comments: isDiscussionJson ? '' : (ann.comments || ''),
       requiresSubmission: Boolean(ann.requiresSubmission),
       expiresAt: ann.expiresAt ? ann.expiresAt.slice(0, 16) : '',
+      customDate: toLocalDateStr(ann.createdAt),
+      customTime: toLocalTimeStr(ann.createdAt),
     });
     setEditId(ann.id);
     setShowForm(true);
@@ -166,12 +243,26 @@ export function AdminAnnouncements() {
       return;
     }
 
+    let postCreatedAt = new Date().toISOString();
+    if (form.customDate) {
+      const timePart = form.customTime || toLocalTimeStr(new Date().toISOString()) || '08:00';
+      const parsed = new Date(`${form.customDate}T${timePart}`);
+      if (!isNaN(parsed.getTime())) {
+        postCreatedAt = parsed.toISOString();
+      }
+    }
+
+    const { customDate: _cd, customTime: _ct, ...restForm } = form;
+    const hasFiles = (form.files && form.files.length > 0) || Boolean(form.photo);
+
     const data = {
-      ...form,
+      ...restForm,
+      files: form.files && form.files.length > 0 ? form.files : undefined,
+      requiresSubmission: form.requiresSubmission || hasFiles,
       academicYear: selectedAcademicYear === 'all' ? settings.activeAcademicYear : selectedAcademicYear,
       expiresAt: form.expiresAt ? new Date(form.expiresAt).toISOString() : undefined,
       deadlineAt: form.deadlineAt ? new Date(form.deadlineAt).toISOString() : undefined,
-      createdAt: new Date().toISOString(),
+      createdAt: postCreatedAt,
       createdBy: currentUser?.name || 'OJT Instructor',
       createdByRole: (currentUser?.role === 'host' ? 'host' : 'admin') as 'admin' | 'host',
     };
@@ -185,7 +276,27 @@ export function AdminAnnouncements() {
       toast.success('Announcement updated!');
     } else {
       addAnnouncement(data);
-      toast.success('Announcement posted successfully!');
+      if (form.files && form.files.length > 0) {
+        const primaryFile = form.files[0];
+        addRequiredDocument('', {
+          title: form.title.trim(),
+          description: form.content.trim(),
+          submittedBy: currentUser?.name || 'OJT Instructor',
+          submittedByRole: 'admin',
+          fileName: primaryFile.name,
+          fileType: primaryFile.fileType,
+          fileSize: primaryFile.size,
+          dataUrl: primaryFile.dataUrl,
+          fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
+          files: form.files,
+          notes: `Synced from Instructor Announcement (${form.files.length} file${form.files.length > 1 ? 's' : ''})`,
+        });
+      }
+      toast.success(
+        form.files && form.files.length > 0
+          ? `Announcement & ${form.files.length} file(s) synced to Trainees' accounts!`
+          : 'Announcement posted successfully!'
+      );
     }
 
     setShowForm(false);
@@ -221,16 +332,84 @@ export function AdminAnnouncements() {
     toast.success(ann.isPinned ? 'Unpinned.' : 'Pinned to top!');
   };
 
-  const filteredAnnouncements = announcements.filter((ann) => {
+  const ayFilteredAnnouncements = announcements.filter((ann) => {
     if (selectedAcademicYear === 'all') return true;
     if (!ann.academicYear) return true;
     return ann.academicYear === selectedAcademicYear;
   });
 
+  const instructorAnnouncementsCount = ayFilteredAnnouncements.filter((a) => isInstructorPost(a)).length;
+
+  const filteredAnnouncements = ayFilteredAnnouncements.filter((ann) => {
+    // 1. Source / Instructor filter
+    if (sourceFilter === 'instructor' && !isInstructorPost(ann)) return false;
+    if (sourceFilter === 'hte' && isInstructorPost(ann)) return false;
+
+    // 2. Type filter
+    if (typeFilter !== 'all' && ann.type !== typeFilter) return false;
+
+    // 3. Search query
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim();
+      const matchTitle = (ann.title || '').toLowerCase().includes(q);
+      const matchContent = (ann.content || '').toLowerCase().includes(q);
+      const matchAuthor = (ann.createdBy || '').toLowerCase().includes(q);
+      if (!matchTitle && !matchContent && !matchAuthor) return false;
+    }
+
+    const now = new Date();
+    const todayStr = toLocalDateStr(now.toISOString());
+    const createdDate = new Date(ann.createdAt);
+    const annDateStr = toLocalDateStr(ann.createdAt);
+    const annTimeStr = toLocalTimeStr(ann.createdAt);
+
+    // 4. Date filter
+    if (filterDate) {
+      if (annDateStr !== filterDate) return false;
+    } else if (datePreset !== 'all') {
+      if (datePreset === 'today') {
+        if (annDateStr !== todayStr) return false;
+      } else if (datePreset === 'week') {
+        const diffDays = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
+        if (diffDays < 0 || diffDays > 7) return false;
+      } else if (datePreset === 'month') {
+        if (
+          createdDate.getFullYear() !== now.getFullYear() ||
+          createdDate.getMonth() !== now.getMonth()
+        ) {
+          return false;
+        }
+      }
+    }
+
+    // 5. Time of Day filter
+    if (timePeriod !== 'all' && !isNaN(createdDate.getTime())) {
+      const hr = createdDate.getHours();
+      if (timePeriod === 'morning' && !(hr >= 0 && hr < 12)) return false;
+      if (timePeriod === 'afternoon' && !(hr >= 12 && hr < 17)) return false;
+      if (timePeriod === 'evening' && !(hr >= 17 && hr <= 23)) return false;
+    }
+
+    // 6. Specific Time filter (HH:mm)
+    if (filterTime) {
+      const [fHour, fMin] = filterTime.split(':');
+      const [aHour] = annTimeStr.split(':');
+      if (fMin === '00') {
+        if (aHour !== fHour) return false;
+      } else {
+        if (annTimeStr !== filterTime) return false;
+      }
+    }
+
+    return true;
+  });
+
   const sorted = [...filteredAnnouncements].sort((a, b) => {
     if (a.isPinned && !b.isPinned) return -1;
     if (!a.isPinned && b.isPinned) return 1;
-    return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    const tA = new Date(a.createdAt).getTime();
+    const tB = new Date(b.createdAt).getTime();
+    return sortOrder === 'newest' ? tB - tA : tA - tB;
   });
 
   const isExpired = (ann: Announcement) => {
@@ -285,23 +464,234 @@ export function AdminAnnouncements() {
       <div className="grid grid-cols-4 gap-3 no-print">
         {(['info', 'warning', 'success', 'urgent'] as Announcement['type'][]).map((type) => {
           const c = TYPE_CONFIG[type];
-          const count = announcements.filter((a) => a.type === type).length;
+          const count = ayFilteredAnnouncements.filter((a) => a.type === type).length;
           return (
-            <div key={type} className={`rounded-2xl p-3 text-center ${c.bg} border ${c.border}`}>
+            <button
+              key={type}
+              type="button"
+              onClick={() => setTypeFilter((prev) => (prev === type ? 'all' : type))}
+              className={`rounded-2xl p-3 text-center ${c.bg} border ${c.border} transition-all cursor-pointer ${
+                typeFilter === type ? 'ring-2 ring-blue-500 scale-[1.01]' : 'hover:opacity-90'
+              }`}
+            >
               <div className={`flex justify-center mb-1 ${c.color}`}>{c.icon}</div>
               <p className={`text-xl font-bold ${c.color}`}>{count}</p>
               <p className="text-xs text-gray-500">{c.label}</p>
-            </div>
+            </button>
           );
         })}
       </div>
 
+      {/* Date & Time Filter Bar */}
+      <div className="bg-white rounded-2xl border border-gray-200 p-4 shadow-xs space-y-3 no-print">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-gray-100">
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="inline-flex items-center gap-1.5 text-xs font-extrabold text-gray-800">
+              <Filter size={14} className="text-blue-600" />
+              Filter Announcements (Date & Time)
+            </span>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setSourceFilter('all')}
+                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                  sourceFilter === 'all'
+                    ? 'bg-gray-900 text-white shadow-2xs'
+                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                }`}
+              >
+                All ({ayFilteredAnnouncements.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSourceFilter('instructor')}
+                className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all inline-flex items-center gap-1 cursor-pointer ${
+                  sourceFilter === 'instructor'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'
+                }`}
+              >
+                <GraduationCap size={12} />
+                Instructor Announcements ({instructorAnnouncementsCount})
+              </button>
+              {ayFilteredAnnouncements.length > instructorAnnouncementsCount && (
+                <button
+                  type="button"
+                  onClick={() => setSourceFilter('hte')}
+                  className={`px-2.5 py-1 rounded-xl text-[11px] font-bold transition-all cursor-pointer ${
+                    sourceFilter === 'hte'
+                      ? 'bg-purple-600 text-white shadow-2xs'
+                      : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                  }`}
+                >
+                  HTE / Other ({ayFilteredAnnouncements.length - instructorAnnouncementsCount})
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-semibold text-gray-500">
+              Showing <strong className="text-gray-800">{sorted.length}</strong> of {ayFilteredAnnouncements.length}
+            </span>
+            {hasActiveFilters && (
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition-colors cursor-pointer"
+              >
+                <RotateCcw size={11} />
+                Reset Filter
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+          {/* Search Input */}
+          <div className="relative sm:col-span-2 lg:col-span-1">
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider block mb-1">
+              Search
+            </label>
+            <div className="relative">
+              <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Title, keyword, instructor..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+              />
+            </div>
+          </div>
+
+          {/* Specific Date Filter */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Calendar size={11} className="text-blue-600" /> Filter by Date
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="date"
+                value={filterDate}
+                onChange={(e) => {
+                  setFilterDate(e.target.value);
+                  if (e.target.value) setDatePreset('all');
+                }}
+                className="w-full px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-700"
+              />
+              {filterDate && (
+                <button
+                  type="button"
+                  onClick={() => setFilterDate('')}
+                  title="Clear date"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 bg-gray-100 rounded-lg cursor-pointer shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Date Period Preset */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Calendar size={11} className="text-emerald-600" /> Date Period
+            </label>
+            <select
+              value={filterDate ? 'custom' : datePreset}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (val === 'custom') return;
+                setFilterDate('');
+                setDatePreset(val as any);
+              }}
+              className="w-full px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-700"
+            >
+              <option value="all">All Dates</option>
+              <option value="today">Today</option>
+              <option value="week">Last 7 Days</option>
+              <option value="month">This Month</option>
+              {filterDate && <option value="custom">Selected: {filterDate}</option>}
+            </select>
+          </div>
+
+          {/* Specific Time Filter */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <Clock size={11} className="text-indigo-600" /> Filter by Time
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="time"
+                value={filterTime}
+                onChange={(e) => setFilterTime(e.target.value)}
+                className="w-full px-2.5 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-700"
+              />
+              {filterTime && (
+                <button
+                  type="button"
+                  onClick={() => setFilterTime('')}
+                  title="Clear time"
+                  className="p-1.5 text-gray-400 hover:text-gray-600 bg-gray-100 rounded-lg cursor-pointer shrink-0"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Time of Day & Sort */}
+          <div>
+            <label className="text-[10px] font-bold text-gray-500 uppercase tracking-wider flex items-center gap-1 mb-1">
+              <ArrowUpDown size={11} className="text-amber-600" /> Time of Day & Sort
+            </label>
+            <div className="flex items-center gap-1">
+              <select
+                value={timePeriod}
+                onChange={(e) => setTimePeriod(e.target.value as any)}
+                className="w-1/2 px-2 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-700"
+              >
+                <option value="all">All Times</option>
+                <option value="morning">Morning (AM)</option>
+                <option value="afternoon">Afternoon (12–5 PM)</option>
+                <option value="evening">Evening (5 PM+)</option>
+              </select>
+              <select
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value as any)}
+                className="w-1/2 px-2 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-gray-700"
+              >
+                <option value="newest">Newest First</option>
+                <option value="oldest">Oldest First</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* List */}
       {sorted.length === 0 ? (
-        <div className="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center">
+        <div className="bg-white rounded-2xl p-10 shadow-sm border border-gray-100 text-center space-y-2">
           <Megaphone size={40} className="text-gray-300 mx-auto mb-3" />
-          <p className="text-gray-500 font-medium">No announcements yet</p>
-          <p className="text-gray-400 text-sm mt-1">Post your first announcement to notify employees</p>
+          <p className="text-gray-500 font-medium">
+            {hasActiveFilters ? 'No announcements match your Date & Time filter' : 'No announcements yet'}
+          </p>
+          <p className="text-gray-400 text-sm mt-1">
+            {hasActiveFilters
+              ? 'Try clearing or adjusting your date and time filters above.'
+              : 'Post your first announcement to notify employees'}
+          </p>
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={resetFilters}
+              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-700 transition-colors cursor-pointer mt-2"
+            >
+              <RotateCcw size={12} />
+              Reset Filters
+            </button>
+          )}
         </div>
       ) : (
         <div className="space-y-3">
@@ -334,21 +724,29 @@ export function AdminAnnouncements() {
                         )}
                       </div>
                       <p className="text-sm text-gray-600 mt-1.5 leading-relaxed">{ann.content}</p>
-                      {ann.photo && (
-                        <AnnouncementAttachmentView photo={ann.photo} allowDownload={true} />
+                      {(ann.photo || (ann.files && ann.files.length > 0)) && (
+                        <AnnouncementAttachmentView photo={ann.photo} files={ann.files} allowDownload={true} />
                       )}
                       {ann.reminder && (
                         <p className="text-xs mt-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1">
                           Reminder: {ann.reminder}
                         </p>
                       )}
-                      <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-400">
-                        <span className="flex items-center gap-1">
-                          <Clock size={10} />{' '}
+                      <div className="flex flex-wrap items-center gap-3 mt-2 text-xs text-gray-500">
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 font-mono text-[11px] text-gray-700">
+                          <Calendar size={11} className="text-blue-600" />{' '}
                           {new Date(ann.createdAt).toLocaleDateString('en-US', {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',
+                          })}
+                        </span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 border border-gray-200 font-mono text-[11px] text-gray-700">
+                          <Clock size={11} className="text-indigo-600" />{' '}
+                          {new Date(ann.createdAt).toLocaleTimeString('en-US', {
+                            hour: 'numeric',
+                            minute: '2-digit',
+                            hour12: true,
                           })}
                         </span>
                         <span className="flex items-center gap-1">
@@ -357,14 +755,14 @@ export function AdminAnnouncements() {
                         {ann.createdBy && (
                           <span
                             className={`px-2 py-0.5 rounded-full text-[10px] font-bold inline-flex items-center gap-1 border ${
-                              ann.createdByRole === 'admin'
+                              isInstructorPost(ann)
                                 ? 'bg-blue-50 text-blue-800 border-blue-200'
                                 : ann.createdByRole === 'employee'
                                 ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                                 : 'bg-purple-50 text-purple-800 border-purple-200'
                             }`}
                           >
-                            {ann.createdByRole === 'admin' ? '🎓 Instructor:' : ann.createdByRole === 'employee' ? '👤 Trainee:' : '🏢 HTE:'} {ann.createdBy}
+                            {isInstructorPost(ann) ? '🎓 Instructor:' : ann.createdByRole === 'employee' ? '👤 Trainee:' : '🏢 HTE:'} {ann.createdBy}
                           </span>
                         )}
                         {ann.expiresAt && (
@@ -554,84 +952,113 @@ export function AdminAnnouncements() {
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">Attachment (optional - Pictures, PDFs, Documents)</label>
-                  <div className="flex items-center gap-3">
-                    <label className="flex-1 flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all text-gray-500 hover:text-blue-600">
+                  <label className="text-xs font-semibold text-gray-600 block mb-1.5">
+                    Attachment(s) (Single or Multiple Files — Automatically synced to Trainees' accounts)
+                  </label>
+                  <div className="space-y-2">
+                    <label className="w-full flex items-center justify-center gap-2 px-4 py-2.5 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all text-gray-500 hover:text-blue-600">
                       <Camera size={18} />
-                      <span className="text-sm font-medium">Choose file from device</span>
+                      <span className="text-sm font-medium">Choose 1 or multiple files from device</span>
                       <input
                         type="file"
+                        multiple
                         accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0];
-                          if (!f) return;
-                          const reader = new FileReader();
-                          reader.onload = () => {
-                            const dataUrl = String(reader.result || '');
-                            if (f.type.startsWith('image/')) {
-                              const testImg = new Image();
-                              testImg.onload = () => {
-                                upd('photo', dataUrl);
-                                toast.success(`Attached ${f.name}`);
+                        onChange={async (e) => {
+                          const selected = Array.from(e.target.files || []);
+                          if (selected.length === 0) return;
+                          const processed: TraineeDocumentFile[] = [];
+                          for (const f of selected) {
+                            const dataUrl = await new Promise<string>((resolve) => {
+                              const reader = new FileReader();
+                              reader.onload = () => resolve(String(reader.result || ''));
+                              reader.onerror = () => resolve('');
+                              reader.readAsDataURL(f);
+                            });
+                            if (!dataUrl) continue;
+                            processed.push({
+                              id: `file-${Date.now()}-${processed.length}`,
+                              name: f.name,
+                              fileType: f.type || 'application/octet-stream',
+                              size: f.size,
+                              uploadedAt: new Date().toISOString(),
+                              dataUrl,
+                              fileUrl: dataUrl,
+                            });
+                          }
+                          if (processed.length > 0) {
+                            setForm((p) => {
+                              const combined = [...(p.files || []), ...processed];
+                              const first = combined[0];
+                              let serialized = '';
+                              if (first) {
+                                if (first.fileType.startsWith('image/')) {
+                                  serialized = first.dataUrl || '';
+                                } else {
+                                  let type: 'pdf' | 'doc' | 'file' = 'file';
+                                  if (first.fileType === 'application/pdf' || first.name.toLowerCase().endsWith('.pdf')) type = 'pdf';
+                                  else if (first.name.match(/\.(doc|docx|txt|rtf|csv|xlsx|xls)$/i)) type = 'doc';
+                                  serialized = JSON.stringify({
+                                    url: first.dataUrl || first.fileUrl,
+                                    name: first.name,
+                                    type,
+                                    size: formatFileSize(Number(first.size)),
+                                  });
+                                }
+                              }
+                              return {
+                                ...p,
+                                title: p.title.trim() ? p.title : first ? first.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ') : p.title,
+                                files: combined,
+                                photo: serialized,
+                                requiresSubmission: true,
                               };
-                              testImg.onerror = () => {
-                                toast.error(`"${f.name}" is not a valid or readable image. Please select a valid photo.`);
-                                upd('photo', '');
-                              };
-                              testImg.src = dataUrl;
-                            } else {
-                              let type: 'pdf' | 'doc' | 'file' = 'file';
-                              if (f.type === 'application/pdf' || f.name.toLowerCase().endsWith('.pdf')) type = 'pdf';
-                              else if (f.name.match(/\.(doc|docx|txt|rtf|csv|xlsx|xls)$/i)) type = 'doc';
-
-                              upd('photo', JSON.stringify({
-                                url: dataUrl,
-                                name: f.name,
-                                type,
-                                size: formatFileSize(f.size),
-                              }));
-                            }
-                          };
-                          reader.readAsDataURL(f);
+                            });
+                            toast.success(`Attached ${processed.length} file${processed.length > 1 ? 's' : ''}`);
+                          }
+                          e.target.value = '';
                         }}
                         className="hidden"
                       />
                     </label>
-                    {form.photo && (() => {
-                      const att = parseAnnouncementAttachment(form.photo);
-                      return (
-                        <div className="relative shrink-0 flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-                          {att?.type === 'image' ? (
-                            <img
-                              src={att.url}
-                              className="w-10 h-10 rounded-lg object-cover"
-                              alt="Preview"
-                              onError={(e) => {
-                                (e.target as HTMLElement).style.display = 'none';
-                              }}
-                            />
-                          ) : att?.type === 'pdf' ? (
-                            <div className="w-10 h-10 rounded-lg bg-red-500 text-white flex items-center justify-center font-bold text-[10px]">
-                              PDF
-                            </div>
-                          ) : (
-                            <div className="w-10 h-10 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold text-[10px]">
-                              DOC
-                            </div>
-                          )}
-                          <span className="text-xs font-semibold text-slate-700 max-w-[120px] truncate" title={att?.name}>
-                            {att?.name}
-                          </span>
-                          <button
-                            type="button"
-                            onClick={() => upd('photo', '')}
-                            className="bg-red-500 text-white rounded-full p-1 shadow-xs hover:bg-red-600 transition-colors"
+                    {(form.files && form.files.length > 0) && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {form.files.map((f, idx) => (
+                          <div
+                            key={`${f.name}-${idx}`}
+                            className="inline-flex items-center gap-2 bg-slate-50 px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs"
                           >
-                            <X size={10} />
-                          </button>
-                        </div>
-                      );
-                    })()}
+                            <span className="font-bold text-blue-700">{idx + 1}.</span>
+                            <span className="font-semibold text-slate-700 max-w-[160px] truncate" title={f.name}>
+                              {f.name}
+                            </span>
+                            <span className="text-[10px] text-slate-400">({formatFileSize(Number(f.size))})</span>
+                            <button
+                              type="button"
+                              onClick={() =>
+                                setForm((p) => {
+                                  const next = (p.files || []).filter((_, i) => i !== idx);
+                                  const first = next[0];
+                                  const nextPhoto = first
+                                    ? first.fileType.startsWith('image/')
+                                      ? first.dataUrl || ''
+                                      : JSON.stringify({
+                                          url: first.dataUrl || first.fileUrl,
+                                          name: first.name,
+                                          type: first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'doc',
+                                          size: formatFileSize(Number(first.size)),
+                                        })
+                                    : '';
+                                  return { ...p, files: next, photo: nextPhoto };
+                                })
+                              }
+                              className="bg-red-500 text-white rounded-full p-0.5 hover:bg-red-600 transition-colors cursor-pointer"
+                            >
+                              <X size={10} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -688,6 +1115,32 @@ export function AdminAnnouncements() {
                       </option>
                     ))}
                   </select>
+                </div>
+
+                {/* Announcement Date & Time */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 flex items-center gap-1 mb-1.5">
+                      <Calendar size={12} className="text-blue-600" /> Announcement Date
+                    </label>
+                    <input
+                      type="date"
+                      value={form.customDate}
+                      onChange={(e) => upd('customDate', e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-semibold text-gray-600 flex items-center gap-1 mb-1.5">
+                      <Clock size={12} className="text-indigo-600" /> Announcement Time
+                    </label>
+                    <input
+                      type="time"
+                      value={form.customTime}
+                      onChange={(e) => upd('customTime', e.target.value)}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-gray-50"
+                    />
+                  </div>
                 </div>
 
                 {/* Expiry */}
@@ -803,7 +1256,7 @@ export function AdminAnnouncements() {
                     const sub = getAnnouncementSubmission(showSubmissionsId, emp.id);
                     if (!sub) return null;
                     return (
-                      <div key={emp.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                      <div key={emp.id} className="p-4 rounded-2xl bg-slate-50 border border-slate-100 space-y-2">
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
                             <p className="font-bold text-gray-800 text-sm">{emp.name}</p>
@@ -812,21 +1265,14 @@ export function AdminAnnouncements() {
                               {sub.message}
                             </p>
                           </div>
-                          {sub.photo && (
-                            <div className="shrink-0">
-                              <a href={sub.photo} target="_blank" rel="noreferrer" className="block relative group">
-                                <img
-                                  src={sub.photo}
-                                  alt="Submission"
-                                  className="w-24 h-24 rounded-xl object-cover border border-slate-200"
-                                />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-xl">
-                                  <Download size={16} className="text-white" />
-                                </div>
-                              </a>
-                            </div>
-                          )}
                         </div>
+                        {(sub.photo || (sub.files && sub.files.length > 0)) && (
+                          <AnnouncementAttachmentView
+                            photo={sub.photo}
+                            files={sub.files}
+                            allowDownload={true}
+                          />
+                        )}
                       </div>
                     );
                   })}

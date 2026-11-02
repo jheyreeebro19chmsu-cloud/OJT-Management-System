@@ -1983,7 +1983,8 @@ export function Dashboard() {
                       </div>
                       <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">{ann.content}</p>
                       <p className="text-xs text-gray-400 mt-1">
-                        {new Date(ann.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ·{' '}
+                        {new Date(ann.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} •{' '}
+                        {new Date(ann.createdAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })} ·{' '}
                         {ann.createdBy}
                       </p>
                     </div>

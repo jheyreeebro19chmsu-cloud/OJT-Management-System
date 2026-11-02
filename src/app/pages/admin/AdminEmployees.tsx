@@ -133,14 +133,182 @@ export function AdminEmployees() {
   >([]);
   const [isUploadingBatch, setIsUploadingBatch] = useState(false);
   const [addDocFile, setAddDocFile] = useState<File | null>(null);
+  const [addDocFiles, setAddDocFiles] = useState<File[]>([]);
   const [addDocTargetKey, setAddDocTargetKey] = useState<string>('new');
   const [docAllowedTypes, setDocAllowedTypes] = useState<string[]>(['.pdf', '.docx', '.png', '.jpg']);
   const [docMaxSizeMB, setDocMaxSizeMB] = useState<number>(10);
   const [docTargetAudience, setDocTargetAudience] = useState<string>('all');
   const [isSavingDoc, setIsSavingDoc] = useState(false);
 
+  const resolveTraineeDocFiles = (empId: string, docKey: string, doc?: any): TraineeDocumentFile[] => {
+    let cachedFiles: TraineeDocumentFile[] | null = null;
+    try {
+      const empObj = employees.find((e) => e.id === empId || e.employeeId === empId);
+      const raw =
+        localStorage.getItem(`ojt_shared_doc_files_${empId}_${docKey}`) ||
+        (empObj?.employeeId ? localStorage.getItem(`ojt_shared_doc_files_${empObj.employeeId}_${docKey}`) : null) ||
+        localStorage.getItem(`ojt_shared_doc_files_${docKey}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) cachedFiles = parsed;
+      }
+    } catch {}
+
+    const baseFiles: TraineeDocumentFile[] =
+      doc?.files && Array.isArray(doc.files) && doc.files.length > 0
+        ? doc.files
+        : cachedFiles && cachedFiles.length > 0
+        ? cachedFiles
+        : doc?.name || doc?.fileUrl || doc?.dataUrl
+        ? [
+            {
+              id: 'file-0',
+              name: doc.name || `${docKey}.pdf`,
+              size: doc.size,
+              dataUrl: doc.dataUrl || doc.fileUrl || '',
+              fileUrl: doc.fileUrl || doc.dataUrl || '',
+              fileType: doc.fileType,
+              uploadedAt: doc.uploadedAt,
+            },
+          ]
+        : [];
+
+    return baseFiles.map((f, idx) => {
+      const cachedMatch = cachedFiles?.[idx] || cachedFiles?.find((cf) => cf.name === f.name);
+      let resolvedData = f.fileUrl || f.dataUrl || cachedMatch?.fileUrl || cachedMatch?.dataUrl || '';
+      if (!resolvedData) {
+        try {
+          resolvedData =
+            localStorage.getItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`) ||
+            sessionStorage.getItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`) ||
+            (idx === 0
+              ? doc?.fileUrl ||
+                doc?.dataUrl ||
+                localStorage.getItem(`ojt_doc_base64_${empId}_${docKey}`) ||
+                localStorage.getItem(`ojt_doc_base64_${docKey}`) ||
+                ''
+              : '');
+        } catch {}
+      }
+      return {
+        ...f,
+        dataUrl: resolvedData,
+        fileUrl: resolveSafeDocumentViewUrl(resolvedData) || resolvedData,
+      };
+    });
+  };
+
+  const handleInstructorUploadTraineeDoc = async (
+    targetTrainee: Employee,
+    docKey: string,
+    docTitle: string,
+    fileList: FileList | null,
+    append: boolean = true
+  ) => {
+    if (!fileList || fileList.length === 0) return;
+    const rawFiles = Array.from(fileList);
+    try {
+      const currentDocs = targetTrainee.submittedDocuments || {};
+      const existingDoc = (currentDocs as any)[docKey];
+      const existingFiles = append ? resolveTraineeDocFiles(targetTrainee.id, docKey, existingDoc) : [];
+
+      const newlyProcessed: TraineeDocumentFile[] = [];
+      for (let i = 0; i < rawFiles.length; i++) {
+        const file = rawFiles[i];
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (e) => resolve(e.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        let remoteUrl = '';
+        try {
+          const u = await uploadDocumentToStorage(targetTrainee.id, `${docKey}_inst_${Date.now()}_${i}`, file, file.name);
+          if (u && u.startsWith('http')) remoteUrl = u;
+        } catch {}
+        const finalUrl = remoteUrl || dataUrl;
+        newlyProcessed.push({
+          id: `inst-up-${Date.now()}-${i}`,
+          name: file.name,
+          size: file.size,
+          dataUrl: finalUrl,
+          fileUrl: finalUrl,
+          fileType: file.type || 'application/pdf',
+          uploadedAt: new Date().toISOString(),
+        });
+      }
+
+      const allFiles = [...existingFiles, ...newlyProcessed];
+      const primary = allFiles[0];
+      const totalBytes = allFiles.reduce((s, f) => s + (Number(f.size) || 0), 0);
+      const displayName = allFiles.length > 1 ? `${allFiles.length} Files (${primary.name})` : primary.name;
+
+      try {
+        const serialized = JSON.stringify(allFiles);
+        localStorage.setItem(`ojt_shared_doc_files_${targetTrainee.id}_${docKey}`, serialized);
+        localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serialized);
+        if (targetTrainee.employeeId) {
+          localStorage.setItem(`ojt_shared_doc_files_${targetTrainee.employeeId}_${docKey}`, serialized);
+        }
+      } catch {}
+
+      const updatedDocItem = {
+        ...(existingDoc || {}),
+        name: displayName,
+        size: totalBytes,
+        dataUrl: primary.dataUrl,
+        fileUrl: primary.fileUrl,
+        fileType: primary.fileType,
+        uploadedAt: new Date().toISOString(),
+        status: existingDoc?.status === 'passed' ? 'passed' : 'submitted',
+        notes: existingDoc?.notes || `Uploaded by ${currentUser?.name || 'Instructor'}`,
+        source: 'portal' as const,
+        files: allFiles,
+      };
+
+      const updatedDocs: TraineeDocuments = {
+        ...currentDocs,
+        [docKey]: updatedDocItem,
+      };
+
+      await updateEmployee(targetTrainee.id, {
+        submittedDocuments: updatedDocs,
+        documentsStatus: targetTrainee.documentsStatus === 'passed' ? 'passed' : 'submitted',
+      });
+      saveDocumentPassStatus(targetTrainee.id, {
+        docKey,
+        status: updatedDocItem.status,
+        submittedDocuments: updatedDocs,
+        documentItem: updatedDocItem,
+      }).catch(console.warn);
+
+      if (selectedEmp && selectedEmp.id === targetTrainee.id) {
+        setSelectedEmp({
+          ...selectedEmp,
+          submittedDocuments: updatedDocs,
+        });
+      }
+      try {
+        window.dispatchEvent(new CustomEvent('ojt_employee_documents_updated'));
+      } catch {}
+      toast.success(
+        `Uploaded ${newlyProcessed.length} file${newlyProcessed.length > 1 ? 's' : ''} to "${docTitle}" for ${targetTrainee.name}! Both accounts can now review.`
+      );
+    } catch (err: any) {
+      console.error('Instructor upload to trainee doc error:', err);
+      toast.error('Failed to upload file(s): ' + (err?.message || 'Error'));
+    }
+  };
+
   const handleAddDocSubmit = async () => {
-    if (!docTitle.trim()) {
+    const filesToProcess = addDocFiles.length > 0 ? addDocFiles : addDocFile ? [addDocFile] : [];
+    const effectiveTitle =
+      docTitle.trim() ||
+      (filesToProcess.length > 0
+        ? filesToProcess[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ')
+        : '');
+
+    if (!effectiveTitle) {
       toast.error('Document title is required.');
       return;
     }
@@ -152,31 +320,57 @@ export function AdminEmployees() {
       let fileName = '';
       let fileSize: number | undefined = undefined;
       let fileType: string | undefined = undefined;
+      const processedFiles: TraineeDocumentFile[] = [];
 
-      if (addDocFile) {
-        fileName = addDocFile.name;
-        fileSize = addDocFile.size;
-        fileType = addDocFile.type || 'application/pdf';
-
-        const fileBase64 = await new Promise<string>((resolve, reject) => {
+      for (let i = 0; i < filesToProcess.length; i++) {
+        const f = filesToProcess[i];
+        const fBase64 = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (e) => resolve(e.target?.result as string);
           reader.onerror = reject;
-          reader.readAsDataURL(addDocFile);
+          reader.readAsDataURL(f);
         });
-        dataUrl = fileBase64;
 
+        let fRemoteUrl = '';
         try {
-          const u = await uploadDocumentToStorage('instructor_templates', addDocTargetKey === 'new' ? `custom_${Date.now()}` : addDocTargetKey, addDocFile, addDocFile.name);
-          if (u && u.startsWith('http')) fileUrl = u;
+          const u = await uploadDocumentToStorage(
+            'instructor_templates',
+            addDocTargetKey === 'new' ? `custom_${Date.now()}_${i}` : `${addDocTargetKey}_${i}`,
+            f,
+            f.name
+          );
+          if (u && u.startsWith('http')) fRemoteUrl = u;
         } catch (uploadErr) {
           console.warn('Template cloud upload notice:', uploadErr);
         }
+
+        const resolvedUrl = fRemoteUrl || fBase64;
+        processedFiles.push({
+          id: `inst-tpl-${Date.now()}-${i}`,
+          name: f.name,
+          size: f.size,
+          dataUrl: resolvedUrl,
+          fileUrl: resolvedUrl,
+          fileType: f.type || 'application/pdf',
+          uploadedAt: new Date().toISOString(),
+        });
+      }
+
+      if (processedFiles.length > 0) {
+        const primary = processedFiles[0];
+        fileName =
+          processedFiles.length > 1
+            ? `${processedFiles.length} Files (${primary.name})`
+            : primary.name;
+        fileSize = processedFiles.reduce((s, f) => s + (Number(f.size) || 0), 0);
+        fileType = primary.fileType || 'application/pdf';
+        dataUrl = primary.dataUrl || '';
+        fileUrl = primary.fileUrl || primary.dataUrl || '';
       }
 
       const finalUrl = fileUrl || dataUrl;
 
-      if (addDocTargetKey && addDocTargetKey !== 'new' && finalUrl) {
+      if (addDocTargetKey && addDocTargetKey !== 'new' && (finalUrl || processedFiles.length > 0)) {
         localStorage.setItem(
           `ojt_template_${addDocTargetKey}`,
           JSON.stringify({
@@ -184,6 +378,7 @@ export function AdminEmployees() {
             url: finalUrl,
             size: fileSize || 0,
             notes: docNotes || docDescription,
+            files: processedFiles,
             uploadedAt: new Date().toISOString(),
           })
         );
@@ -194,8 +389,8 @@ export function AdminEmployees() {
       const targetCourse = docTargetAudience.startsWith('course:') ? docTargetAudience.replace('course:', '') : undefined;
 
       const created = addRequiredDocument(targetEmp, {
-        title: docTitle.trim(),
-        description: docDescription.trim(),
+        title: effectiveTitle,
+        description: docDescription.trim() || `Required document added by ${currentUser?.name || 'OJT Instructor'}.`,
         notes: docNotes.trim(),
         dueDate: docDueDate,
         required: true,
@@ -205,6 +400,7 @@ export function AdminEmployees() {
         fileName: fileName,
         fileSize: fileSize,
         fileType: fileType,
+        files: processedFiles.length > 0 ? processedFiles : undefined,
         uploadedBy: currentUser?.name || 'Instructor',
         instructorId: currentUser?.id,
         templateUrl: finalUrl,
@@ -215,13 +411,14 @@ export function AdminEmployees() {
         targetCourse: targetCourse,
       });
 
-      toast.success(`"${created.title}" published! Trainees can now see and submit it.`);
+      toast.success(`"${created.title}" published! It is now automatically in the trainees' accounts.`);
       setShowAddDocModal(false);
       setDocTitle('');
       setDocDescription('');
       setDocNotes('');
       setDocDueDate('');
       setAddDocFile(null);
+      setAddDocFiles([]);
       setAddDocTargetKey('new');
       setDocAllowedTypes(['.pdf', '.docx', '.png', '.jpg']);
       setDocMaxSizeMB(10);
@@ -312,26 +509,28 @@ export function AdminEmployees() {
         r.targetRequirementKey === docKey ||
         (docTitle && r.title.toLowerCase().trim() === docTitle.toLowerCase().trim())
     );
-    if (match && (match.fileUrl || match.dataUrl)) {
+    if (match && (match.fileUrl || match.dataUrl || (match.files && match.files.length > 0))) {
       return {
-        fileName: match.fileName || `${match.title}.pdf`,
-        fileUrl: match.fileUrl || match.dataUrl,
-        size: match.fileSize,
+        fileName: match.fileName || match.files?.[0]?.name || `${match.title}.pdf`,
+        fileUrl: match.fileUrl || match.dataUrl || match.files?.[0]?.fileUrl || match.files?.[0]?.dataUrl || '',
+        size: match.fileSize || match.files?.[0]?.size,
         notes: match.notes,
+        files: match.files,
         id: match.id,
       };
     }
     // 2. From localStorage
     try {
-      const stored = localStorage.getItem(`ojt_template_${docKey}`);
+      const stored = localStorage.getItem(`ojt_template_${docKey}`) || localStorage.getItem(`ojt_instructor_doc_files_${docKey}`);
       if (stored) {
         const parsed = JSON.parse(stored);
-        if (parsed.url || parsed.dataUrl || parsed.fileUrl) {
+        if (parsed.url || parsed.dataUrl || parsed.fileUrl || (Array.isArray(parsed.files) && parsed.files.length > 0)) {
           return {
-            fileName: parsed.name || parsed.fileName || `${docKey}_template.pdf`,
-            fileUrl: parsed.url || parsed.dataUrl || parsed.fileUrl,
-            size: parsed.size,
+            fileName: parsed.name || parsed.fileName || parsed.files?.[0]?.name || `${docKey}_template.pdf`,
+            fileUrl: parsed.url || parsed.dataUrl || parsed.fileUrl || parsed.files?.[0]?.fileUrl || parsed.files?.[0]?.dataUrl || '',
+            size: parsed.size || parsed.files?.[0]?.size,
             notes: parsed.notes,
+            files: parsed.files,
             id: `template-${docKey}`,
           };
         }
@@ -2662,11 +2861,12 @@ export function AdminEmployees() {
 
                               {/* Documents Interactive Matrix */}
                               <td className="px-4 py-4">
-                                <div className="flex flex-wrap gap-1 max-w-[340px]">
+                                <div className="flex flex-wrap gap-1 max-w-[360px]">
                                   {REQUIRED_TRAINEE_DOCUMENTS.map((req) => {
                                     const doc = getTraineeDocItem(docs, req.key);
+                                    const resolvedFiles = resolveTraineeDocFiles(trainee.id, req.key, doc);
                                     const isDocPassed = doc?.status === 'passed';
-                                    const hasFile = Boolean(doc?.dataUrl || doc?.fileUrl || doc?.name);
+                                    const hasFile = Boolean(doc?.dataUrl || doc?.fileUrl || doc?.name || resolvedFiles.length > 0);
                                     const isPendingDoc = hasFile && !isDocPassed;
 
                                     if (isDocPassed) {
@@ -2674,24 +2874,32 @@ export function AdminEmployees() {
                                         <button
                                           key={req.id}
                                           type="button"
-                                          onClick={() =>
+                                          onClick={() => {
+                                            const firstFile = resolvedFiles[0];
                                             setPreviewInstructorDoc({
                                               studentName: trainee.name,
                                               studentId: trainee.employeeId,
                                               title: `${req.num}. ${req.title}`,
-                                              fileName: doc?.name || `${req.key}.pdf`,
-                                              fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
+                                              fileName: firstFile?.name || doc?.name || `${req.key}.pdf`,
+                                              fileUrl: resolveSafeDocumentViewUrl(firstFile?.fileUrl || firstFile?.dataUrl || doc?.fileUrl || doc?.dataUrl) || undefined,
+                                              files: resolvedFiles.length > 0 ? resolvedFiles : undefined,
+                                              activeFileIndex: 0,
                                               note: doc?.name
                                                 ? `Uploaded file: ${doc.name}${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}${doc.notes ? ` • Note: "${doc.notes}"` : ''}`
                                                 : `Verified requirement.`,
                                               date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Recorded',
-                                            })
-                                          }
+                                            });
+                                          }}
                                           className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100 transition-colors inline-flex items-center gap-1 cursor-pointer"
-                                          title={`${req.title}: PASSED (Click to preview)`}
+                                          title={`${req.title}: PASSED (Click to preview${resolvedFiles.length > 1 ? ` ${resolvedFiles.length} files` : ''})`}
                                         >
                                           <Check size={9} className="stroke-[3]" />
                                           <span className="truncate max-w-[80px]">{req.title.split(' ')[0]}</span>
+                                          {resolvedFiles.length > 1 && (
+                                            <span className="text-[8px] px-1 rounded bg-emerald-200/80 text-emerald-900">
+                                              {resolvedFiles.length}
+                                            </span>
+                                          )}
                                         </button>
                                       );
                                     }
@@ -2701,24 +2909,32 @@ export function AdminEmployees() {
                                         <button
                                           key={req.id}
                                           type="button"
-                                          onClick={() =>
+                                          onClick={() => {
+                                            const firstFile = resolvedFiles[0];
                                             setPreviewInstructorDoc({
                                               studentName: trainee.name,
                                               studentId: trainee.employeeId,
                                               title: `${req.num}. ${req.title}`,
-                                              fileName: doc?.name || `${req.key}.pdf`,
-                                              fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
+                                              fileName: firstFile?.name || doc?.name || `${req.key}.pdf`,
+                                              fileUrl: resolveSafeDocumentViewUrl(firstFile?.fileUrl || firstFile?.dataUrl || doc?.fileUrl || doc?.dataUrl) || undefined,
+                                              files: resolvedFiles.length > 0 ? resolvedFiles : undefined,
+                                              activeFileIndex: 0,
                                               note: doc?.name
                                                 ? `Attached: ${doc.name} (Submitted by Trainee • Awaiting Instructor Review)${doc.source ? ` • Uploaded in ${doc.source === 'registration' ? 'Registration' : 'Portal'}` : ''}${doc.notes ? ` • Note: "${doc.notes}"` : ''}`
                                                 : undefined,
                                               date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Recent submission',
-                                            })
-                                          }
+                                            });
+                                          }}
                                           className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300 hover:bg-amber-200 transition-colors inline-flex items-center gap-1 cursor-pointer animate-pulse"
-                                          title={`${req.title}: Attached & Pending Review (Click to preview)`}
+                                          title={`${req.title}: Attached & Pending Review (Click to preview${resolvedFiles.length > 1 ? ` ${resolvedFiles.length} files` : ''})`}
                                         >
                                           <Clock size={9} />
                                           <span className="truncate max-w-[80px]">{req.title.split(' ')[0]}</span>
+                                          {resolvedFiles.length > 1 && (
+                                            <span className="text-[8px] px-1 rounded bg-amber-200 text-amber-900">
+                                              {resolvedFiles.length}
+                                            </span>
+                                          )}
                                         </button>
                                       );
                                     }
@@ -2733,6 +2949,63 @@ export function AdminEmployees() {
                                       </span>
                                     );
                                   })}
+
+                                  {/* Custom Instructor-Added Requirements in Matrix */}
+                                  {requiredDocuments
+                                    .filter((r) => !r.targetRequirementKey)
+                                    .map((cReq) => {
+                                      const cDoc = (docs as any)?.[cReq.id];
+                                      const resolvedFiles = resolveTraineeDocFiles(trainee.id, cReq.id, cDoc);
+                                      const isDocPassed = cDoc?.status === 'passed';
+                                      const hasFile = Boolean(cDoc?.dataUrl || cDoc?.fileUrl || cDoc?.name || resolvedFiles.length > 0);
+                                      if (hasFile) {
+                                        return (
+                                          <button
+                                            key={cReq.id}
+                                            type="button"
+                                            onClick={() => {
+                                              const firstFile = resolvedFiles[0];
+                                              setPreviewInstructorDoc({
+                                                studentName: trainee.name,
+                                                studentId: trainee.employeeId,
+                                                title: cReq.title,
+                                                fileName: firstFile?.name || cDoc?.name || `${cReq.title}.pdf`,
+                                                fileUrl: resolveSafeDocumentViewUrl(firstFile?.fileUrl || firstFile?.dataUrl || cDoc?.fileUrl || cDoc?.dataUrl) || undefined,
+                                                files: resolvedFiles.length > 0 ? resolvedFiles : undefined,
+                                                activeFileIndex: 0,
+                                                note: cDoc?.notes || `Submitted for ${cReq.title}`,
+                                                date: cDoc?.uploadedAt ? new Date(cDoc.uploadedAt).toLocaleDateString() : 'Submitted',
+                                              });
+                                            }}
+                                            className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors inline-flex items-center gap-1 cursor-pointer ${
+                                              isDocPassed
+                                                ? 'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100'
+                                                : 'bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200'
+                                            }`}
+                                            title={`${cReq.title}: ${isDocPassed ? 'PASSED' : 'SUBMITTED'} (Click to review)`}
+                                          >
+                                            {isDocPassed ? <Check size={9} className="stroke-[3]" /> : <Clock size={9} />}
+                                            <span className="truncate max-w-[80px]">{cReq.title.split(' ')[0]}</span>
+                                            {resolvedFiles.length > 1 && (
+                                              <span className="text-[8px] px-1 rounded bg-white/80">
+                                                {resolvedFiles.length}
+                                              </span>
+                                            )}
+                                          </button>
+                                        );
+                                      }
+                                      return (
+                                        <button
+                                          key={cReq.id}
+                                          type="button"
+                                          onClick={() => openReview(trainee)}
+                                          className="px-1.5 py-0.5 rounded text-[10px] text-violet-500 bg-violet-50/70 border border-dashed border-violet-200 font-semibold hover:bg-violet-100 cursor-pointer"
+                                          title={`Custom Requirement "${cReq.title}": Pending Trainee Upload (Click to open review)`}
+                                        >
+                                          +{cReq.title.split(' ')[0]}
+                                        </button>
+                                      );
+                                    })}
                                 </div>
                               </td>
 
@@ -2915,6 +3188,8 @@ export function AdminEmployees() {
                                       title: doc.title,
                                       fileName: tpl.fileName,
                                       fileUrl: tpl.fileUrl,
+                                      files: tpl.files,
+                                      activeFileIndex: 0,
                                       note: tpl.notes,
                                     });
                                   }}
@@ -3079,8 +3354,10 @@ export function AdminEmployees() {
                                           studentName: 'Template Document',
                                           studentId: 'Instructor File',
                                           title: doc.title,
-                                          fileName: doc.fileName,
-                                          fileUrl: doc.fileUrl || doc.dataUrl,
+                                          fileName: doc.fileName || doc.files?.[0]?.name,
+                                          fileUrl: doc.fileUrl || doc.dataUrl || doc.files?.[0]?.fileUrl || doc.files?.[0]?.dataUrl,
+                                          files: doc.files,
+                                          activeFileIndex: 0,
                                           note: doc.notes,
                                         });
                                       }}
@@ -4401,7 +4678,7 @@ export function AdminEmployees() {
                                       </div>
 
                                       {/* Attachment Right: Actions */}
-                                      <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                                      <div className="flex items-center gap-1.5 shrink-0 flex-wrap self-start sm:self-center">
                                         <button
                                           type="button"
                                           onClick={() => {
@@ -5211,9 +5488,11 @@ export function AdminEmployees() {
                     <div className="space-y-2.5">
                       {REQUIRED_TRAINEE_DOCUMENTS.map((docItem) => {
                         const doc = getTraineeDocItem(selectedEmp.submittedDocuments, docItem.key);
+                        const resolvedFiles = resolveTraineeDocFiles(selectedEmp.id, docItem.key, doc);
                         const isPassed = doc ? doc.status === 'passed' : false;
-                        const hasFile = Boolean(doc?.dataUrl || doc?.fileUrl || doc?.name);
+                        const hasFile = resolvedFiles.length > 0 || Boolean(doc?.dataUrl || doc?.fileUrl || doc?.name);
                         const isPendingDoc = hasFile && !isPassed;
+                        const stdTpl = getStandardDocTemplate(docItem.key);
 
                         return (
                           <div
@@ -5260,23 +5539,59 @@ export function AdminEmployees() {
                                   >
                                     {isPassed ? '✓ PASSED' : isPendingDoc ? 'SUBMITTED • PENDING REVIEW' : 'PENDING'}
                                   </span>
+                                  {resolvedFiles.length > 1 && (
+                                    <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">
+                                      📚 {resolvedFiles.length} Files Attached
+                                    </span>
+                                  )}
+                                  {stdTpl && (
+                                    <span className="text-[9px] font-semibold px-2 py-0.5 rounded-md bg-violet-50 text-violet-700 border border-violet-200 shrink-0">
+                                      Template Provided{stdTpl.files && stdTpl.files.length > 1 ? ` (${stdTpl.files.length})` : ''}
+                                    </span>
+                                  )}
                                 </div>
 
-                                {doc?.name ? (
+                                {doc?.name || resolvedFiles.length > 0 ? (
                                   <div className="flex flex-col gap-1 text-xs text-slate-600 mt-1">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      <span
-                                        className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
-                                        title={doc.name}
-                                      >
-                                        📎 {doc.name}
-                                      </span>
-                                      {doc.size ? (
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {resolvedFiles.length > 1 ? (
+                                        resolvedFiles.map((f, fIdx) => (
+                                          <button
+                                            key={fIdx}
+                                            type="button"
+                                            onClick={() =>
+                                              setPreviewInstructorDoc({
+                                                studentName: selectedEmp.name,
+                                                studentId: selectedEmp.employeeId,
+                                                title: `${docItem.num}. ${docItem.title}`,
+                                                fileName: f.name,
+                                                fileUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl) || undefined,
+                                                note: `File ${fIdx + 1} of ${resolvedFiles.length}: ${f.name}`,
+                                                date: f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                                                files: resolvedFiles,
+                                                activeFileIndex: fIdx,
+                                              })
+                                            }
+                                            className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-blue-700 bg-blue-100/80 hover:bg-blue-200/80 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[180px] cursor-pointer transition-colors"
+                                            title={`Click to preview ${f.name}`}
+                                          >
+                                            📎 {fIdx + 1}. {f.name}
+                                          </button>
+                                        ))
+                                      ) : (
+                                        <span
+                                          className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                          title={doc?.name || resolvedFiles[0]?.name}
+                                        >
+                                          📎 {doc?.name || resolvedFiles[0]?.name}
+                                        </span>
+                                      )}
+                                      {doc?.size ? (
                                         <span className="text-[10px] text-slate-500 font-medium">
                                           {(Number(doc.size) / 1024).toFixed(0)} KB
                                         </span>
                                       ) : null}
-                                      {doc.source ? (
+                                      {doc?.source ? (
                                         <span
                                           className={`text-[9px] font-bold px-1.5 py-0.2 rounded uppercase ${
                                             doc.source === 'registration'
@@ -5287,15 +5602,15 @@ export function AdminEmployees() {
                                           {doc.source === 'registration' ? 'Pre-Registration' : 'Portal'}
                                         </span>
                                       ) : null}
-                                      {doc.uploadedAt ? (
+                                      {doc?.uploadedAt ? (
                                         <span className="text-[10px] text-slate-400">
                                           • {new Date(doc.uploadedAt).toLocaleDateString()}
                                         </span>
                                       ) : null}
                                     </div>
-                                    {(doc.notes || doc.description) && (
+                                    {(doc?.notes || doc?.description) && (
                                       <div className="mt-1 text-[11px] text-violet-800 bg-violet-50/80 border border-violet-100 rounded-lg px-2.5 py-1 flex items-start gap-1.5">
-                                        <span className="font-bold shrink-0">💬 Trainee Note:</span>
+                                        <span className="font-bold shrink-0">💬 Note:</span>
                                         <span className="italic">{doc.notes || doc.description}</span>
                                       </div>
                                     )}
@@ -5313,7 +5628,29 @@ export function AdminEmployees() {
                             </div>
 
                             {/* Attachment Right: Actions */}
-                            <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                            <div className="flex items-center gap-1.5 shrink-0 flex-wrap self-start sm:self-center">
+                              {stdTpl && (stdTpl.fileUrl || (stdTpl.files && stdTpl.files.length > 0)) && (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setPreviewInstructorDoc({
+                                      studentName: 'Instructor Template',
+                                      studentId: 'Official Requirement File',
+                                      title: `${docItem.num}. ${docItem.title}`,
+                                      fileName: stdTpl.fileName,
+                                      fileUrl: stdTpl.fileUrl,
+                                      note: stdTpl.notes || 'Instructor attached template/guide for trainees.',
+                                      files: stdTpl.files,
+                                      activeFileIndex: 0,
+                                    })
+                                  }
+                                  className="py-1.5 px-2.5 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
+                                  title="Preview Instructor Template"
+                                >
+                                  <Eye size={12} /> Template{stdTpl.files && stdTpl.files.length > 1 ? ` (${stdTpl.files.length})` : ''}
+                                </button>
+                              )}
+
                               <button
                                 type="button"
                                 onClick={() =>
@@ -5321,37 +5658,68 @@ export function AdminEmployees() {
                                     studentName: selectedEmp.name,
                                     studentId: selectedEmp.employeeId,
                                     title: `${docItem.num}. ${docItem.title}`,
-                                    fileName: doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
-                                    fileUrl: resolveSafeDocumentViewUrl(doc?.fileUrl || doc?.dataUrl) || undefined,
+                                    fileName: resolvedFiles[0]?.name || doc?.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
+                                    fileUrl: resolveSafeDocumentViewUrl(resolvedFiles[0]?.fileUrl || resolvedFiles[0]?.dataUrl || doc?.fileUrl || doc?.dataUrl) || undefined,
                                     note: doc?.name
-                                      ? `Uploaded File: ${doc.name}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}${doc.source ? ` • Source: ${doc.source === 'registration' ? 'Pre-Registration' : 'Trainee Portal'}` : ''}`
+                                      ? `Uploaded File: ${doc.name}${resolvedFiles.length > 1 ? ` (+${resolvedFiles.length - 1} more file${resolvedFiles.length > 2 ? 's' : ''})` : ''}${doc.size ? ` (${(Number(doc.size) / 1024).toFixed(1)} KB)` : ''}`
                                       : `Verified submission record for ${selectedEmp.name} (${selectedEmp.course || 'OJT Student'}).`,
                                     date: doc?.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                                    files: resolvedFiles.length > 0 ? resolvedFiles : undefined,
+                                    activeFileIndex: 0,
                                   })
                                 }
                                 className="py-1.5 px-3 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                title={hasFile ? 'Preview attached document' : 'View requirement'}
+                                title={hasFile ? 'Preview attached document(s)' : 'View requirement'}
                               >
-                                <Eye size={13} /> {hasFile ? 'Preview' : 'View Doc'}
+                                <Eye size={13} /> {hasFile ? (resolvedFiles.length > 1 ? `Preview (${resolvedFiles.length})` : 'Preview') : 'View Doc'}
                               </button>
 
-                              {hasFile && (doc?.dataUrl || doc?.fileUrl) && (
+                              {hasFile && (resolvedFiles[0]?.dataUrl || resolvedFiles[0]?.fileUrl || doc?.dataUrl || doc?.fileUrl) && (
                                 <button
                                   type="button"
-                                  onClick={() =>
-                                    downloadDocument(
-                                      (doc.dataUrl || doc.fileUrl)!,
-                                      doc.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}`
-                                    )
-                                  }
+                                  onClick={() => {
+                                    if (resolvedFiles.length > 1) {
+                                      resolvedFiles.forEach((f, idx) => {
+                                        const u = f.dataUrl || f.fileUrl;
+                                        if (u) setTimeout(() => downloadDocument(u, f.name || `${docItem.title}_${idx + 1}`), idx * 250);
+                                      });
+                                    } else {
+                                      const u = resolvedFiles[0]?.dataUrl || resolvedFiles[0]?.fileUrl || doc?.dataUrl || doc?.fileUrl;
+                                      if (u) downloadDocument(u, resolvedFiles[0]?.name || doc?.name || `${docItem.title}_${selectedEmp.employeeId}`);
+                                    }
+                                  }}
                                   className="py-1.5 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                  title="Download attached student document"
+                                  title="Download attached document(s)"
                                 >
-                                  <Download size={13} /> Download
+                                  <Download size={13} /> {resolvedFiles.length > 1 ? `Download (${resolvedFiles.length})` : 'Download'}
                                 </button>
                               )}
 
-
+                              {/* Instructor Direct Upload File(s) to Trainee Account */}
+                              <label
+                                className="py-1.5 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                title="Upload 1 or multiple files directly to this trainee's document record"
+                              >
+                                <Upload size={13} /> {hasFile ? '+ Add File(s)' : 'Upload File(s)'}
+                                <input
+                                  type="file"
+                                  multiple
+                                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    if (e.target.files && e.target.files.length > 0) {
+                                      handleInstructorUploadTraineeDoc(
+                                        selectedEmp,
+                                        docItem.key,
+                                        docItem.title,
+                                        e.target.files,
+                                        hasFile
+                                      );
+                                      e.target.value = '';
+                                    }
+                                  }}
+                                />
+                              </label>
 
                               <button
                                 type="button"
@@ -5429,9 +5797,10 @@ export function AdminEmployees() {
                           .filter((r) => !r.targetRequirementKey)
                           .map((cReq, cIdx) => {
                             const cDoc = (selectedEmp.submittedDocuments as any)?.[cReq.id];
+                            const resolvedCustomFiles = resolveTraineeDocFiles(selectedEmp.id, cReq.id, cDoc);
                             const isPassed = cDoc?.status === 'passed';
-                            const hasFile = Boolean(cDoc?.dataUrl || cDoc?.fileUrl || cDoc?.name);
-                            const hasInstructorTpl = Boolean(cReq.fileUrl || cReq.dataUrl || cReq.fileName);
+                            const hasFile = resolvedCustomFiles.length > 0 || Boolean(cDoc?.dataUrl || cDoc?.fileUrl || cDoc?.name);
+                            const hasInstructorTpl = Boolean(cReq.fileUrl || cReq.dataUrl || cReq.fileName || (cReq.files && cReq.files.length > 0));
 
                             return (
                               <div
@@ -5477,27 +5846,58 @@ export function AdminEmployees() {
                                       >
                                         {isPassed ? '✓ PASSED' : hasFile ? 'SUBMITTED' : 'PENDING'}
                                       </span>
+                                      {resolvedCustomFiles.length > 1 && (
+                                        <span className="text-[9px] font-extrabold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">
+                                          📚 {resolvedCustomFiles.length} Files Attached
+                                        </span>
+                                      )}
                                       {hasInstructorTpl && (
                                         <span className="text-[9px] font-semibold px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 border border-indigo-200 shrink-0">
-                                          Template Provided
+                                          Template Provided{cReq.files && cReq.files.length > 1 ? ` (${cReq.files.length})` : ''}
                                         </span>
                                       )}
                                     </div>
 
-                                    {cDoc?.name ? (
-                                      <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
-                                        <span
-                                          className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-violet-700 bg-violet-100/70 border border-violet-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
-                                          title={cDoc.name}
-                                        >
-                                          📎 {cDoc.name}
-                                        </span>
-                                        {cDoc.size ? (
+                                    {cDoc?.name || resolvedCustomFiles.length > 0 ? (
+                                      <div className="flex items-center gap-1.5 text-xs text-slate-600 mt-1 flex-wrap">
+                                        {resolvedCustomFiles.length > 1 ? (
+                                          resolvedCustomFiles.map((f, fIdx) => (
+                                            <button
+                                              key={fIdx}
+                                              type="button"
+                                              onClick={() =>
+                                                setPreviewInstructorDoc({
+                                                  studentName: selectedEmp.name,
+                                                  studentId: selectedEmp.employeeId,
+                                                  title: cReq.title,
+                                                  fileName: f.name,
+                                                  fileUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl) || undefined,
+                                                  note: `File ${fIdx + 1} of ${resolvedCustomFiles.length}: ${f.name}`,
+                                                  date: f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString() : undefined,
+                                                  files: resolvedCustomFiles,
+                                                  activeFileIndex: fIdx,
+                                                })
+                                              }
+                                              className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-violet-700 bg-violet-100/80 hover:bg-violet-200/80 border border-violet-200 px-2 py-0.5 rounded-md truncate max-w-[180px] cursor-pointer transition-colors"
+                                              title={`Click to preview ${f.name}`}
+                                            >
+                                              📎 {fIdx + 1}. {f.name}
+                                            </button>
+                                          ))
+                                        ) : (
+                                          <span
+                                            className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-violet-700 bg-violet-100/70 border border-violet-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                            title={cDoc?.name || resolvedCustomFiles[0]?.name}
+                                          >
+                                            📎 {cDoc?.name || resolvedCustomFiles[0]?.name}
+                                          </span>
+                                        )}
+                                        {cDoc?.size ? (
                                           <span className="text-[10px] text-slate-500 font-medium">
                                             {(Number(cDoc.size) / 1024).toFixed(0)} KB
                                           </span>
                                         ) : null}
-                                        {cDoc.uploadedAt ? (
+                                        {cDoc?.uploadedAt ? (
                                           <span className="text-[10px] text-slate-400">
                                             • {new Date(cDoc.uploadedAt).toLocaleDateString()}
                                           </span>
@@ -5519,7 +5919,7 @@ export function AdminEmployees() {
                                   </div>
                                 </div>
 
-                                <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                                <div className="flex items-center gap-1.5 shrink-0 flex-wrap self-start sm:self-center">
                                   {/* Preview Instructor Template if available */}
                                   {hasInstructorTpl && (
                                     <button
@@ -5529,15 +5929,17 @@ export function AdminEmployees() {
                                           studentName: 'Template Guideline',
                                           studentId: 'Instructor File',
                                           title: cReq.title,
-                                          fileName: cReq.fileName,
-                                          fileUrl: cReq.fileUrl || cReq.dataUrl,
+                                          fileName: cReq.fileName || cReq.files?.[0]?.name,
+                                          fileUrl: cReq.fileUrl || cReq.dataUrl || cReq.files?.[0]?.fileUrl || cReq.files?.[0]?.dataUrl,
                                           note: cReq.notes,
+                                          files: cReq.files,
+                                          activeFileIndex: 0,
                                         })
                                       }
                                       className="py-1.5 px-2.5 rounded-xl bg-gray-100 text-gray-700 hover:bg-gray-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
                                       title="Preview Instructor Template"
                                     >
-                                      <Eye size={12} /> Template
+                                      <Eye size={12} /> Template{cReq.files && cReq.files.length > 1 ? ` (${cReq.files.length})` : ''}
                                     </button>
                                   )}
 
@@ -5550,31 +5952,67 @@ export function AdminEmployees() {
                                           studentName: selectedEmp.name,
                                           studentId: selectedEmp.employeeId,
                                           title: cReq.title,
-                                          fileName: cDoc?.name || `${cReq.title}.pdf`,
-                                          fileUrl: resolveSafeDocumentViewUrl(cDoc?.fileUrl || cDoc?.dataUrl) || undefined,
+                                          fileName: resolvedCustomFiles[0]?.name || cDoc?.name || `${cReq.title}.pdf`,
+                                          fileUrl: resolveSafeDocumentViewUrl(resolvedCustomFiles[0]?.fileUrl || resolvedCustomFiles[0]?.dataUrl || cDoc?.fileUrl || cDoc?.dataUrl) || undefined,
                                           note: cDoc?.notes || `Trainee submission for ${cReq.title}`,
+                                          files: resolvedCustomFiles.length > 0 ? resolvedCustomFiles : undefined,
+                                          activeFileIndex: 0,
                                         })
                                       }
                                       className="py-1.5 px-3 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
                                       title="Preview Trainee Submission"
                                     >
-                                      <Eye size={13} /> View
+                                      <Eye size={13} /> {resolvedCustomFiles.length > 1 ? `View (${resolvedCustomFiles.length})` : 'View'}
                                     </button>
                                   )}
 
                                   {/* Download Student Submission */}
-                                  {hasFile && (cDoc?.dataUrl || cDoc?.fileUrl) && (
+                                  {hasFile && (resolvedCustomFiles[0]?.dataUrl || resolvedCustomFiles[0]?.fileUrl || cDoc?.dataUrl || cDoc?.fileUrl) && (
                                     <button
                                       type="button"
-                                      onClick={() => downloadDocument((cDoc.dataUrl || cDoc.fileUrl)!, cDoc.name || cReq.title)}
+                                      onClick={() => {
+                                        if (resolvedCustomFiles.length > 1) {
+                                          resolvedCustomFiles.forEach((f, idx) => {
+                                            const u = f.dataUrl || f.fileUrl;
+                                            if (u) setTimeout(() => downloadDocument(u, f.name || `${cReq.title}_${idx + 1}`), idx * 250);
+                                          });
+                                        } else {
+                                          const u = resolvedCustomFiles[0]?.dataUrl || resolvedCustomFiles[0]?.fileUrl || cDoc?.dataUrl || cDoc?.fileUrl;
+                                          if (u) downloadDocument(u, resolvedCustomFiles[0]?.name || cDoc?.name || cReq.title);
+                                        }
+                                      }}
                                       className="py-1.5 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center gap-1 cursor-pointer"
                                       title="Download Trainee Submission"
                                     >
-                                      <Download size={13} /> Download
+                                      <Download size={13} /> {resolvedCustomFiles.length > 1 ? `Download (${resolvedCustomFiles.length})` : 'Download'}
                                     </button>
                                   )}
 
-
+                                  {/* Instructor Direct Upload File(s) to Trainee Custom Requirement */}
+                                  <label
+                                    className="py-1.5 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                    title="Upload 1 or multiple files directly to this trainee's custom requirement"
+                                  >
+                                    <Upload size={13} /> {hasFile ? '+ Add File(s)' : 'Upload File(s)'}
+                                    <input
+                                      type="file"
+                                      multiple
+                                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                                      className="hidden"
+                                      onChange={(e) => {
+                                        if (e.target.files && e.target.files.length > 0) {
+                                          handleInstructorUploadTraineeDoc(
+                                            selectedEmp,
+                                            cReq.id,
+                                            cReq.title,
+                                            e.target.files,
+                                            hasFile
+                                          );
+                                          e.target.value = '';
+                                        }
+                                      }}
+                                    />
+                                  </label>
 
                                   {/* Approve / Revoke */}
                                   <button
@@ -6481,28 +6919,82 @@ export function AdminEmployees() {
                 </div>
               </div>
 
-              {/* Template / Starter Form Upload */}
+              {/* Template / Starter Form Upload (Single or Multiple Files) */}
               <div className="pt-2 border-t border-gray-100">
-                <label className="block text-xs font-bold text-gray-700 mb-1">
-                  Attach Official Template / Guide <span className="text-gray-400 font-normal">(Optional — Trainees can download this form)</span>
-                </label>
-                {addDocFile ? (
-                  <div className="p-3 bg-violet-50 rounded-2xl border border-violet-200 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <FileText size={18} className="text-violet-600 shrink-0" />
-                      <div className="min-w-0">
-                        <p className="font-bold text-violet-950 truncate text-xs">{addDocFile.name}</p>
-                        <p className="text-[10px] text-violet-600">{(addDocFile.size / 1024).toFixed(0)} KB • Ready to publish</p>
-                      </div>
-                    </div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-gray-700">
+                    Attach Official Template / File(s) <span className="text-gray-400 font-normal">(Single or multiple files — automatically synced to Trainees' accounts)</span>
+                  </label>
+                  {(addDocFiles.length > 0 || addDocFile) && (
                     <button
                       type="button"
-                      onClick={() => setAddDocFile(null)}
-                      className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
-                      title="Remove attached template"
+                      onClick={() => {
+                        setAddDocFile(null);
+                        setAddDocFiles([]);
+                      }}
+                      className="text-[10px] font-bold text-red-500 hover:text-red-700 cursor-pointer"
                     >
-                      <Trash2 size={15} />
+                      Clear All
                     </button>
+                  )}
+                </div>
+
+                {(addDocFiles.length > 0 || addDocFile) ? (
+                  <div className="space-y-2">
+                    {(addDocFiles.length > 0 ? addDocFiles : addDocFile ? [addDocFile] : []).map((file, idx) => (
+                      <div key={`${file.name}-${idx}`} className="p-2.5 bg-violet-50 rounded-xl border border-violet-200 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <span className="w-6 h-6 rounded-lg bg-violet-600 text-white text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                            {idx + 1}
+                          </span>
+                          <FileText size={16} className="text-violet-600 shrink-0" />
+                          <div className="min-w-0">
+                            <p className="font-bold text-violet-950 truncate text-xs">{file.name}</p>
+                            <p className="text-[10px] text-violet-600">{(file.size / 1024).toFixed(0)} KB • Ready to sync to trainee accounts</p>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const list = addDocFiles.length > 0 ? addDocFiles : addDocFile ? [addDocFile] : [];
+                            const next = list.filter((_, i) => i !== idx);
+                            setAddDocFiles(next);
+                            setAddDocFile(next[0] || null);
+                          }}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded-lg cursor-pointer"
+                          title="Remove attached file"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+
+                    <label
+                      htmlFor="instructor-add-more-template-files"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-violet-100 hover:bg-violet-200 text-violet-800 text-xs font-bold cursor-pointer transition-colors"
+                    >
+                      <Plus size={13} /> Add More Files
+                      <input
+                        type="file"
+                        id="instructor-add-more-template-files"
+                        multiple
+                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.xls,.xlsx"
+                        onChange={(e) => {
+                          const newFiles = Array.from(e.target.files || []);
+                          if (newFiles.length > 0) {
+                            const existing = addDocFiles.length > 0 ? addDocFiles : addDocFile ? [addDocFile] : [];
+                            const combined = [...existing, ...newFiles];
+                            setAddDocFiles(combined);
+                            setAddDocFile(combined[0] || null);
+                            if (!docTitle.trim() && combined[0]) {
+                              setDocTitle(combined[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '));
+                            }
+                          }
+                          e.target.value = '';
+                        }}
+                        className="hidden"
+                      />
+                    </label>
                   </div>
                 ) : (
                   <label
@@ -6511,15 +7003,22 @@ export function AdminEmployees() {
                   >
                     <Upload size={16} className="text-violet-600" />
                     <span className="text-xs font-semibold text-gray-600">
-                      Click to attach a template file (.pdf, .docx, image)
+                      Click to attach 1 or multiple template files (.pdf, .docx, images, .xlsx)
                     </span>
                     <input
                       type="file"
                       id="instructor-new-template-file"
-                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
+                      multiple
+                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.xls,.xlsx"
                       onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) setAddDocFile(file);
+                        const selected = Array.from(e.target.files || []);
+                        if (selected.length > 0) {
+                          setAddDocFiles(selected);
+                          setAddDocFile(selected[0]);
+                          if (!docTitle.trim() && selected[0]) {
+                            setDocTitle(selected[0].name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' '));
+                          }
+                        }
                         e.target.value = '';
                       }}
                       className="hidden"
@@ -6541,7 +7040,7 @@ export function AdminEmployees() {
 
               <button
                 type="button"
-                disabled={!docTitle.trim() || isSavingDoc}
+                disabled={(!docTitle.trim() && addDocTargetKey === 'new' && addDocFiles.length === 0 && !addDocFile) || isSavingDoc}
                 onClick={handleAddDocSubmit}
                 className="inline-flex items-center gap-2 px-5 py-2.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >

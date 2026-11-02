@@ -249,6 +249,10 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
   };
 
   const postAnnouncement = async () => {
+    if (!isAdmin) {
+      Alert.alert('Unauthorized', 'Trainees cannot post announcements. You can comment on announcements below.');
+      return;
+    }
     if (!newTitle.trim() || !newContent.trim()) {
       Alert.alert('Required', 'Title and content are required.');
       return;

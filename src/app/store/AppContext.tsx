@@ -24,6 +24,7 @@ import {
   HostSupervisor,
   TraineeDocuments,
   TraineeDocumentItem,
+  TraineeDocumentFile,
   MonthlyDttrRecord,
   EvaluationQuestionnaire,
   MonitoringReport,
@@ -1095,14 +1096,14 @@ interface AppContextType {
     announcementId: string,
     employeeId: string,
     message: string,
-    photo?: string
+    photo?: string,
+    files?: TraineeDocumentFile[]
   ) => AnnouncementSubmission;
   getAnnouncementSubmission: (announcementId: string, employeeId: string) => AnnouncementSubmission | null;
   getAnnouncementSubmissionStatus: (announcement: Announcement, employeeId: string) => 'passed' | 'missed' | 'pending';
   addAnnouncementComment: (comment: Omit<AnnouncementComment, 'id'>) => Promise<AnnouncementComment>;
   getAnnouncementComments: (announcementId: string) => AnnouncementComment[];
   deleteAnnouncementComment: (announcementId: string, commentId: string) => Promise<boolean>;
-  requiredDocuments: RequiredDocument[];
   addRequiredDocument: (
     employeeId: string,
     data: {
@@ -1117,11 +1118,15 @@ interface AppContextType {
       fileName?: string;
       fileSize?: number | string;
       fileType?: string;
+      files?: TraineeDocumentFile[];
       uploadedBy?: string;
       instructorId?: string;
       templateUrl?: string;
       templateName?: string;
       targetRequirementKey?: string;
+      maxFileSize?: number;
+      allowedFileTypes?: string[];
+      targetCourse?: string;
     }
   ) => RequiredDocument;
   updateRequiredDocument: (id: string, data: Partial<RequiredDocument>) => void;
@@ -1132,7 +1137,16 @@ interface AppContextType {
   submitRequiredDocument: (
     documentId: string,
     employeeId: string,
-    payload: { note?: string; notes?: string; fileName?: string; fileUrl?: string }
+    payload: {
+      note?: string;
+      notes?: string;
+      fileName?: string;
+      fileUrl?: string;
+      fileDataUrl?: string;
+      fileSize?: number | string;
+      fileType?: string;
+      files?: TraineeDocumentFile[];
+    }
   ) => RequiredDocumentSubmission;
   getRequiredDocumentSubmission: (documentId: string, employeeId: string) => RequiredDocumentSubmission | null;
   // Host Feedback
@@ -1885,10 +1899,44 @@ function mergeEmployees(
     const hasRemoteHte = remote.companyName && !isInvalidHteCompany(remote.companyName);
     const hasLocalHte = local.companyName && !isInvalidHteCompany(local.companyName);
 
+    const mergedDocs: TraineeDocuments = { ...(local.submittedDocuments || {}) };
+    if (remote.submittedDocuments) {
+      Object.entries(remote.submittedDocuments).forEach(([docKey, remoteDocItem]) => {
+        if (!remoteDocItem) return;
+        const localDocItem = mergedDocs[docKey];
+        if (!localDocItem) {
+          mergedDocs[docKey] = remoteDocItem;
+        } else {
+          mergedDocs[docKey] = {
+            ...localDocItem,
+            ...remoteDocItem,
+            dataUrl: remoteDocItem.dataUrl || localDocItem.dataUrl,
+            fileUrl: remoteDocItem.fileUrl || localDocItem.fileUrl,
+            files:
+              remoteDocItem.files && remoteDocItem.files.length > 0
+                ? remoteDocItem.files
+                : localDocItem.files && localDocItem.files.length > 0
+                ? localDocItem.files
+                : undefined,
+            description: remoteDocItem.description || localDocItem.description,
+            notes: remoteDocItem.notes || localDocItem.notes,
+            status:
+              remoteDocItem.status === 'passed' || localDocItem.status === 'passed'
+                ? 'passed'
+                : remoteDocItem.status || localDocItem.status,
+          };
+        }
+      });
+    }
+
     // If local has valid HTE assignment but remote does not yet, preserve the assigned HTE
     if (hasLocalHte && !hasRemoteHte) {
       return {
+        ...local,
         ...remote,
+        submittedDocuments: Object.keys(mergedDocs).length > 0 ? mergedDocs : undefined,
+        documentsPassed: remote.documentsPassed !== undefined ? remote.documentsPassed : local.documentsPassed,
+        documentsStatus: remote.documentsStatus || local.documentsStatus,
         companyName: local.companyName,
         supervisorName: local.supervisorName || remote.supervisorName,
         hteId: local.hteId || remote.hteId,
@@ -1898,11 +1946,6 @@ function mergeEmployees(
         registrationRadius: local.registrationRadius || remote.registrationRadius,
       };
     }
-
-    const mergedDocs = {
-      ...(local.submittedDocuments || {}),
-      ...(remote.submittedDocuments || {}),
-    };
 
     return {
       ...local,
@@ -2528,6 +2571,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, filtered);
               }
             }),
+            supabaseService.fetchRequiredDocumentsFromStorage().then((reqDocs) => {
+              if (isMounted && reqDocs && reqDocs.length > 0) {
+                setRequiredDocuments((prev) => {
+                  const merged = [...reqDocs];
+                  for (const p of prev) {
+                    if (!merged.some((m) => m.id === p.id || m.title.toLowerCase().trim() === p.title.toLowerCase().trim())) {
+                      merged.push(p);
+                    }
+                  }
+                  saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, merged);
+                  return merged;
+                });
+              }
+            }),
           ]).finally(() => {
             if (isMounted) {
               setIsLoading(false);
@@ -2992,31 +3049,76 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [evaluations]);
 
   useEffect(() => {
-    if (!useSupabase && announcements.length > 0) {
+    if (announcements.length > 0) {
       saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, announcements);
     }
-  }, [announcements, useSupabase]);
+  }, [announcements]);
   useEffect(() => {
-    if (!useSupabase) {
-      saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, announcementSubmissions);
-    }
-  }, [announcementSubmissions, useSupabase]);
+    saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, announcementSubmissions);
+  }, [announcementSubmissions]);
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, announcementComments);
   }, [announcementComments]);
 
   useEffect(() => {
-    if (!useSupabase) {
-      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, requiredDocuments);
-    }
-  }, [requiredDocuments, useSupabase]);
+    saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, requiredDocuments);
+  }, [requiredDocuments]);
 
   useEffect(() => {
-    if (!useSupabase) {
-      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, requiredDocumentSubmissions);
-    }
-  }, [requiredDocumentSubmissions, useSupabase]);
+    saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, requiredDocumentSubmissions);
+  }, [requiredDocumentSubmissions]);
+
+  // Listen for cross-tab / cross-account updates to documents, employees, and announcements
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleStorageOrDocSync = () => {
+      try {
+        const latestReqDocs = loadFromStorage<RequiredDocument[]>(STORAGE_KEYS.REQUIRED_DOCUMENTS, []);
+        if (latestReqDocs.length > 0) {
+          setRequiredDocuments((prev) => {
+            if (JSON.stringify(prev.map((d) => d.id)) === JSON.stringify(latestReqDocs.map((d) => d.id)) && prev.length === latestReqDocs.length) {
+              return prev;
+            }
+            return latestReqDocs;
+          });
+        }
+        const latestReqSubs = loadFromStorage<RequiredDocumentSubmission[]>(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, []);
+        if (latestReqSubs.length > 0) {
+          setRequiredDocumentSubmissions(latestReqSubs);
+        }
+        const latestAnns = loadFromStorage<Announcement[]>(STORAGE_KEYS.ANNOUNCEMENTS, []);
+        if (latestAnns.length > 0) {
+          setAnnouncements((prev) => {
+            const byId = new Map<string, Announcement>();
+            for (const a of prev) byId.set(a.id, a);
+            for (const a of latestAnns) {
+              const existing = byId.get(a.id);
+              byId.set(a.id, existing ? { ...existing, ...a, files: a.files || existing.files } : a);
+            }
+            return Array.from(byId.values());
+          });
+        }
+        const latestAnnSubs = loadFromStorage<AnnouncementSubmission[]>(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, []);
+        if (latestAnnSubs.length > 0) {
+          setAnnouncementSubmissions(latestAnnSubs);
+        }
+        const latestEmps = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+        if (latestEmps.length > 0) {
+          setEmployees((prev) => mergeEmployees(latestEmps, prev));
+        }
+      } catch {}
+    };
+
+    window.addEventListener('storage', handleStorageOrDocSync);
+    window.addEventListener('ojt_required_documents_updated', handleStorageOrDocSync);
+    window.addEventListener('ojt_employee_documents_updated', handleStorageOrDocSync);
+    return () => {
+      window.removeEventListener('storage', handleStorageOrDocSync);
+      window.removeEventListener('ojt_required_documents_updated', handleStorageOrDocSync);
+      window.removeEventListener('ojt_employee_documents_updated', handleStorageOrDocSync);
+    };
+  }, [setEmployees]);
 
   useEffect(() => {
     saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, monthlyDttrs);
@@ -5442,23 +5544,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   // ─── Announcements ────────────────────────────────────────────────────────────
-  // FIXED: now catches Supabase insert failures instead of silently swallowing them.
-  // If the DB write fails, the optimistic local entry is rolled back so the UI
-  // never shows an announcement that doesn't actually exist in the database.
   const addAnnouncement = (data: Omit<Announcement, 'id'>): Announcement => {
     const dataWithAY = { ...data, academicYear: data.academicYear || settings.activeAcademicYear };
     const newAnn: Announcement = { ...dataWithAY, id: `ann-${Date.now()}` };
 
-    // Optimistically show it right away for a snappy UI
-    setAnnouncements((prev) => [newAnn, ...prev]);
+    if (newAnn.files && newAnn.files.length > 0) {
+      try {
+        localStorage.setItem(`ojt_announcement_files_${newAnn.id}`, JSON.stringify(newAnn.files));
+      } catch {}
+    }
+
+    // Optimistically show it right away and persist to localStorage so Trainees see it immediately
+    setAnnouncements((prev) => {
+      const updated = [newAnn, ...prev];
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+      try {
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
+      return updated;
+    });
 
     if (useSupabase) {
       supabaseService
         .createAnnouncement(dataWithAY)
         .then((created) => {
           if (created) {
-            // Swap the optimistic local copy for the real DB row (real id, timestamps, etc.)
-            setAnnouncements((prev) => prev.map((a) => (a.id === newAnn.id ? created : a)));
+            const enrichedCreated: Announcement = {
+              ...created,
+              files: created.files || newAnn.files,
+            };
+            if (enrichedCreated.files && enrichedCreated.files.length > 0) {
+              try {
+                localStorage.setItem(`ojt_announcement_files_${enrichedCreated.id}`, JSON.stringify(enrichedCreated.files));
+              } catch {}
+            }
+            // Swap the optimistic local copy for the real DB row (preserving multi-file attachments)
+            setAnnouncements((prev) => {
+              const updated = prev.map((a) => (a.id === newAnn.id ? enrichedCreated : a));
+              saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+              try {
+                window.dispatchEvent(new Event('storage'));
+              } catch {}
+              return updated;
+            });
 
             // Background Fire-and-Forget Email Notification
             (async () => {
@@ -5510,22 +5638,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         })
         .catch((err) => {
-          console.error('Failed to save announcement to Supabase:', err);
-          // Roll back the optimistic entry — don't let the UI show something that
-          // isn't actually saved, since it would vanish on next reload anyway.
-          setAnnouncements((prev) => prev.filter((a) => a.id !== newAnn.id));
-          if (typeof window !== 'undefined') {
-            toast.error('Could not save this announcement to the database. Please check your connection and try again.');
-          }
+          console.warn('Supabase createAnnouncement notice (kept locally):', err);
         });
     }
-    // If not using Supabase, it only ever lives in localStorage — by design.
 
     return newAnn;
   };
 
   const updateAnnouncement = (id: string, data: Partial<Announcement>) => {
-    setAnnouncements((prev) => prev.map((a) => (a.id === id ? { ...a, ...data } : a)));
+    if (data.files && data.files.length > 0) {
+      try {
+        localStorage.setItem(`ojt_announcement_files_${id}`, JSON.stringify(data.files));
+      } catch {}
+    }
+    setAnnouncements((prev) => {
+      const updated = prev.map((a) => (a.id === id ? { ...a, ...data } : a));
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+      try {
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
+      return updated;
+    });
 
     if (useSupabase) {
       supabaseService.updateAnnouncement(id, data);
@@ -5533,7 +5666,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const deleteAnnouncement = (id: string) => {
-    setAnnouncements((prev) => prev.filter((a) => a.id !== id));
+    setAnnouncements((prev) => {
+      const updated = prev.filter((a) => a.id !== id);
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+      return updated;
+    });
 
     if (useSupabase) {
       supabaseService.deleteAnnouncement(id);
@@ -5558,6 +5695,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!matchesAudience(a.targetRole, role)) return false;
         return true;
       })
+      .map((a) => {
+        if (!a.files || a.files.length === 0) {
+          try {
+            const cached = localStorage.getItem(`ojt_announcement_files_${a.id}`);
+            if (cached) {
+              const parsed = JSON.parse(cached);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                return { ...a, files: parsed };
+              }
+            }
+          } catch {}
+        }
+        return a;
+      })
       .sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
@@ -5569,7 +5720,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     announcementId: string,
     employeeId: string,
     message: string,
-    photo?: string
+    photo?: string,
+    files?: TraineeDocumentFile[]
   ): AnnouncementSubmission => {
     const now = new Date().toISOString();
     let saved: AnnouncementSubmission = {
@@ -5578,15 +5730,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
       employeeId,
       message,
       photo,
+      files,
       submittedAt: now,
     };
+    if (files && files.length > 0) {
+      try {
+        localStorage.setItem(`ojt_ann_sub_files_${announcementId}_${employeeId}`, JSON.stringify(files));
+      } catch {}
+    }
     setAnnouncementSubmissions((prev) => {
       const existing = prev.find((s) => s.announcementId === announcementId && s.employeeId === employeeId);
+      let updated: AnnouncementSubmission[];
       if (existing) {
-        saved = { ...existing, message, photo, submittedAt: now };
-        return prev.map((s) => (s.id === existing.id ? saved : s));
+        saved = { ...existing, message, photo: photo ?? existing.photo, files: files ?? existing.files, submittedAt: now };
+        updated = prev.map((s) => (s.id === existing.id ? saved : s));
+      } else {
+        updated = [saved, ...prev];
       }
-      return [saved, ...prev];
+      saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, updated);
+      try {
+        window.dispatchEvent(new Event('storage'));
+      } catch {}
+      return updated;
     });
 
     if (useSupabase) {
@@ -5603,9 +5768,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getAnnouncementSubmission = (announcementId: string, employeeId: string): AnnouncementSubmission | null => {
-    return (
-      announcementSubmissions.find((s) => s.announcementId === announcementId && s.employeeId === employeeId) || null
-    );
+    const sub =
+      announcementSubmissions.find((s) => s.announcementId === announcementId && s.employeeId === employeeId) || null;
+    if (!sub) return null;
+    if (!sub.files || sub.files.length === 0) {
+      try {
+        const cached = localStorage.getItem(`ojt_ann_sub_files_${announcementId}_${employeeId}`);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return { ...sub, files: parsed };
+          }
+        }
+      } catch {}
+    }
+    return sub;
   };
 
   const getAnnouncementSubmissionStatus = (
@@ -5758,6 +5935,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fileName?: string;
       fileSize?: number | string;
       fileType?: string;
+      files?: TraineeDocumentFile[];
       uploadedBy?: string;
       instructorId?: string;
       templateUrl?: string;
@@ -5773,7 +5951,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       employeeId,
       title: data.title.trim(),
-      description: notes,
+      description: data.description ? data.description.trim() : notes,
       notes,
       dueDate: data.dueDate || '',
       required: data.required ?? true,
@@ -5784,6 +5962,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fileName: data.fileName,
       fileSize: data.fileSize,
       fileType: data.fileType,
+      files: data.files,
       uploadedBy: data.uploadedBy,
       instructorId: data.instructorId,
       templateUrl: data.templateUrl || data.fileUrl || data.dataUrl,
@@ -5793,6 +5972,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
       allowedFileTypes: data.allowedFileTypes,
       targetCourse: data.targetCourse,
     };
+
+    try {
+      if (typeof window !== 'undefined' && (newDoc.files?.length || newDoc.dataUrl || newDoc.fileUrl)) {
+        const cachePayload = JSON.stringify({
+          fileUrl: newDoc.fileUrl || newDoc.dataUrl,
+          dataUrl: newDoc.dataUrl || newDoc.fileUrl,
+          fileName: newDoc.fileName,
+          files: newDoc.files,
+        });
+        window.localStorage.setItem(`ojt_instructor_doc_files_${newDoc.id}`, cachePayload);
+        if (newDoc.targetRequirementKey) {
+          window.localStorage.setItem(`ojt_instructor_doc_files_${newDoc.targetRequirementKey}`, cachePayload);
+        }
+      }
+    } catch {}
 
     setRequiredDocuments((prev) => {
       const updated = [newDoc, ...prev.filter((d) => d.id !== newDoc.id && d.title.toLowerCase().trim() !== newDoc.title.toLowerCase().trim())];
@@ -5835,10 +6029,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const getEmployeeRequiredDocuments = (employeeId: string): RequiredDocument[] => {
-    // 1. Fetch any specific custom documents added by admin for this employee or all employees
+    // 1. Fetch any specific custom documents added by admin/instructor for this employee or all employees
     const emp = employees.find((e) => e.id === employeeId || e.employeeId === employeeId);
-    const normalizeAY = (ay?: string | null) => (ay || '').replace(/^A\.?Y\.?\s*/i, '').trim().toLowerCase();
-    const activeAY = normalizeAY(settings.activeAcademicYear);
 
     const assignedDocs = requiredDocuments.filter((doc) => {
       // Recipient matching: 'all', matching employeeId, or matching target course
@@ -5846,17 +6038,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
         !doc.employeeId ||
         doc.employeeId === 'all' ||
         doc.employeeId === employeeId ||
-        (emp && doc.employeeId === emp.employeeId) ||
+        (emp && (doc.employeeId === emp.id || doc.employeeId === emp.employeeId)) ||
         (emp?.course && doc.targetCourse && (doc.targetCourse === 'all' || doc.targetCourse === emp.course));
 
       if (!matchesTarget) return false;
-
-      // Academic year matching: loose / normalized comparison
-      const docAY = normalizeAY(doc.academicYear);
-      if (!docAY || docAY === 'all' || !activeAY) return true;
-      if (docAY === activeAY) return true;
-      if (emp?.academicYear && normalizeAY(emp.academicYear) === docAY) return true;
-      return false;
+      return true;
+    }).map((doc) => {
+      if (typeof window !== 'undefined' && (!doc.files || doc.files.length === 0 || (!doc.dataUrl && !doc.fileUrl))) {
+        try {
+          const cachedStr =
+            window.localStorage.getItem(`ojt_instructor_doc_files_${doc.id}`) ||
+            (doc.targetRequirementKey ? window.localStorage.getItem(`ojt_instructor_doc_files_${doc.targetRequirementKey}`) : null);
+          if (cachedStr) {
+            const parsed = JSON.parse(cachedStr);
+            return {
+              ...doc,
+              fileUrl: doc.fileUrl || parsed.fileUrl || parsed.dataUrl,
+              dataUrl: doc.dataUrl || parsed.dataUrl || parsed.fileUrl,
+              fileName: doc.fileName || parsed.fileName,
+              files: doc.files && doc.files.length > 0 ? doc.files : parsed.files,
+            };
+          }
+        } catch {}
+      }
+      return doc;
     });
 
     // 2. Standard mandatory institutional OJT checklist documents
@@ -5913,6 +6118,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fileDataUrl?: string;
       fileSize?: number | string;
       fileType?: string;
+      files?: TraineeDocumentFile[];
     }
   ): RequiredDocumentSubmission => {
     const notes = (payload.notes ?? payload.note ?? '').trim();
@@ -5929,11 +6135,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fileDataUrl: payload.fileDataUrl || '',
       fileSize: payload.fileSize,
       fileType: payload.fileType,
+      files: payload.files,
       status: 'submitted',
     };
 
     setRequiredDocumentSubmissions((prev) => {
       const existing = prev.find((s) => s.documentId === documentId && s.employeeId === employeeId);
+      let updated: RequiredDocumentSubmission[];
       if (existing) {
         saved = {
           ...existing,
@@ -5944,12 +6152,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           fileDataUrl: payload.fileDataUrl || existing.fileDataUrl || '',
           fileSize: payload.fileSize ?? existing.fileSize,
           fileType: payload.fileType ?? existing.fileType,
+          files: payload.files ?? existing.files,
           submittedAt: now,
           status: 'submitted',
         };
-        return prev.map((s) => (s.id === existing.id ? saved : s));
+        updated = prev.map((s) => (s.id === existing.id ? saved : s));
+      } else {
+        updated = [saved, ...prev];
       }
-      return [saved, ...prev];
+      saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, updated);
+      return updated;
     });
 
     // Also sync to employee.submittedDocuments
@@ -5975,15 +6187,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ...(currentEmp.submittedDocuments || {}),
         [finalKey]: {
           name: payload.fileName || 'Uploaded Document.pdf',
-          dataUrl: payload.fileDataUrl || payload.fileUrl || '',
-          fileUrl: payload.fileUrl || '',
-          size: payload.fileSize || 0,
-          fileType: payload.fileType || 'application/pdf',
+          dataUrl: payload.fileDataUrl || payload.fileUrl || prevDoc?.dataUrl || '',
+          fileUrl: payload.fileUrl || payload.fileDataUrl || prevDoc?.fileUrl || '',
+          size: payload.fileSize || prevDoc?.size || 0,
+          fileType: payload.fileType || prevDoc?.fileType || 'application/pdf',
           uploadedAt: now,
           status: newStatus as const,
-          description: payload.notes || payload.note || '',
-          notes: notes,
+          description: payload.notes || payload.note || prevDoc?.description || '',
+          notes: notes || prevDoc?.notes || '',
           source: 'portal' as const,
+          files: payload.files && payload.files.length > 0 ? payload.files : prevDoc?.files,
         },
       } as TraineeDocuments;
 
@@ -5991,6 +6204,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
         submittedDocuments: updatedDocs,
         documentsStatus: 'submitted',
       });
+      try {
+        window.dispatchEvent(new CustomEvent('ojt_employee_documents_updated'));
+      } catch {}
     }
 
     return saved;
@@ -6051,8 +6267,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         matchedDocItem = (emp.submittedDocuments as any)[documentId];
       }
 
-      if (matchedDocItem && (matchedDocItem.fileUrl || matchedDocItem.dataUrl || matchedDocItem.name)) {
-        const sessionCached = typeof window !== 'undefined' ? window.sessionStorage?.getItem(`ojt_doc_data_${documentId}`) : '';
+      if (matchedDocItem && (matchedDocItem.fileUrl || matchedDocItem.dataUrl || matchedDocItem.name || (matchedDocItem.files && matchedDocItem.files.length > 0))) {
+        const sessionCached = typeof window !== 'undefined' ? (window.sessionStorage?.getItem(`ojt_doc_data_${documentId}`) || window.localStorage?.getItem(`ojt_doc_data_${employeeId}_${documentId}`)) : '';
         const isPassed = matchedDocItem.status === 'passed';
         return {
           id: `sub-auto-${documentId}`,
@@ -6060,9 +6276,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
           employeeId,
           submittedAt: matchedDocItem.uploadedAt || new Date().toISOString(),
           fileName: matchedDocItem.name || 'Submitted Document.pdf',
-          fileUrl: matchedDocItem.fileUrl || matchedDocItem.dataUrl || '',
-          fileDataUrl: matchedDocItem.dataUrl || sessionCached || '',
-          note: matchedDocItem.notes || matchedDocItem.note || (isPassed ? 'Verified (passed)' : 'Submitted for review'),
+          fileUrl: matchedDocItem.fileUrl || matchedDocItem.dataUrl || matchedDocItem.files?.[0]?.fileUrl || matchedDocItem.files?.[0]?.dataUrl || '',
+          fileDataUrl: matchedDocItem.dataUrl || matchedDocItem.files?.[0]?.dataUrl || sessionCached || '',
+          files: matchedDocItem.files,
+          note: matchedDocItem.notes || (matchedDocItem as any).note || (isPassed ? 'Verified (passed)' : 'Submitted for review'),
           status: isPassed ? 'approved' : 'submitted',
           verificationStatus: isPassed ? 'passed' : 'pending',
         };

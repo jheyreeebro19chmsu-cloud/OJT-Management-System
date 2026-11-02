@@ -76,6 +76,7 @@ export interface TraineeDocumentItem {
   reviewedAt?: string;
   source?: 'registration' | 'portal';
   files?: TraineeDocumentFile[];
+  title?: string;
 }
 
 export interface TraineeDocuments {
@@ -421,6 +422,7 @@ export interface Announcement {
   title: string;
   content: string;
   photo?: string;
+  files?: TraineeDocumentFile[];
   reminder?: string;
   type: 'info' | 'warning' | 'success' | 'urgent';
   targetRole: 'all' | 'employee' | 'admin' | 'hte' | 'host';
@@ -441,6 +443,7 @@ export interface AnnouncementSubmission {
   employeeId: string;
   message: string;
   photo?: string;
+  files?: TraineeDocumentFile[];
   submittedAt: string;
 }
 
@@ -469,6 +472,7 @@ export interface RequiredDocument {
   fileName?: string;
   fileSize?: number | string;
   fileType?: string;
+  files?: TraineeDocumentFile[];
   uploadedBy?: string;
   instructorId?: string;
   templateUrl?: string;
@@ -491,6 +495,7 @@ export interface RequiredDocumentSubmission {
   fileDataUrl?: string;
   fileSize?: number | string;
   fileType?: string;
+  files?: TraineeDocumentFile[];
   status: 'pending' | 'submitted' | 'approved' | 'rejected';
   verificationStatus?: 'passed' | 'failed' | 'pending';
 }

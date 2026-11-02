@@ -85,12 +85,13 @@ describe('02 - Trainee Portal Features & Workflows', () => {
     cy.contains(/Records|Attendance History|Daily Time Record/i).should('exist');
   });
 
-  it('2.5 Checks Required Documents list and submission states', () => {
+  it('2.5 Checks Required Documents list and submission states, confirms trainee can add more documents and update', () => {
     cy.visit('/app/documents');
     cy.get('body').should('be.visible');
 
-    // Should display OJT documents
+    // Should display OJT documents and the Add Document feature
     cy.contains(/Documents|Requirements|Checklist/i).should('exist');
+    cy.contains(/Add Document/i).should('exist');
   });
 
   it('2.6 Renders Trainee Evaluation Questionnaire', () => {
@@ -99,10 +100,13 @@ describe('02 - Trainee Portal Features & Workflows', () => {
     cy.contains(/Questionnaire|Evaluation|Assessment/i).should('exist');
   });
 
-  it('2.7 Displays Announcements Feed', () => {
+  it('2.7 Displays Announcements Feed and confirms trainee cannot post announcements (only comment)', () => {
     cy.visit('/app/announcements');
     cy.get('body').should('be.visible');
     cy.contains(/Announcements/i).should('exist');
+    // Trainees should not see the announcement creation post box
+    cy.contains(/Create Post/i).should('not.exist');
+    cy.contains(/Post Announcement/i).should('not.exist');
   });
 
   it('2.8 Verifies Trainee Profile and confirms Requirements Checklist is removed', () => {

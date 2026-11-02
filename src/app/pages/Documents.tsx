@@ -24,6 +24,9 @@ import {
   Send,
   Files,
   Plus,
+  Edit2,
+  Sparkles,
+  CheckCircle,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useNavigate, Link } from 'react-router-dom';
@@ -37,6 +40,17 @@ import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl } from '.
 import { logActivity } from '../services/activityLogService';
 
 export const STANDARD_REQUIRED_DOCS = REQUIRED_TRAINEE_DOCUMENTS;
+
+export const COMMON_DOCUMENT_SUGGESTIONS = [
+  { title: 'Barangay Clearance', desc: 'Official Barangay Clearance certificate for OJT internship deployment' },
+  { title: 'Police Clearance', desc: 'National Police Clearance certificate' },
+  { title: 'COVID-19 Vaccination Card', desc: 'Proof of COVID-19 vaccination / DOH VaxCert record' },
+  { title: 'Certificate of Registration (COR)', desc: 'Official student Certificate of Registration for the current academic term' },
+  { title: 'Good Moral Certificate', desc: 'Certificate of Good Moral Character from the Office of Student Affairs' },
+  { title: 'Medical / Health Clearance', desc: 'Fit to Work / Medical Examination Clearance certificate' },
+  { title: 'Student Accident Insurance', desc: 'Official student accident insurance policy or certificate of coverage' },
+  { title: 'Special Order / Endorsement Memo', desc: 'College endorsement letter or departmental special order' },
+];
 
 export interface SubmitDialogFile {
   id: string;
@@ -81,8 +95,12 @@ export function Documents() {
     getCurrentEmployee,
     updateEmployee,
     getEmployeeRequiredDocuments,
+    addRequiredDocument,
+    updateRequiredDocument,
+    deleteRequiredDocument,
     submitRequiredDocument,
     refreshData,
+    settings,
   } = useApp();
   const employee = getCurrentEmployee();
 
@@ -93,6 +111,26 @@ export function Documents() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'attached' | 'missing'>('all');
   const [dragOverKey, setDragOverKey] = useState<string | null>(null);
+
+  // Trainee can add more custom documents
+  const [addDocDialog, setAddDocDialog] = useState<{
+    title: string;
+    description: string;
+    notes: string;
+    files: SubmitDialogFile[];
+  } | null>(null);
+  const [isAddingDoc, setIsAddingDoc] = useState(false);
+
+  // Trainee can edit and update existing documents
+  const [editDocDialog, setEditDocDialog] = useState<{
+    docKey: string;
+    title: string;
+    description: string;
+    notes: string;
+    files: SubmitDialogFile[];
+    isCustom: boolean;
+  } | null>(null);
+  const [isSavingEdit, setIsSavingEdit] = useState(false);
 
   // Proactively fetch latest institutional & departmental requirements posted by instructor on mount
   useEffect(() => {
@@ -178,20 +216,38 @@ export function Documents() {
       let cachedTemplateName = '';
       let cachedTemplateSize: number | string = 0;
       let cachedTemplateNotes = '';
+      let cachedTemplateFiles: TraineeDocumentFile[] | undefined = undefined;
       try {
-        const storedStr = localStorage.getItem(`ojt_template_${std.key}`);
+        const storedStr = localStorage.getItem(`ojt_template_${std.key}`) || localStorage.getItem(`ojt_instructor_doc_files_${std.key}`);
         if (storedStr) {
           const stored = JSON.parse(storedStr);
           cachedTemplateUrl = stored.url || stored.fileUrl || stored.dataUrl || '';
           cachedTemplateName = stored.name || stored.fileName || '';
           cachedTemplateSize = stored.size || 0;
           cachedTemplateNotes = stored.notes || '';
+          if (Array.isArray(stored.files) && stored.files.length > 0) {
+            cachedTemplateFiles = stored.files;
+          }
         }
       } catch {}
 
-      const fileUrl = customMatch?.fileUrl || customMatch?.dataUrl || customMatch?.templateUrl || cachedTemplateUrl;
-      const fileName = customMatch?.fileName || customMatch?.templateName || cachedTemplateName;
-      const fileSize = customMatch?.fileSize || cachedTemplateSize;
+      const instructorFiles =
+        customMatch?.files && customMatch.files.length > 0
+          ? customMatch.files
+          : cachedTemplateFiles;
+      const fileUrl =
+        customMatch?.fileUrl ||
+        customMatch?.dataUrl ||
+        customMatch?.templateUrl ||
+        instructorFiles?.[0]?.fileUrl ||
+        instructorFiles?.[0]?.dataUrl ||
+        cachedTemplateUrl;
+      const fileName =
+        customMatch?.fileName ||
+        customMatch?.templateName ||
+        instructorFiles?.[0]?.name ||
+        cachedTemplateName;
+      const fileSize = customMatch?.fileSize || instructorFiles?.[0]?.size || cachedTemplateSize;
       const notes = customMatch?.notes || customMatch?.description || cachedTemplateNotes;
 
       return {
@@ -199,20 +255,21 @@ export function Documents() {
         custom: false,
         maxFileSize: customMatch?.maxFileSize,
         allowedFileTypes: customMatch?.allowedFileTypes,
-        instructorDoc: fileUrl
+        instructorDoc: fileUrl || (instructorFiles && instructorFiles.length > 0)
           ? {
               fileName: fileName || `${std.title}_Template.pdf`,
-              fileUrl,
-              dataUrl: customMatch?.dataUrl,
+              fileUrl: fileUrl || '',
+              dataUrl: customMatch?.dataUrl || fileUrl || '',
               fileSize,
               notes,
               uploadedAt: customMatch?.createdAt,
+              files: instructorFiles,
             }
           : undefined,
       };
     });
 
-    // 2. Add custom requirements added by the instructor
+    // 2. Add custom requirements added by the instructor or trainee
     for (const custom of customRequiredDocs) {
       const isAlreadyCovered = list.some((d) => {
         return (
@@ -224,13 +281,31 @@ export function Documents() {
       });
 
       if (!isAlreadyCovered) {
+        let customFiles = custom.files;
+        let customFileUrl = custom.fileUrl || custom.dataUrl || custom.templateUrl;
+        let customFileName = custom.fileName || custom.templateName;
+        if ((!customFiles || customFiles.length === 0 || !customFileUrl) && typeof window !== 'undefined') {
+          try {
+            const cachedStr =
+              localStorage.getItem(`ojt_instructor_doc_files_${custom.id}`) ||
+              localStorage.getItem(`ojt_template_${custom.id}`);
+            if (cachedStr) {
+              const parsed = JSON.parse(cachedStr);
+              if (!customFileUrl) customFileUrl = parsed.fileUrl || parsed.dataUrl || parsed.url;
+              if (!customFileName) customFileName = parsed.fileName || parsed.name;
+              if ((!customFiles || customFiles.length === 0) && Array.isArray(parsed.files)) {
+                customFiles = parsed.files;
+              }
+            }
+          } catch {}
+        }
         list.push({
           key: custom.id as any,
           id: custom.id,
           num: String(list.length + 1),
           title: custom.title,
-          subtitle: custom.notes || 'Instructor Required Document',
-          desc: custom.description || 'Departmental required credential for OJT compliance.',
+          subtitle: custom.notes || 'Additional Document',
+          desc: custom.description || 'Departmental or student uploaded credential for OJT compliance.',
           icon: FileText,
           color: 'from-violet-600 to-indigo-700',
           badgeColor: 'bg-violet-100 text-violet-800 border-violet-200',
@@ -239,23 +314,47 @@ export function Documents() {
           maxFileSize: custom.maxFileSize,
           allowedFileTypes: custom.allowedFileTypes,
           targetCourse: custom.targetCourse,
+          traineeAdded: Boolean(custom.employeeId && custom.employeeId !== 'all' && custom.uploadedBy !== 'Instructor'),
           instructorDoc:
-            custom.fileUrl || custom.dataUrl || custom.templateUrl
+            customFileUrl || (customFiles && customFiles.length > 0)
               ? {
-                  fileName: custom.fileName || custom.templateName || `${custom.title}.pdf`,
-                  fileUrl: (custom.fileUrl || custom.dataUrl || custom.templateUrl)!,
-                  dataUrl: custom.dataUrl,
-                  fileSize: custom.fileSize,
+                  fileName: customFileName || customFiles?.[0]?.name || `${custom.title}.pdf`,
+                  fileUrl: (customFileUrl || customFiles?.[0]?.fileUrl || customFiles?.[0]?.dataUrl || '')!,
+                  dataUrl: custom.dataUrl || customFileUrl || customFiles?.[0]?.dataUrl,
+                  fileSize: custom.fileSize || customFiles?.[0]?.size,
                   notes: custom.notes,
                   uploadedAt: custom.createdAt,
+                  files: customFiles,
                 }
               : undefined,
         });
       }
     }
 
+    // 3. Also include any extra custom documents present in submittedDocs that are not in list
+    for (const [key, docItem] of Object.entries(submittedDocs)) {
+      if (!docItem || typeof docItem !== 'object') continue;
+      const isCovered = list.some((d) => d.key === key || d.id === key);
+      const isAlias = ['parent_consent', 'memorandum', 'clearance', 'endorsement_letter', 'application_letter', 'training_plan', 'agreement'].includes(key);
+      if (!isCovered && !isAlias) {
+        list.push({
+          key: key as any,
+          id: key,
+          num: String(list.length + 1),
+          title: (docItem as any).title || docItem.name || 'Additional Document',
+          subtitle: docItem.notes || 'Additional Document',
+          desc: docItem.description || 'Additional submitted compliance document.',
+          icon: FileText,
+          color: 'from-emerald-600 to-teal-700',
+          badgeColor: 'bg-emerald-100 text-emerald-800 border-emerald-200',
+          custom: true,
+          traineeAdded: true,
+        });
+      }
+    }
+
     return list;
-  }, [customRequiredDocs, employee?.id]);
+  }, [customRequiredDocs, employee?.id, submittedDocs]);
 
   const totalRequired = allDocRequirements.length;
   const uploadedCount = allDocRequirements.filter((k) => {
@@ -573,10 +672,24 @@ export function Documents() {
     }
   };
 
-  const handlePreviewDoc = (docKey: string, doc: TraineeDocumentItem, item: any) => {
-    const filesList: TraineeDocumentFile[] =
+  const handlePreviewDoc = (docKey: string, doc: TraineeDocumentItem, item: any, initialActiveIndex: number = 0) => {
+    const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
+    let cachedFiles: TraineeDocumentFile[] | null = null;
+    try {
+      const raw =
+        localStorage.getItem(`ojt_shared_doc_files_${empId}_${docKey}`) ||
+        localStorage.getItem(`ojt_shared_doc_files_${docKey}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) cachedFiles = parsed;
+      }
+    } catch {}
+
+    const baseFiles =
       doc.files && doc.files.length > 0
         ? doc.files
+        : cachedFiles && cachedFiles.length > 0
+        ? cachedFiles
         : [
             {
               id: 'file-1',
@@ -589,22 +702,41 @@ export function Documents() {
             },
           ];
 
-    const firstFile = filesList[0];
-    const initialUrl = resolveSafeDocumentViewUrl(firstFile.fileUrl || firstFile.dataUrl || resolveDocDataUrl(docKey, doc));
+    const filesList: TraineeDocumentFile[] = baseFiles.map((f, idx) => {
+      const cachedMatch = cachedFiles?.[idx] || cachedFiles?.find((cf) => cf.name === f.name);
+      let fileDataUrl = f.fileUrl || f.dataUrl || cachedMatch?.fileUrl || cachedMatch?.dataUrl || '';
+      if (!fileDataUrl) {
+        try {
+          fileDataUrl =
+            sessionStorage.getItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`) ||
+            localStorage.getItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`) ||
+            (idx === 0 ? resolveDocDataUrl(docKey, doc) : '');
+        } catch {}
+      }
+      return {
+        ...f,
+        dataUrl: fileDataUrl,
+        fileUrl: resolveSafeDocumentViewUrl(fileDataUrl),
+      };
+    });
+
+    const safeIndex = Math.min(Math.max(0, initialActiveIndex), filesList.length - 1);
+    const activeFile = filesList[safeIndex] || filesList[0];
+    const initialUrl = resolveSafeDocumentViewUrl(activeFile.fileUrl || activeFile.dataUrl || resolveDocDataUrl(docKey, doc));
 
     setPreviewDoc({
       key: docKey,
       title: item.title,
       subtitle: item.subtitle,
-      fileName: firstFile.name,
+      fileName: activeFile.name,
       dataUrl: initialUrl,
       uploadedAt: doc.uploadedAt,
-      fileSize: firstFile.size || doc.size,
-      status: doc.status || 'passed',
+      fileSize: activeFile.size || doc.size,
+      status: doc.status === 'passed' ? 'passed' : 'pending',
       description: doc.description,
       notes: doc.notes,
       files: filesList,
-      activeFileIndex: 0,
+      activeFileIndex: safeIndex,
     });
   };
 
@@ -696,23 +828,39 @@ export function Documents() {
             id: item.id || `file-${Date.now()}-${idx}`,
             name: item.name,
             size: item.size,
-            dataUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''),
-            fileUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''),
+            dataUrl: remoteUrl || dataUrl,
+            fileUrl: remoteUrl || dataUrl,
             fileType: item.fileType || item.file.type || 'application/octet-stream',
             uploadedAt: new Date().toISOString(),
           });
+          try {
+            localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`, remoteUrl || dataUrl);
+            if (idx === 0) {
+              localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, remoteUrl || dataUrl);
+              localStorage.setItem(`ojt_doc_base64_${docKey}`, remoteUrl || dataUrl);
+            }
+          } catch {}
         } else {
           processedFiles.push({
             id: item.id || `file-${Date.now()}-${idx}`,
             name: item.name,
             size: item.size,
             dataUrl: item.dataUrl,
-            fileUrl: item.fileUrl,
+            fileUrl: item.fileUrl || item.dataUrl,
             fileType: item.fileType,
             uploadedAt: new Date().toISOString(),
           });
         }
       }
+
+      try {
+        const serializedFiles = JSON.stringify(processedFiles);
+        localStorage.setItem(`ojt_shared_doc_files_${empId}_${docKey}`, serializedFiles);
+        localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serializedFiles);
+        if (employee?.employeeId) {
+          localStorage.setItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`, serializedFiles);
+        }
+      } catch {}
 
       const passStatus: 'passed' | 'submitted' = markAsPassed ? 'passed' : 'submitted';
       const primaryFile = processedFiles[0];
@@ -775,6 +923,7 @@ export function Documents() {
           fileDataUrl: primaryFile.dataUrl,
           fileSize: totalBytes,
           fileType: primaryFile.fileType,
+          files: processedFiles,
           note: (customNotes ?? '').trim(),
           notes: (customDescription ?? '').trim(),
         });
@@ -820,6 +969,15 @@ export function Documents() {
   };
 
   const handleRemoveDoc = (docKey: string) => {
+    const meta = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
+    const isCustom = meta?.custom || meta?.traineeAdded;
+
+    if (isCustom) {
+      if (!window.confirm(`Are you sure you want to remove the document "${meta?.title || docKey}"?`)) {
+        return;
+      }
+    }
+
     const updatedDocs: TraineeDocuments = { ...submittedDocs };
     delete (updatedDocs as any)[docKey];
     if (docKey === 'consent') delete (updatedDocs as any).parent_consent;
@@ -852,6 +1010,7 @@ export function Documents() {
     } catch {}
 
     const remainingCount = allDocRequirements.filter((req) => {
+      if (req.key === docKey) return false;
       const doc =
         updatedDocs[req.key as keyof TraineeDocuments] ||
         (req.key === 'consent' ? (updatedDocs as any).parent_consent : undefined) ||
@@ -883,8 +1042,338 @@ export function Documents() {
       }).catch(console.warn);
     }
 
-    const meta = allDocRequirements.find((d) => d.key === docKey);
-    toast.info(`${meta?.title || 'Document'} removed. Status changed to PENDING.`);
+    if (isCustom && deleteRequiredDocument) {
+      deleteRequiredDocument(docKey);
+    }
+
+    toast.info(`${meta?.title || 'Document'} removed.`);
+  };
+
+  const handleAddDialogAddFiles = (fileList: FileList | null) => {
+    if (!fileList || !addDocDialog) return;
+    const rawFiles = Array.from(fileList);
+    const validFiles: SubmitDialogFile[] = [];
+
+    for (const file of rawFiles) {
+      const check = isFileTypeAllowed(file);
+      if (!check.allowed) {
+        toast.error(`"${file.name}": ${check.reason || 'Unsupported format'}`);
+        continue;
+      }
+      if (file.size < 200) {
+        toast.error(`"${file.name}": File is empty or corrupted.`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`"${file.name}": File exceeds 10MB limit.`);
+        continue;
+      }
+      validFiles.push({
+        id: `add-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        file,
+        name: file.name,
+        size: file.size,
+        fileType: file.type || 'application/octet-stream',
+      });
+    }
+
+    if (validFiles.length > 0) {
+      setAddDocDialog({
+        ...addDocDialog,
+        files: [...addDocDialog.files, ...validFiles],
+      });
+      toast.success(`Added ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}.`);
+    }
+  };
+
+  const handleAddDialogRemoveFile = (index: number) => {
+    if (!addDocDialog) return;
+    setAddDocDialog({
+      ...addDocDialog,
+      files: addDocDialog.files.filter((_, i) => i !== index),
+    });
+  };
+
+  const handleAddDocumentSubmit = async () => {
+    if (!addDocDialog) return;
+    const title = addDocDialog.title.trim();
+    if (!title) {
+      toast.error('Please enter a document title or pick a suggestion.');
+      return;
+    }
+
+    const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    if (!targetEmpId) {
+      toast.error('User profile not found. Please log in again.');
+      return;
+    }
+
+    setIsAddingDoc(true);
+    try {
+      // 1. Add requirement to AppContext / storage
+      const createdReq = addRequiredDocument(targetEmpId, {
+        title,
+        description: addDocDialog.description.trim() || 'Custom OJT document submitted by trainee.',
+        notes: addDocDialog.notes.trim() || '',
+        required: false,
+        academicYear: settings?.activeAcademicYear,
+      });
+      const docKey = createdReq?.id || `doc-custom-${Date.now()}`;
+
+      // 2. If files were selected, upload and attach them
+      if (addDocDialog.files.length > 0) {
+        await handleFileUpload(
+          docKey,
+          addDocDialog.files,
+          addDocDialog.description.trim(),
+          addDocDialog.notes.trim(),
+          false
+        );
+      } else {
+        toast.success(`Document requirement "${title}" added! You can attach files anytime.`);
+      }
+
+      setAddDocDialog(null);
+    } catch (err: any) {
+      console.error('Failed to add document:', err);
+      toast.error('Failed to add document: ' + (err?.message || 'Error occurred'));
+    } finally {
+      setIsAddingDoc(false);
+    }
+  };
+
+  const openEditDocDialog = (item: any) => {
+    const doc = getDocItem(item.key);
+    let existingFiles: SubmitDialogFile[] = [];
+    if (doc?.files && doc.files.length > 0) {
+      existingFiles = doc.files.map((f, i) => ({
+        id: f.id || `file-${i}`,
+        name: f.name,
+        size: f.size || 0,
+        dataUrl: f.dataUrl,
+        fileUrl: f.fileUrl,
+        fileType: f.fileType,
+      }));
+    } else if (doc?.name) {
+      existingFiles = [
+        {
+          id: 'file-0',
+          name: doc.name,
+          size: doc.size || 0,
+          dataUrl: doc.dataUrl,
+          fileUrl: doc.fileUrl,
+          fileType: doc.fileType,
+        },
+      ];
+    }
+
+    setEditDocDialog({
+      docKey: item.key,
+      title: (doc as any)?.title || item.title,
+      description: doc?.description || (item.custom ? '' : item.desc) || '',
+      notes: doc?.notes || '',
+      files: existingFiles,
+      isCustom: Boolean(item.custom || item.traineeAdded),
+    });
+  };
+
+  const handleEditDialogAddFiles = (fileList: FileList | null) => {
+    if (!fileList || !editDocDialog) return;
+    const rawFiles = Array.from(fileList);
+    const validFiles: SubmitDialogFile[] = [];
+
+    for (const file of rawFiles) {
+      const check = isFileTypeAllowed(file);
+      if (!check.allowed) {
+        toast.error(`"${file.name}": ${check.reason || 'Unsupported format'}`);
+        continue;
+      }
+      if (file.size < 200) {
+        toast.error(`"${file.name}": File is empty or corrupted.`);
+        continue;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        toast.error(`"${file.name}": File exceeds 10MB limit.`);
+        continue;
+      }
+      validFiles.push({
+        id: `edit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+        file,
+        name: file.name,
+        size: file.size,
+        fileType: file.type || 'application/octet-stream',
+      });
+    }
+
+    if (validFiles.length > 0) {
+      setEditDocDialog({
+        ...editDocDialog,
+        files: [...editDocDialog.files, ...validFiles],
+      });
+      toast.success(`Added ${validFiles.length} file${validFiles.length > 1 ? 's' : ''}.`);
+    }
+  };
+
+  const handleEditDialogRemoveFile = (index: number) => {
+    if (!editDocDialog) return;
+    setEditDocDialog({
+      ...editDocDialog,
+      files: editDocDialog.files.filter((_, i) => i !== index),
+    });
+  };
+
+  const handleEditDocumentSubmit = async () => {
+    if (!editDocDialog) return;
+    const { docKey, title, description, notes, files, isCustom } = editDocDialog;
+    const cleanTitle = title.trim();
+    if (!cleanTitle) {
+      toast.error('Document title cannot be empty.');
+      return;
+    }
+
+    const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    setIsSavingEdit(true);
+
+    try {
+      const processedFiles: TraineeDocumentFile[] = [];
+      for (let idx = 0; idx < files.length; idx++) {
+        const item = files[idx];
+        if (item.file) {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = (e) => resolve(e.target?.result as string);
+            reader.onerror = reject;
+            reader.readAsDataURL(item.file!);
+          });
+
+          let remoteUrl = '';
+          try {
+            const storedUrl = await Promise.race([
+              uploadDocumentToStorage(targetEmpId, `${docKey}_${idx}_${Date.now()}`, item.file, item.file.name),
+              new Promise<string>((_, reject) =>
+                setTimeout(() => reject(new Error('Storage upload timed out')), 25000)
+              ),
+            ]);
+            if (storedUrl && storedUrl.startsWith('http')) {
+              remoteUrl = storedUrl;
+            }
+          } catch {}
+
+          processedFiles.push({
+            id: item.id || `file-${Date.now()}-${idx}`,
+            name: item.name,
+            size: item.size,
+            dataUrl: remoteUrl || dataUrl,
+            fileUrl: remoteUrl || dataUrl,
+            fileType: item.fileType || item.file.type || 'application/octet-stream',
+            uploadedAt: new Date().toISOString(),
+          });
+          try {
+            localStorage.setItem(`ojt_doc_base64_${targetEmpId}_${docKey}_${idx}`, remoteUrl || dataUrl);
+            if (idx === 0) {
+              localStorage.setItem(`ojt_doc_base64_${targetEmpId}_${docKey}`, remoteUrl || dataUrl);
+              localStorage.setItem(`ojt_doc_base64_${docKey}`, remoteUrl || dataUrl);
+            }
+          } catch {}
+        } else {
+          processedFiles.push({
+            id: item.id || `file-${Date.now()}-${idx}`,
+            name: item.name,
+            size: item.size,
+            dataUrl: item.dataUrl,
+            fileUrl: item.fileUrl || item.dataUrl,
+            fileType: item.fileType,
+            uploadedAt: new Date().toISOString(),
+          });
+        }
+      }
+
+      try {
+        const serializedFiles = JSON.stringify(processedFiles);
+        localStorage.setItem(`ojt_shared_doc_files_${targetEmpId}_${docKey}`, serializedFiles);
+        localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serializedFiles);
+        if (employee?.employeeId) {
+          localStorage.setItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`, serializedFiles);
+        }
+      } catch {}
+
+      const existingDoc = submittedDocs[docKey];
+      const hasFiles = processedFiles.length > 0;
+      const primaryFile = processedFiles[0];
+      const count = processedFiles.length;
+      const displayName = hasFiles
+        ? count > 1
+          ? `${count} Files (${primaryFile.name})`
+          : primaryFile.name
+        : existingDoc?.name || '';
+      const totalBytes = processedFiles.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
+
+      const updatedDocItem: TraineeDocumentItem = {
+        name: displayName,
+        size: totalBytes || existingDoc?.size || 0,
+        dataUrl: primaryFile?.dataUrl || existingDoc?.dataUrl,
+        fileUrl: primaryFile?.fileUrl || existingDoc?.fileUrl,
+        fileType: primaryFile?.fileType || existingDoc?.fileType,
+        uploadedAt: existingDoc?.uploadedAt || new Date().toISOString(),
+        status: existingDoc?.status || (hasFiles ? 'submitted' : 'pending'),
+        description: description.trim(),
+        notes: notes.trim(),
+        source: 'portal',
+        files: processedFiles,
+        title: isCustom ? cleanTitle : undefined,
+      };
+
+      const updatedDocs: TraineeDocuments = {
+        ...submittedDocs,
+        [docKey]: updatedDocItem,
+      };
+
+      setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: updatedDocItem }));
+
+      if (employee) {
+        updateEmployee(employee.id, {
+          submittedDocuments: updatedDocs,
+        });
+      }
+
+      if (targetEmpId) {
+        saveDocumentPassStatus(targetEmpId, {
+          docKey,
+          status: updatedDocItem.status || 'submitted',
+          submittedDocuments: updatedDocs,
+          documentItem: updatedDocItem,
+        }).catch(console.warn);
+
+        if (hasFiles) {
+          submitRequiredDocument(docKey, targetEmpId, {
+            fileName: displayName,
+            fileUrl: primaryFile?.fileUrl || primaryFile?.dataUrl,
+            fileDataUrl: primaryFile?.dataUrl,
+            fileSize: totalBytes,
+            fileType: primaryFile?.fileType,
+            files: processedFiles,
+            note: notes.trim(),
+            notes: description.trim(),
+          });
+        }
+      }
+
+      if (isCustom && updateRequiredDocument) {
+        updateRequiredDocument(docKey, {
+          title: cleanTitle,
+          description: description.trim(),
+          notes: notes.trim(),
+        });
+      }
+
+      toast.success(`Document "${cleanTitle}" updated successfully!`);
+      setEditDocDialog(null);
+    } catch (err: any) {
+      console.error('Failed to update document:', err);
+      toast.error('Failed to update document: ' + (err?.message || 'Error occurred'));
+    } finally {
+      setIsSavingEdit(false);
+    }
   };
 
   const formatFileSize = (bytes?: string | number) => {
@@ -917,7 +1406,23 @@ export function Documents() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 self-start sm:self-center shrink-0">
+        <div className="flex items-center gap-2.5 self-start sm:self-center shrink-0 flex-wrap">
+          <button
+            type="button"
+            onClick={() =>
+              setAddDocDialog({
+                title: '',
+                description: '',
+                notes: '',
+                files: [],
+              })
+            }
+            className="px-4 py-2 rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold inline-flex items-center gap-2 shadow-md shadow-blue-200 transition-all cursor-pointer hover:shadow-lg hover:scale-[1.02] active:scale-[0.98]"
+            title="Add another document to your records"
+          >
+            <Plus size={16} /> Add Document
+          </button>
+
           <span
             className={`px-3.5 py-1.5 rounded-full text-xs font-bold border flex items-center gap-1.5 shadow-sm ${
               isAllPassed
@@ -1129,6 +1634,22 @@ export function Documents() {
               <Clock size={13} />
               Action Needed ({missingCount})
             </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setAddDocDialog({
+                  title: '',
+                  description: '',
+                  notes: '',
+                  files: [],
+                })
+              }
+              className="px-3.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold transition-all whitespace-nowrap cursor-pointer flex items-center gap-1.5 ml-auto sm:ml-0"
+              title="Add a custom document to your list"
+            >
+              <Plus size={13} /> Add Document
+            </button>
           </div>
 
           <div className="relative w-full sm:w-72">
@@ -1230,45 +1751,77 @@ export function Documents() {
 
                         {/* Instructor Template Chip if provided */}
                         {(item as any).instructorDoc && (
-                          <div className="mt-2 inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200/80 text-violet-900 text-[11px]">
-                            <FileText size={13} className="text-violet-600 shrink-0" />
-                            <span className="font-semibold truncate max-w-[170px]" title={(item as any).instructorDoc.fileName}>
-                              Template: {(item as any).instructorDoc.fileName}
-                            </span>
-                            <div className="flex items-center gap-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const docInfo = (item as any).instructorDoc;
-                                  const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
-                                  setPreviewDoc({
-                                    key: item.key,
-                                    title: `Instructor Document: ${item.title}`,
-                                    subtitle: docInfo.fileName,
-                                    fileName: docInfo.fileName || `${item.key}_template.pdf`,
-                                    dataUrl: url,
-                                    fileSize: docInfo.fileSize,
-                                    status: 'passed',
-                                    description: item.desc,
-                                    notes: docInfo.notes,
-                                  });
-                                }}
-                                className="text-violet-700 hover:text-violet-900 font-bold hover:underline"
-                              >
-                                View
-                              </button>
-                              <span>•</span>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  const docInfo = (item as any).instructorDoc;
-                                  const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
-                                  downloadDocument(url, docInfo.fileName || `${item.key}_instructor_doc`);
-                                }}
-                                className="text-violet-700 hover:text-violet-900 font-bold hover:underline"
-                              >
-                                Download
-                              </button>
+                          <div className="mt-2 flex flex-col gap-1">
+                            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200/80 text-violet-900 text-[11px] w-fit max-w-full">
+                              <FileText size={13} className="text-violet-600 shrink-0" />
+                              <span className="font-semibold truncate max-w-[170px]" title={(item as any).instructorDoc.fileName}>
+                                Template: {(item as any).instructorDoc.fileName}
+                              </span>
+                              {(item as any).instructorDoc.files && (item as any).instructorDoc.files.length > 1 && (
+                                <span className="px-1.5 py-0.5 rounded bg-violet-200/80 text-violet-900 font-extrabold text-[9px] shrink-0">
+                                  {(item as any).instructorDoc.files.length} Files
+                                </span>
+                              )}
+                              <div className="flex items-center gap-1 shrink-0">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const docInfo = (item as any).instructorDoc;
+                                    const instFiles: TraineeDocumentFile[] =
+                                      docInfo.files && docInfo.files.length > 0
+                                        ? docInfo.files.map((f: TraineeDocumentFile) => ({
+                                            ...f,
+                                            dataUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || ''),
+                                            fileUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || ''),
+                                          }))
+                                        : [
+                                            {
+                                              id: 'inst-file-0',
+                                              name: docInfo.fileName || `${item.key}_template.pdf`,
+                                              size: docInfo.fileSize,
+                                              dataUrl: resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || ''),
+                                              fileUrl: resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || ''),
+                                            },
+                                          ];
+                                    const firstInst = instFiles[0];
+                                    setPreviewDoc({
+                                      key: item.key,
+                                      title: `Instructor Document: ${item.title}`,
+                                      subtitle: firstInst.name,
+                                      fileName: firstInst.name || `${item.key}_template.pdf`,
+                                      dataUrl: firstInst.fileUrl || firstInst.dataUrl || '',
+                                      fileSize: firstInst.size || docInfo.fileSize,
+                                      status: 'passed',
+                                      description: item.desc,
+                                      notes: docInfo.notes,
+                                      files: instFiles,
+                                      activeFileIndex: 0,
+                                    });
+                                  }}
+                                  className="text-violet-700 hover:text-violet-900 font-bold hover:underline cursor-pointer"
+                                >
+                                  View{(item as any).instructorDoc.files?.length > 1 ? ` (${(item as any).instructorDoc.files.length})` : ''}
+                                </button>
+                                <span>•</span>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const docInfo = (item as any).instructorDoc;
+                                    if (docInfo.files && docInfo.files.length > 1) {
+                                      docInfo.files.forEach((f: TraineeDocumentFile) => {
+                                        const u = resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || '');
+                                        if (u) downloadDocument(u, f.name);
+                                      });
+                                    } else {
+                                      const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
+                                      downloadDocument(url, docInfo.fileName || `${item.key}_instructor_doc`);
+                                    }
+                                  }}
+                                  className="text-violet-700 hover:text-violet-900 font-bold hover:underline cursor-pointer"
+                                >
+                                  Download{(item as any).instructorDoc.files?.length > 1 ? ' All' : ''}
+                                </button>
+                              </div>
                             </div>
                           </div>
                         )}
@@ -1279,10 +1832,10 @@ export function Documents() {
                     <div className="flex-1 min-w-0">
                       {hasFile && doc ? (
                         /* Attached File Chip */
-                        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/90 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                          <div className="flex items-center gap-2.5 min-w-0">
+                        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/95 border border-slate-200/90 flex flex-col xl:flex-row xl:items-center justify-between gap-3 min-w-0">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
                             <div
-                              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                              className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${
                                 doc.files && doc.files.length > 1
                                   ? 'bg-purple-100 text-purple-700'
                                   : docCategory === 'picture'
@@ -1302,21 +1855,21 @@ export function Documents() {
                                 <FileGeneric size={15} />
                               )}
                             </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2 min-w-0">
                                 <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
                                   {doc.name}
                                 </p>
                                 {doc.files && doc.files.length > 1 && (
                                   <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                    {doc.files.length} Files Attached
+                                    {doc.files.length} Files
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5">
-                                <span>{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Attached'}</span>
-                                {doc.size ? <span>• {formatFileSize(doc.size)}</span> : null}
-                                <span className="uppercase font-semibold text-slate-500">
+                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5 flex-wrap">
+                                <span className="shrink-0">{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Attached'}</span>
+                                {doc.size ? <span className="shrink-0">• {formatFileSize(doc.size)}</span> : null}
+                                <span className="uppercase font-semibold text-slate-500 shrink-0">
                                   ({doc.files && doc.files.length > 1 ? 'Multi-File' : docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
                                 </span>
                               </div>
@@ -1327,11 +1880,27 @@ export function Documents() {
                                   {doc.notes ? <span className="italic text-slate-500">{doc.notes}</span> : null}
                                 </p>
                               )}
+                              {doc.files && doc.files.length > 1 && (
+                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                  {doc.files.map((fItem, fIdx) => (
+                                    <button
+                                      key={fItem.id || fIdx}
+                                      type="button"
+                                      onClick={() => handlePreviewDoc(item.key, doc, item, fIdx)}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-semibold transition-colors cursor-pointer"
+                                      title={`Click to review file #${fIdx + 1}: ${fItem.name}`}
+                                    >
+                                      <Eye size={10} className="text-purple-600 shrink-0" />
+                                      <span className="max-w-[130px] truncate">{fIdx + 1}. {fItem.name}</span>
+                                    </button>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           </div>
 
                           {/* Quick File Action Buttons (View, Download, Remove) */}
-                          <div className="flex items-center gap-1.5 self-end sm:self-center shrink-0">
+                          <div className="flex items-center gap-1.5 shrink-0 flex-wrap self-start sm:self-center">
                             <button
                               type="button"
                               onClick={() => handlePreviewDoc(item.key, doc, item)}
@@ -1351,6 +1920,15 @@ export function Documents() {
                               title="Download attached file"
                             >
                               <Download size={13} /> Download
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => openEditDocDialog(item)}
+                              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                              title="Update document details, description, notes, or files"
+                            >
+                              <Edit2 size={13} className="text-blue-600" /> Edit / Update
                             </button>
 
                             <label
@@ -1462,7 +2040,17 @@ export function Documents() {
 
                       {/* Primary Action Button */}
                       {hasFile ? (
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => openEditDocDialog(item)}
+                            className="py-1.5 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200 shadow-2xs"
+                            title="Edit description, notes, or files"
+                          >
+                            <Edit2 size={12} />
+                            Edit / Update
+                          </button>
+
                           <label
                             htmlFor={`add-more-main-${item.key}`}
                             className="py-1.5 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer border border-indigo-200 shadow-2xs"
@@ -1506,29 +2094,51 @@ export function Documents() {
                           />
                         </div>
                       ) : (
-                        <label
-                          htmlFor={`attach-doc-btn-${item.key}`}
-                          className={`py-1.5 px-3.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
-                            isUploading
-                              ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                              : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
-                          }`}
-                        >
-                          <Paperclip size={13} className={isUploading ? 'animate-spin' : ''} />
-                          {isUploading ? 'Uploading...' : 'Attach File(s)'}
-                          <input
-                            type="file"
-                            multiple
-                            id={`attach-doc-btn-${item.key}`}
-                            accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
-                            onChange={(e) => {
-                              onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
-                              e.target.value = '';
-                            }}
-                            className="hidden"
-                            disabled={isUploading}
-                          />
-                        </label>
+                        <div className="flex items-center gap-1.5">
+                          {(item.custom || item.traineeAdded) && (
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => openEditDocDialog(item)}
+                                className="py-1.5 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer border border-slate-200"
+                                title="Edit document title or description"
+                              >
+                                <Edit2 size={12} /> Edit
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDoc(item.key)}
+                                className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer border border-slate-200"
+                                title="Delete this document requirement"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </>
+                          )}
+                          <label
+                            htmlFor={`attach-doc-btn-${item.key}`}
+                            className={`py-1.5 px-3.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
+                              isUploading
+                                ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                            }`}
+                          >
+                            <Paperclip size={13} className={isUploading ? 'animate-spin' : ''} />
+                            {isUploading ? 'Uploading...' : 'Attach File(s)'}
+                            <input
+                              type="file"
+                              multiple
+                              id={`attach-doc-btn-${item.key}`}
+                              accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                              onChange={(e) => {
+                                onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
+                                e.target.value = '';
+                              }}
+                              className="hidden"
+                              disabled={isUploading}
+                            />
+                          </label>
+                        </div>
                       )}
                     </div>
                   </div>
@@ -1718,6 +2328,420 @@ export function Documents() {
         )}
       </AnimatePresence>
 
+      {/* Add New Document Modal (Trainee can add more custom documents) */}
+      <AnimatePresence>
+        {addDocDialog && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 border border-slate-100 flex flex-col gap-4 max-h-[92vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shadow-xs">
+                    <Plus size={22} className="stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-base">Add New Document</h3>
+                    <p className="text-xs text-slate-500">Upload additional credentials, clearances, or required certificates</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAddDocDialog(null)}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Quick Suggestions Pills */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                  <Sparkles size={12} className="text-amber-500" /> Quick Document Suggestions:
+                </span>
+                <div className="flex flex-wrap gap-1.5">
+                  {COMMON_DOCUMENT_SUGGESTIONS.map((sug) => (
+                    <button
+                      key={sug.title}
+                      type="button"
+                      onClick={() =>
+                        setAddDocDialog((prev) =>
+                          prev
+                            ? {
+                                ...prev,
+                                title: sug.title,
+                                description: prev.description || sug.desc,
+                              }
+                            : prev
+                        )
+                      }
+                      className="px-2.5 py-1 rounded-xl text-[11px] font-semibold bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 hover:border-blue-300 transition-colors cursor-pointer"
+                    >
+                      + {sug.title}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Document Title */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Document Title / Name <span className="text-red-500">*</span></span>
+                  <span className="text-[10px] text-slate-400 font-normal">e.g. Barangay Clearance, Police Clearance</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Barangay Clearance"
+                  value={addDocDialog.title}
+                  onChange={(e) => setAddDocDialog({ ...addDocDialog, title: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden"
+                />
+              </div>
+
+              {/* Document Description */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Description / Purpose</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Brief summary of this document</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Official clearance document from Barangay Hall for OJT compliance"
+                  value={addDocDialog.description}
+                  onChange={(e) => setAddDocDialog({ ...addDocDialog, description: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden"
+                />
+              </div>
+
+              {/* Notes for Instructor */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Notes for OJT Instructor</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Optional remarks or validity dates</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Remarks, issue date, or special details for your OJT instructor..."
+                  value={addDocDialog.notes}
+                  onChange={(e) => setAddDocDialog({ ...addDocDialog, notes: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden resize-none"
+                />
+              </div>
+
+              {/* File Attachment & Upload Section */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Paperclip size={13} className="text-blue-600" />
+                    Attach Files ({addDocDialog.files.length})
+                  </span>
+                  <label
+                    htmlFor="add-modal-upload-input"
+                    className="px-2.5 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Plus size={13} /> Select File(s)
+                  </label>
+                  <input
+                    type="file"
+                    multiple
+                    id="add-modal-upload-input"
+                    accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                    onChange={(e) => {
+                      handleAddDialogAddFiles(e.target.files);
+                      e.target.value = '';
+                    }}
+                    className="hidden"
+                  />
+                </div>
+
+                {addDocDialog.files.length === 0 ? (
+                  <label
+                    htmlFor="add-modal-dropzone-input"
+                    className="w-full py-5 px-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-blue-400 bg-slate-50/70 hover:bg-blue-50/30 transition-all flex flex-col items-center justify-center text-center cursor-pointer group"
+                  >
+                    <Upload size={24} className="text-slate-400 group-hover:text-blue-600 mb-1 transition-colors" />
+                    <p className="text-xs font-bold text-slate-700 group-hover:text-blue-700">
+                      Click to choose files or drag & drop here
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Supports Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX) up to 10MB
+                    </p>
+                    <input
+                      type="file"
+                      multiple
+                      id="add-modal-dropzone-input"
+                      accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                      onChange={(e) => {
+                        handleAddDialogAddFiles(e.target.files);
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                ) : (
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                    {addDocDialog.files.map((fileItem, idx) => {
+                      const cat = getFileCategory(fileItem.name);
+                      return (
+                        <div
+                          key={fileItem.id || idx}
+                          className="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-5 h-5 rounded-md bg-blue-100 text-blue-700 text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800 truncate text-xs" title={fileItem.name}>
+                                {fileItem.name}
+                              </p>
+                              <span className="text-[10px] text-slate-400">
+                                {formatFileSize(fileItem.size)} • {cat === 'picture' ? 'Image' : cat === 'doc' ? 'Word' : 'PDF'}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleAddDialogRemoveFile(idx)}
+                            className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setAddDocDialog(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isAddingDoc || !addDocDialog.title.trim()}
+                  onClick={handleAddDocumentSubmit}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md shadow-blue-200 inline-flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isAddingDoc ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" /> Saving Document...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle size={14} />
+                      {addDocDialog.files.length > 0
+                        ? `Add & Upload ${addDocDialog.files.length} File${addDocDialog.files.length > 1 ? 's' : ''}`
+                        : 'Add Document Requirement'}
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit / Update Existing Document Modal */}
+      <AnimatePresence>
+        {editDocDialog && (
+          <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-xs p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl w-full max-w-lg shadow-2xl p-6 border border-slate-100 flex flex-col gap-4 max-h-[92vh] overflow-y-auto"
+            >
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-10 h-10 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-xs">
+                    <Edit2 size={20} className="stroke-[2.5]" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-slate-900 text-base">Update Document</h3>
+                    <p className="text-xs text-slate-500">Edit details, update description, or manage attached files</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setEditDocDialog(null)}
+                  className="p-1 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Document Title */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Document Title</span>
+                  {editDocDialog.isCustom ? (
+                    <span className="text-[10px] text-purple-600 font-bold">Custom Document (Editable)</span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400">Institutional Requirement</span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  value={editDocDialog.title}
+                  disabled={!editDocDialog.isCustom}
+                  onChange={(e) => setEditDocDialog({ ...editDocDialog, title: e.target.value })}
+                  className={`w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs font-semibold focus:ring-2 focus:ring-blue-500 outline-hidden ${
+                    !editDocDialog.isCustom ? 'bg-slate-100 text-slate-600 cursor-not-allowed' : 'bg-white'
+                  }`}
+                />
+              </div>
+
+              {/* Description Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Description / Summary</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Context regarding this submission</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="Provide updated description..."
+                  value={editDocDialog.description}
+                  onChange={(e) => setEditDocDialog({ ...editDocDialog, description: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden"
+                />
+              </div>
+
+              {/* Notes Input */}
+              <div className="space-y-1.5">
+                <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                  <span>Notes for OJT Instructor</span>
+                  <span className="text-[10px] text-slate-400 font-normal">Remarks or instructions for review</span>
+                </label>
+                <textarea
+                  rows={2}
+                  placeholder="Add notes for your OJT instructor..."
+                  value={editDocDialog.notes}
+                  onChange={(e) => setEditDocDialog({ ...editDocDialog, notes: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-hidden resize-none"
+                />
+              </div>
+
+              {/* Attached Files Management */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Files size={13} className="text-indigo-600" />
+                    Attached Files ({editDocDialog.files.length})
+                  </span>
+                  <label
+                    htmlFor="edit-modal-upload-input"
+                    className="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold inline-flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Plus size={13} /> Add More Files
+                  </label>
+                  <input
+                    type="file"
+                    multiple
+                    id="edit-modal-upload-input"
+                    accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                    onChange={(e) => {
+                      handleEditDialogAddFiles(e.target.files);
+                      e.target.value = '';
+                    }}
+                    className="hidden"
+                  />
+                </div>
+
+                {editDocDialog.files.length === 0 ? (
+                  <label
+                    htmlFor="edit-modal-dropzone-input"
+                    className="w-full py-4 px-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 bg-slate-50/70 hover:bg-indigo-50/30 transition-all flex flex-col items-center justify-center text-center cursor-pointer group"
+                  >
+                    <Upload size={20} className="text-slate-400 group-hover:text-indigo-600 mb-1" />
+                    <p className="text-xs font-bold text-slate-700 group-hover:text-indigo-700">No files attached yet. Click to upload</p>
+                    <input
+                      type="file"
+                      multiple
+                      id="edit-modal-dropzone-input"
+                      accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                      onChange={(e) => {
+                        handleEditDialogAddFiles(e.target.files);
+                        e.target.value = '';
+                      }}
+                      className="hidden"
+                    />
+                  </label>
+                ) : (
+                  <div className="max-h-36 overflow-y-auto space-y-1.5 pr-1">
+                    {editDocDialog.files.map((fileItem, idx) => {
+                      const cat = getFileCategory(fileItem.name);
+                      return (
+                        <div
+                          key={fileItem.id || idx}
+                          className="p-2 bg-slate-50 rounded-xl border border-slate-200 flex items-center justify-between gap-2"
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="w-5 h-5 rounded-md bg-indigo-100 text-indigo-700 text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                              {idx + 1}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-slate-800 truncate text-xs" title={fileItem.name}>
+                                {fileItem.name}
+                              </p>
+                              <span className="text-[10px] text-slate-400">
+                                {formatFileSize(fileItem.size)} • {cat === 'picture' ? 'Image' : cat === 'doc' ? 'Word' : 'PDF'}
+                              </span>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleEditDialogRemoveFile(idx)}
+                            className="p-1 rounded-md text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                            title="Remove file"
+                          >
+                            <X size={14} />
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setEditDocDialog(null)}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={isSavingEdit || !editDocDialog.title.trim()}
+                  onClick={handleEditDocumentSubmit}
+                  className="px-5 py-2.5 rounded-xl text-xs font-bold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 shadow-md shadow-blue-200 inline-flex items-center gap-1.5 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {isSavingEdit ? (
+                    <>
+                      <RefreshCw size={14} className="animate-spin" /> Saving Changes...
+                    </>
+                  ) : (
+                    <>
+                      <CheckCircle size={14} /> Save & Update Document
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Document Preview Modal */}
       <AnimatePresence>
         {previewDoc && (
@@ -1756,6 +2780,21 @@ export function Documents() {
                       <Download size={13} /> Download
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const item = allDocRequirements.find((d) => d.key === previewDoc.key || d.id === previewDoc.key);
+                      if (item) {
+                        setPreviewDoc(null);
+                        openEditDocDialog(item);
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
+                    title="Edit description, notes, or files"
+                  >
+                    <Edit2 size={13} /> Edit / Update
+                  </button>
 
                   <button
                     type="button"
@@ -2000,11 +3039,20 @@ export function Documents() {
                         onChange={(e) => {
                           const file = e.target.files?.[0];
                           if (file && previewDoc.key) {
-                            handleFileUpload(previewDoc.key as any, file, undefined, undefined, false);
+                            const submitFiles: SubmitDialogFile[] = [
+                              {
+                                id: `file-${Date.now()}`,
+                                file,
+                                name: file.name,
+                                size: file.size,
+                                fileType: file.type || 'application/octet-stream',
+                              },
+                            ];
+                            handleFileUpload(previewDoc.key as any, submitFiles, undefined, undefined, false);
                             const reader = new FileReader();
                             reader.onload = (ev) => {
                               const newUrl = ev.target?.result as string;
-                              setPreviewDoc((prev) => (prev ? { ...prev, dataUrl: newUrl, status: 'submitted' } : null));
+                              setPreviewDoc((prev) => (prev ? { ...prev, dataUrl: newUrl, status: 'pending' } : null));
                             };
                             reader.readAsDataURL(file);
                           }

@@ -1,13 +1,56 @@
 import React, { useState } from 'react';
-import { FileText, Download, ExternalLink, Eye, X, Image as ImageIcon } from 'lucide-react';
-import { parseAnnouncementAttachment, ParsedAttachment } from '../utils/attachmentHelper';
+import { FileText, Download, Eye, X, Image as ImageIcon } from 'lucide-react';
+import { parseAnnouncementAttachment, formatFileSize } from '../utils/attachmentHelper';
+import type { TraineeDocumentFile } from '../types';
 
 interface Props {
   photo?: string;
+  files?: TraineeDocumentFile[];
   allowDownload?: boolean;
 }
 
-export function AnnouncementAttachmentView({ photo, allowDownload = true }: Props) {
+export function AnnouncementAttachmentView({ photo, files, allowDownload = true }: Props) {
+  if (files && files.length > 1) {
+    return (
+      <div className="my-3 space-y-2">
+        <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-1 rounded-lg w-fit">
+          📚 {files.length} Attached Files
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          {files.map((f, idx) => {
+            const url = f.dataUrl || f.fileUrl || '';
+            if (!url) return null;
+            const serialized = JSON.stringify({
+              url,
+              name: f.name || `File_${idx + 1}`,
+              type: (f.fileType || '').startsWith('image/')
+                ? 'image'
+                : (f.fileType || '').includes('pdf') || (f.name || '').toLowerCase().endsWith('.pdf')
+                ? 'pdf'
+                : 'doc',
+              size: f.size ? formatFileSize(Number(f.size)) : '',
+            });
+            return <SingleAttachmentItem key={`${f.name}-${idx}`} photo={serialized} allowDownload={allowDownload} />;
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  const effectivePhoto =
+    photo ||
+    (files && files.length === 1 && (files[0].dataUrl || files[0].fileUrl)
+      ? JSON.stringify({
+          url: files[0].dataUrl || files[0].fileUrl,
+          name: files[0].name,
+          size: files[0].size ? formatFileSize(Number(files[0].size)) : '',
+        })
+      : undefined);
+
+  return <SingleAttachmentItem photo={effectivePhoto} allowDownload={allowDownload} />;
+}
+
+function SingleAttachmentItem({ photo, allowDownload = true }: { photo?: string; allowDownload?: boolean }) {
   const [showImageModal, setShowImageModal] = useState(false);
   const [imgLoadError, setImgLoadError] = useState(false);
   const attachment = parseAnnouncementAttachment(photo);
