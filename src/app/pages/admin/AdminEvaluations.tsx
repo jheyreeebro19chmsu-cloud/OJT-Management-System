@@ -68,15 +68,21 @@ export function AdminEvaluations() {
   const [viewMode, setViewMode] = useState<'list' | 'form' | 'view'>('list');
   const [isSyncing, setIsSyncing] = useState(false);
 
-  // Sync on mount
+  // Sync on mount and periodically while visible
   useEffect(() => {
-    refreshData();
+    refreshData({ force: true }).catch(() => {});
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshData({ force: true }).catch(() => {});
+      }
+    }, 6000);
+    return () => clearInterval(interval);
   }, [refreshData]);
 
   const handleManualSync = async () => {
     setIsSyncing(true);
     try {
-      await refreshData();
+      await refreshData({ force: true });
       toast.success('✓ Evaluations synchronized with cloud!');
     } catch {
       toast.error('Sync failed. Please check internet connection.');

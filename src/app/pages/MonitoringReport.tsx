@@ -593,16 +593,16 @@ export function MonitoringReport() {
                       >
                         {meta.label}
                       </span>
-                      {myFiles.length > 0 ? (
+                      {mySubmission ? (
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            mySubmission?.status === 'reviewed'
-                              ? 'bg-emerald-100 text-emerald-800'
+                            mySubmission.status === 'reviewed' || Boolean(mySubmission.instructorRemarks?.trim())
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
                               : 'bg-blue-100 text-blue-800'
                           }`}
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          {mySubmission?.status === 'reviewed'
+                          {mySubmission.status === 'reviewed' || Boolean(mySubmission.instructorRemarks?.trim())
                             ? 'Reviewed by Instructor'
                             : 'File Submitted'}
                         </span>
@@ -807,18 +807,40 @@ export function MonitoringReport() {
                             </div>
                           </div>
                         ))}
+                      </div>
+                    )}
 
-                        {mySubmission?.notes && (
-                          <p className="text-xs text-gray-600 italic px-1">
-                            Your note: &ldquo;{mySubmission.notes}&rdquo;
-                          </p>
-                        )}
+                    {mySubmission?.notes && (
+                      <p className="text-xs text-gray-600 italic px-1">
+                        Your note: &ldquo;{mySubmission.notes}&rdquo;
+                      </p>
+                    )}
 
-                        {mySubmission?.instructorRemarks && (
-                          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900">
-                            <span className="font-bold">Instructor Remarks:</span> {mySubmission.instructorRemarks}
-                          </div>
-                        )}
+                    {(Boolean(mySubmission?.instructorRemarks?.trim()) || mySubmission?.status === 'reviewed') && (
+                      <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-1 shadow-xs">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="inline-flex items-center gap-1.5 font-bold text-emerald-800">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            Instructor Remarks
+                          </span>
+                          {mySubmission?.reviewedAt && (
+                            <span className="text-[11px] text-emerald-700 font-medium">
+                              Reviewed{' '}
+                              {new Date(mySubmission.reviewedAt).toLocaleString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric',
+                                hour: 'numeric',
+                                minute: '2-digit',
+                              })}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-sm font-medium text-emerald-900 pl-5">
+                          {mySubmission?.instructorRemarks?.trim()
+                            ? `“${mySubmission.instructorRemarks}”`
+                            : 'Approved / Reviewed by Instructor'}
+                        </p>
                       </div>
                     )}
                   </div>

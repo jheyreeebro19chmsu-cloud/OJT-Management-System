@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor, RequiredDocument, MonitoringReport } from '../types';
+import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, EvaluationQuestionnaire, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor, RequiredDocument, MonitoringReport, MonthlyDttrRecord } from '../types';
 import { isWithinNegrosOccidental } from '../utils/geo';
 import { TRAINEE_REQUIRED_HOURS } from '../data/ojtConstants';
 
@@ -1105,54 +1105,87 @@ export async function deleteEmployee(id: string): Promise<boolean> {
 // ─── Time Records ────────────────────────────────────────────────────────────
 
 export async function fetchTimeRecords(): Promise<TimeRecord[]> {
-  // 1. Primary path: Service role endpoint /api/time-records (bypasses RLS to eliminate PostgREST locks & 500 timeouts)
-  if (typeof window !== 'undefined') {
-    let res: Response | null = null;
-    try {
-      res = await fetch('/api/time-records');
-    } catch {
-      // Retry once after 350ms to absorb transient ERR_NETWORK_CHANGED or socket resets
-      await new Promise((r) => setTimeout(r, 350));
+  const storagePromise = fetchDttrStoreFromStorage()
+    .then((s) => (Array.isArray(s.timeRecords) ? s.timeRecords : []))
+    .catch(() => [] as TimeRecord[]);
+
+  const dbPromise = (async (): Promise<TimeRecord[]> => {
+    // 1. Primary path: Service role endpoint /api/time-records
+    if (typeof window !== 'undefined') {
       try {
-        res = await fetch('/api/time-records');
-      } catch (retryErr) {
-        console.warn('fetchTimeRecords /api/time-records notice (using client fallback):', retryErr);
-      }
-    }
-    if (res && res.ok) {
-      try {
-        const apiData = await res.json();
-        if (Array.isArray(apiData) && apiData.length > 0) {
-          return apiData.map(transformSupabaseTimeRecord);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const res = await fetch('/api/time-records', { signal: controller.signal });
+        clearTimeout(timer);
+        if (res && res.ok) {
+          const apiData = await res.json();
+          if (Array.isArray(apiData) && apiData.length > 0) {
+            return apiData.map(transformSupabaseTimeRecord);
+          }
         }
       } catch {}
     }
-  }
 
-  // 2. Secondary path: Direct Supabase client with safe limit
-  if (!isSupabaseConfigured()) return [];
+    // 2. Secondary path: Direct Supabase client with 5s timeout
+    if (!isSupabaseConfigured()) return [];
 
-  try {
-    const { data, error } = await supabase
-      .from('time_records')
-      .select('*')
-      .order('date', { ascending: false })
-      .limit(1000);
+    try {
+      const queryPromise = supabase
+        .from('time_records')
+        .select('*')
+        .order('date', { ascending: false })
+        .limit(1000);
 
-    if (!error && data && data.length > 0) {
-      return data.map(transformSupabaseTimeRecord);
-    }
+      const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 5000)
+      );
 
-    if (error) {
-      console.warn('Notice fetching time records from Supabase client:', error.message || error);
-      return [];
-    }
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+      if (!error && data && data.length > 0) {
+        return data.map(transformSupabaseTimeRecord);
+      }
+    } catch {}
 
-    return (data || []).map(transformSupabaseTimeRecord);
-  } catch (err) {
-    console.warn('fetchTimeRecords exception:', err);
     return [];
+  })();
+
+  const [storageRecords, dbRecords] = await Promise.all([storagePromise, dbPromise]);
+  if (storageRecords.length === 0) return dbRecords;
+  if (dbRecords.length === 0) return storageRecords;
+
+  const map = new Map<string, TimeRecord>();
+  for (const r of dbRecords) {
+    if (!r) continue;
+    const dateKey = (r.date || '').split('T')[0].trim();
+    const key = `${(r.employeeId || '').toLowerCase()}_${dateKey}`;
+    map.set(key, r);
   }
+  for (const s of storageRecords) {
+    if (!s) continue;
+    const dateKey = (s.date || '').split('T')[0].trim();
+    const key = `${(s.employeeId || '').toLowerCase()}_${dateKey}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, s);
+    } else {
+      map.set(key, {
+        ...existing,
+        ...s,
+        id: existing.id && !existing.id.startsWith('rec-') ? existing.id : s.id || existing.id,
+        timeIn: s.timeIn || existing.timeIn,
+        timeOut: s.timeOut || existing.timeOut,
+        amArrival: s.amArrival || existing.amArrival,
+        amDeparture: s.amDeparture || existing.amDeparture,
+        pmArrival: s.pmArrival || existing.pmArrival,
+        pmDeparture: s.pmDeparture || existing.pmDeparture,
+        totalHours: Math.max(Number(s.totalHours) || 0, Number(existing.totalHours) || 0),
+        notes: (s.notes && s.notes.trim()) ? s.notes : existing.notes,
+        timeInPhoto: existing.timeInPhoto || s.timeInPhoto,
+        timeOutPhoto: existing.timeOutPhoto || s.timeOutPhoto,
+      });
+    }
+  }
+  return Array.from(map.values());
 }
 
 export function encodeSlotNotes(existingNotes: string | null | undefined, record: Partial<TimeRecord>): string | null {
@@ -2032,41 +2065,51 @@ function unpackEvaluationMeta(rawRecommendations?: string): {
 }
 
 export async function fetchEvaluations(): Promise<Evaluation[]> {
-  if (!isSupabaseConfigured()) return [];
+  const storagePromise = fetchEvaluationsFromStorage().catch(() => [] as Evaluation[]);
 
-  const { data, error } = await supabase.from('evaluations').select('*').order('evaluated_at', { ascending: false });
+  const dbPromise = (async (): Promise<Evaluation[]> => {
+    if (!isSupabaseConfigured()) return [];
+    try {
+      const queryPromise = supabase.from('evaluations').select('*').order('evaluated_at', { ascending: false });
+      const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 5000)
+      );
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+      if (error || !data) return [];
 
-  if (error) {
-    console.error('Error fetching evaluations:', error);
-    return [];
-  }
+      return (data || []).map((evaluation: any) => {
+        const unpacked = unpackEvaluationMeta(evaluation.recommendations);
+        return {
+          id: evaluation.id,
+          employeeId: evaluation.employee_id,
+          evaluatedBy: evaluation.evaluated_by,
+          attendanceScore: evaluation.attendance_score,
+          performanceScore: evaluation.performance_score,
+          attitudeScore: evaluation.attitude_score,
+          punctualityScore: evaluation.punctuality_score,
+          communicationScore: evaluation.communication_score,
+          overallScore: evaluation.overall_score,
+          grade: evaluation.grade,
+          strengths: evaluation.strengths,
+          areasForImprovement: evaluation.areas_for_improvement,
+          recommendations: unpacked.recommendations,
+          ratings: unpacked.ratings,
+          ratingComments: unpacked.ratingComments,
+          commentsSuggestions: unpacked.commentsSuggestions,
+          overallRating: unpacked.overallRating,
+          questionnaire: unpacked.questionnaire,
+          evaluatedAt: evaluation.evaluated_at,
+          status: unpacked.status || evaluation.status,
+          academicYear: evaluation.academic_year,
+        };
+      });
+    } catch {
+      return [];
+    }
+  })();
 
-  return (data || []).map((evaluation: any) => {
-    const unpacked = unpackEvaluationMeta(evaluation.recommendations);
-    return {
-      id: evaluation.id,
-      employeeId: evaluation.employee_id,
-      evaluatedBy: evaluation.evaluated_by,
-      attendanceScore: evaluation.attendance_score,
-      performanceScore: evaluation.performance_score,
-      attitudeScore: evaluation.attitude_score,
-      punctualityScore: evaluation.punctuality_score,
-      communicationScore: evaluation.communication_score,
-      overallScore: evaluation.overall_score,
-      grade: evaluation.grade,
-      strengths: evaluation.strengths,
-      areasForImprovement: evaluation.areas_for_improvement,
-      recommendations: unpacked.recommendations,
-      ratings: unpacked.ratings,
-      ratingComments: unpacked.ratingComments,
-      commentsSuggestions: unpacked.commentsSuggestions,
-      overallRating: unpacked.overallRating,
-      questionnaire: unpacked.questionnaire,
-      evaluatedAt: evaluation.evaluated_at,
-      status: unpacked.status || evaluation.status,
-      academicYear: evaluation.academic_year,
-    };
-  });
+  const [storageEvals, dbEvals] = await Promise.all([storagePromise, dbPromise]);
+  return mergeEvaluationsList(storageEvals, dbEvals);
 }
 
 export async function createEvaluation(evaluation: Omit<Evaluation, 'id'>): Promise<Evaluation | null> {
@@ -3727,52 +3770,135 @@ function slimMonitoringReportList(reports: MonitoringReport[]): MonitoringReport
   }));
 }
 
+export function mergeMonitoringSubmissionItem(a: any, b: any): any {
+  if (!a) return b;
+  if (!b) return a;
+
+  const aSubTime = new Date(a.submittedAt || 0).getTime();
+  const bSubTime = new Date(b.submittedAt || 0).getTime();
+  const newerSub = bSubTime >= aSubTime ? b : a;
+  const olderSub = bSubTime >= aSubTime ? a : b;
+
+  const aRevTime = new Date(a.reviewedAt || 0).getTime();
+  const bRevTime = new Date(b.reviewedAt || 0).getTime();
+  const aHasRemarks = typeof a.instructorRemarks === 'string' && a.instructorRemarks.trim().length > 0;
+  const bHasRemarks = typeof b.instructorRemarks === 'string' && b.instructorRemarks.trim().length > 0;
+
+  let instructorRemarks = newerSub.instructorRemarks;
+  let reviewedAt = newerSub.reviewedAt;
+
+  if (bRevTime > aRevTime) {
+    instructorRemarks = b.instructorRemarks ?? a.instructorRemarks;
+    reviewedAt = b.reviewedAt;
+  } else if (aRevTime > bRevTime) {
+    instructorRemarks = a.instructorRemarks ?? b.instructorRemarks;
+    reviewedAt = a.reviewedAt;
+  } else if (bHasRemarks && !aHasRemarks) {
+    instructorRemarks = b.instructorRemarks;
+    reviewedAt = b.reviewedAt || a.reviewedAt;
+  } else if (aHasRemarks && !bHasRemarks) {
+    instructorRemarks = a.instructorRemarks;
+    reviewedAt = a.reviewedAt || b.reviewedAt;
+  }
+
+  const status =
+    a.status === 'reviewed' || b.status === 'reviewed' || Boolean(instructorRemarks && String(instructorRemarks).trim())
+      ? 'reviewed'
+      : newerSub.status || olderSub.status || 'submitted';
+
+  const filesSource =
+    Array.isArray(newerSub.files) && newerSub.files.length > 0
+      ? newerSub.files
+      : Array.isArray(olderSub.files)
+      ? olderSub.files
+      : [];
+
+  return {
+    ...olderSub,
+    ...newerSub,
+    files: filesSource.map(slimMonitoringFileItem),
+    notes: newerSub.notes || olderSub.notes,
+    status,
+    instructorRemarks,
+    reviewedAt,
+  };
+}
+
+export function mergeMonitoringReportsList(
+  primaryList: MonitoringReport[],
+  secondaryList: MonitoringReport[] = []
+): MonitoringReport[] {
+  const map = new Map<string, MonitoringReport>();
+
+  const addReportToMap = (r: MonitoringReport) => {
+    if (!r || !r.id) return;
+    if (
+      !Boolean(r.createdByRole) &&
+      !(Array.isArray(r.instructorFiles) && r.instructorFiles.length > 0) &&
+      !(Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) &&
+      !(Array.isArray(r.submissions) && r.submissions.length > 0)
+    ) {
+      return;
+    }
+
+    const existing = map.get(r.id);
+    if (!existing) {
+      map.set(r.id, r);
+      return;
+    }
+
+    const subMap = new Map<string, any>();
+    for (const s of existing.submissions || []) {
+      if (!s) continue;
+      const key = s.id || `${s.traineeId || ''}_${s.studentId || ''}_${s.traineeName || ''}`.toLowerCase();
+      subMap.set(key, mergeMonitoringSubmissionItem(subMap.get(key), s));
+    }
+    for (const s of r.submissions || []) {
+      if (!s) continue;
+      const key = s.id || `${s.traineeId || ''}_${s.studentId || ''}_${s.traineeName || ''}`.toLowerCase();
+      subMap.set(key, mergeMonitoringSubmissionItem(subMap.get(key), s));
+    }
+
+    const rTime = new Date(r.updatedAt || r.createdAt || 0).getTime();
+    const eTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+
+    map.set(r.id, {
+      ...(rTime >= eTime ? { ...existing, ...r } : { ...r, ...existing }),
+      submissions: Array.from(subMap.values()),
+    });
+  };
+
+  for (const r of primaryList || []) addReportToMap(r);
+  for (const r of secondaryList || []) addReportToMap(r);
+
+  return slimMonitoringReportList(Array.from(map.values()));
+}
+
 export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringReport[]> {
-  const results: MonitoringReport[][] = [];
-
-  await Promise.allSettled([
-    // 1. Server-side API proxy (uses signed URL to bypass CDN cache)
-    fetch(`/api/documents?action=get-monitoring-reports&t=${Date.now()}`, { cache: 'no-store' })
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (Array.isArray(d)) results.push(d);
-      })
-      .catch(() => {}),
-    // 2. Direct cache-busted public Supabase URL with no-store
-    fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json?t=${Date.now()}`,
-      { cache: 'no-store' }
-    )
-      .then((r) => (r.ok ? r.json() : null))
-      .then((d) => {
-        if (Array.isArray(d)) results.push(d);
-      })
-      .catch(() => {}),
-  ]);
-
-  if (results.length > 0) {
-    const map = new Map<string, MonitoringReport>();
-    for (const list of results) {
-      for (const r of list) {
-        if (!r || !r.id) continue;
-        const existing = map.get(r.id);
-        if (!existing) {
-          map.set(r.id, r);
-        } else {
-          const subMap = new Map<string, any>();
-          (existing.submissions || []).forEach((s) => subMap.set(s.id, s));
-          (r.submissions || []).forEach((s) => subMap.set(s.id, s));
-          const rTime = new Date(r.updatedAt || r.createdAt || 0).getTime();
-          const eTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-          map.set(r.id, {
-            ...(rTime >= eTime ? { ...existing, ...r } : { ...r, ...existing }),
-            submissions: Array.from(subMap.values()),
-          });
-        }
+  // 1. Server-side API proxy (uses fresh signed URL to bypass CDN cache)
+  try {
+    const apiRes = await fetch(`/api/documents?action=get-monitoring-reports&t=${Date.now()}`, { cache: 'no-store' });
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (Array.isArray(data)) {
+        return mergeMonitoringReportsList(data);
       }
     }
-    return slimMonitoringReportList(Array.from(map.values()));
-  }
+  } catch {}
+
+  // 2. Fallback: Direct cache-busted public Supabase URL with no-store
+  try {
+    const pubRes = await fetch(
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json?t=${Date.now()}`,
+      { cache: 'no-store' }
+    );
+    if (pubRes.ok) {
+      const data = await pubRes.json();
+      if (Array.isArray(data)) {
+        return mergeMonitoringReportsList(data);
+      }
+    }
+  } catch {}
 
   return [];
 }
@@ -3804,6 +3930,298 @@ export async function saveMonitoringReportsToStorage(reports: MonitoringReport[]
     if (!error) return true;
   } catch (err) {
     console.warn('saveMonitoringReportsToStorage notice:', err);
+  }
+  return false;
+}
+
+// ─── Evaluations & Questionnaire Cloud Storage Sync ──────────────────────────
+
+export function mergeEvaluationItem(a: Evaluation, b: Evaluation): Evaluation {
+  if (!a) return b;
+  if (!b) return a;
+
+  const aTime = new Date((a as any).updatedAt || a.evaluatedAt || 0).getTime();
+  const bTime = new Date((b as any).updatedAt || b.evaluatedAt || 0).getTime();
+  const newer = bTime >= aTime ? b : a;
+  const older = bTime >= aTime ? a : b;
+
+  const olderQ = older.questionnaire || {};
+  const newerQ = newer.questionnaire || {};
+  const mergedQ: EvaluationQuestionnaire = { ...olderQ, ...newerQ };
+
+  for (const key of Object.keys(olderQ) as (keyof EvaluationQuestionnaire)[]) {
+    const newerVal = String(newerQ[key] ?? '').trim();
+    const olderVal = String(olderQ[key] ?? '').trim();
+    if (!newerVal && olderVal) {
+      (mergedQ as any)[key] = olderQ[key];
+    }
+  }
+
+  const STATUS_ORDER: Record<string, number> = {
+    draft: 1,
+    submitted_by_trainee: 2,
+    passed_to_hte: 3,
+    submitted_to_instructor: 4,
+    final: 4,
+    reviewed_by_instructor: 5,
+  };
+  const aRank = STATUS_ORDER[a.status || 'draft'] || 1;
+  const bRank = STATUS_ORDER[b.status || 'draft'] || 1;
+  const mergedStatus = bRank >= aRank ? (b.status || a.status) : a.status;
+
+  return {
+    ...older,
+    ...newer,
+    id: !older.id?.startsWith('eval-') ? older.id : newer.id,
+    status: mergedStatus,
+    questionnaire: mergedQ,
+    ratings:
+      newer.ratings && Object.keys(newer.ratings).length > 0
+        ? newer.ratings
+        : older.ratings,
+    ratingComments:
+      newer.ratingComments && Object.keys(newer.ratingComments).length > 0
+        ? newer.ratingComments
+        : older.ratingComments,
+    commentsSuggestions: newer.commentsSuggestions || older.commentsSuggestions,
+    evaluatedAt: newer.evaluatedAt || older.evaluatedAt,
+  };
+}
+
+export function mergeEvaluationsList(
+  primaryList: Evaluation[],
+  secondaryList: Evaluation[] = []
+): Evaluation[] {
+  const map = new Map<string, Evaluation>();
+
+  const addEval = (ev: Evaluation) => {
+    if (!ev) return;
+    const key = (ev.employeeId || ev.id || '').toLowerCase();
+    if (!key) return;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, ev);
+    } else {
+      map.set(key, mergeEvaluationItem(existing, ev));
+    }
+  };
+
+  for (const ev of primaryList || []) addEval(ev);
+  for (const ev of secondaryList || []) addEval(ev);
+
+  return Array.from(map.values());
+}
+
+export async function fetchEvaluationsFromStorage(): Promise<Evaluation[]> {
+  try {
+    const apiRes = await fetch(`/api/documents?action=get-evaluations&t=${Date.now()}`, { cache: 'no-store' });
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (Array.isArray(data)) {
+        return mergeEvaluationsList(data);
+      }
+    }
+  } catch {}
+
+  try {
+    const pubRes = await fetch(
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/evaluations_store.json?t=${Date.now()}`,
+      { cache: 'no-store' }
+    );
+    if (pubRes.ok) {
+      const data = await pubRes.json();
+      if (Array.isArray(data)) {
+        return mergeEvaluationsList(data);
+      }
+    }
+  } catch {}
+
+  return [];
+}
+
+export async function saveEvaluationsToStorage(evaluations: Evaluation[]): Promise<boolean> {
+  let mergedToSave = evaluations;
+  try {
+    const existingRemote = await fetchEvaluationsFromStorage();
+    if (existingRemote.length > 0) {
+      mergedToSave = mergeEvaluationsList(evaluations, existingRemote);
+    }
+  } catch {}
+
+  try {
+    const apiRes = await fetch('/api/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save-evaluations', evaluations: mergedToSave }),
+    });
+    if (apiRes.ok) return true;
+  } catch {}
+
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const jsonStr = JSON.stringify(mergedToSave);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const { error } = await supabase.storage.from('face-photos').upload('settings/evaluations_store.json', blob, {
+      contentType: 'application/json',
+      cacheControl: '0',
+      upsert: true,
+    });
+    if (!error) return true;
+  } catch (err) {
+    console.warn('saveEvaluationsToStorage notice:', err);
+  }
+  return false;
+}
+
+// ─── DTTR & Attendance Time Records Cloud Storage Sync ──────────────────────
+
+export function mergeMonthlyDttrsList(
+  primaryList: MonthlyDttrRecord[],
+  secondaryList: MonthlyDttrRecord[] = []
+): MonthlyDttrRecord[] {
+  const map = new Map<string, MonthlyDttrRecord>();
+
+  const addRecord = (rec: MonthlyDttrRecord) => {
+    if (!rec || !rec.employeeId) return;
+    const key = `${rec.employeeId.toLowerCase()}_${Number(rec.year)}_${Number(rec.month)}`;
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, rec);
+      return;
+    }
+
+    const rTime = new Date(rec.updatedAt || 0).getTime();
+    const eTime = new Date(existing.updatedAt || 0).getTime();
+    const newer = rTime >= eTime ? rec : existing;
+    const older = rTime >= eTime ? existing : rec;
+
+    const mergedCustom: Record<number, any> = {
+      ...(older.customEntries || {}),
+      ...(newer.customEntries || {}),
+    };
+
+    for (const dayStr of Object.keys(older.customEntries || {})) {
+      const d = Number(dayStr);
+      const oldEntry = (older.customEntries || {})[d];
+      const newEntry = (newer.customEntries || {})[d];
+      if (oldEntry && newEntry) {
+        mergedCustom[d] = {
+          ...oldEntry,
+          ...newEntry,
+          tasks: (newEntry.tasks && String(newEntry.tasks).trim())
+            ? newEntry.tasks
+            : oldEntry.tasks,
+        };
+      }
+    }
+
+    map.set(key, {
+      ...older,
+      ...newer,
+      customEntries: mergedCustom,
+      hteSignatureStatus:
+        older.hteSignatureStatus === 'signed' || newer.hteSignatureStatus === 'signed'
+          ? 'signed'
+          : newer.hteSignatureStatus || older.hteSignatureStatus,
+      hteSignedAt: newer.hteSignedAt || older.hteSignedAt,
+      hteSupervisorName: newer.hteSupervisorName || older.hteSupervisorName,
+      hteSupervisorTitle: newer.hteSupervisorTitle || older.hteSupervisorTitle,
+    });
+  };
+
+  for (const r of primaryList || []) addRecord(r);
+  for (const r of secondaryList || []) addRecord(r);
+
+  return Array.from(map.values());
+}
+
+export async function fetchDttrStoreFromStorage(): Promise<{
+  monthlyDttrs: MonthlyDttrRecord[];
+  timeRecords: TimeRecord[];
+}> {
+  try {
+    const apiRes = await fetch(`/api/documents?action=get-dttr&t=${Date.now()}`, { cache: 'no-store' });
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (data && typeof data === 'object') {
+        return {
+          monthlyDttrs: Array.isArray(data.monthlyDttrs) ? mergeMonthlyDttrsList(data.monthlyDttrs) : [],
+          timeRecords: Array.isArray(data.timeRecords) ? data.timeRecords : [],
+        };
+      }
+    }
+  } catch {}
+
+  try {
+    const pubRes = await fetch(
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/dttr_store.json?t=${Date.now()}`,
+      { cache: 'no-store' }
+    );
+    if (pubRes.ok) {
+      const data = await pubRes.json();
+      if (data && typeof data === 'object') {
+        return {
+          monthlyDttrs: Array.isArray(data.monthlyDttrs) ? mergeMonthlyDttrsList(data.monthlyDttrs) : [],
+          timeRecords: Array.isArray(data.timeRecords) ? data.timeRecords : [],
+        };
+      }
+    }
+  } catch {}
+
+  return { monthlyDttrs: [], timeRecords: [] };
+}
+
+export async function saveDttrStoreToStorage(payload: {
+  monthlyDttrs?: MonthlyDttrRecord[];
+  timeRecords?: TimeRecord[];
+}): Promise<boolean> {
+  try {
+    const existing = await fetchDttrStoreFromStorage();
+    const mergedMonthly = payload.monthlyDttrs
+      ? mergeMonthlyDttrsList(payload.monthlyDttrs, existing.monthlyDttrs)
+      : existing.monthlyDttrs;
+
+    let mergedTimeRecords = existing.timeRecords || [];
+    if (payload.timeRecords) {
+      const recMap = new Map<string, TimeRecord>();
+      for (const r of existing.timeRecords || []) {
+        if (!r) continue;
+        const dateKey = (r.date || '').split('T')[0].trim();
+        recMap.set(`${(r.employeeId || '').toLowerCase()}_${dateKey}`, r);
+      }
+      for (const r of payload.timeRecords) {
+        if (!r) continue;
+        const dateKey = (r.date || '').split('T')[0].trim();
+        const key = `${(r.employeeId || '').toLowerCase()}_${dateKey}`;
+        const prev = recMap.get(key);
+        recMap.set(key, prev ? {
+          ...prev,
+          ...r,
+          timeIn: r.timeIn || prev.timeIn,
+          timeOut: r.timeOut || prev.timeOut,
+          amArrival: r.amArrival || prev.amArrival,
+          amDeparture: r.amDeparture || prev.amDeparture,
+          pmArrival: r.pmArrival || prev.pmArrival,
+          pmDeparture: r.pmDeparture || prev.pmDeparture,
+          totalHours: Math.max(Number(r.totalHours) || 0, Number(prev.totalHours) || 0),
+          notes: r.notes !== undefined && String(r.notes).trim() !== '' ? r.notes : prev.notes,
+        } : r);
+      }
+      mergedTimeRecords = Array.from(recMap.values());
+    }
+
+    const apiRes = await fetch('/api/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save-dttr',
+        monthlyDttrs: mergedMonthly,
+        timeRecords: mergedTimeRecords,
+      }),
+    });
+    if (apiRes.ok) return true;
+  } catch (err) {
+    console.warn('saveDttrStoreToStorage notice:', err);
   }
   return false;
 }

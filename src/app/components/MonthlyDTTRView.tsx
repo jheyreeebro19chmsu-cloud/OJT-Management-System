@@ -78,7 +78,13 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
   useEffect(() => {
     refreshData?.({ force: true }).catch(() => {});
-  }, [selectedEmployeeId, selectedYear, selectedMonth]);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshData?.({ force: true }).catch(() => {});
+      }
+    }, 6000);
+    return () => clearInterval(interval);
+  }, [selectedEmployeeId, selectedYear, selectedMonth, refreshData]);
 
   const selectedEmployee = useMemo(() => {
     return (

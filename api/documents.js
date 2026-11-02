@@ -164,6 +164,62 @@ export default async function handler(req, res) {
         return sendJson(res, 200, []);
       }
 
+      // Action: Retrieve OJT Evaluations & Trainee Questionnaires
+      if (action === 'get-evaluations') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        try {
+          const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/evaluations_store.json', 60);
+          if (signed?.signedUrl) {
+            const freshRes = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
+            if (freshRes.ok) {
+              const parsed = await freshRes.json();
+              if (Array.isArray(parsed)) {
+                return sendJson(res, 200, parsed);
+              }
+            }
+          }
+          const { data, error } = await supabase.storage.from('face-photos').download('settings/evaluations_store.json');
+          if (!error && data) {
+            const text = await data.text();
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) {
+              return sendJson(res, 200, parsed);
+            }
+          }
+        } catch (err) {
+          console.warn('API get-evaluations notice:', err);
+        }
+        return sendJson(res, 200, []);
+      }
+
+      // Action: Retrieve DTTR (Monthly DTTR Tasks + Attendance Time Records)
+      if (action === 'get-dttr') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        try {
+          const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/dttr_store.json', 60);
+          if (signed?.signedUrl) {
+            const freshRes = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
+            if (freshRes.ok) {
+              const parsed = await freshRes.json();
+              if (parsed && typeof parsed === 'object') {
+                return sendJson(res, 200, parsed);
+              }
+            }
+          }
+          const { data, error } = await supabase.storage.from('face-photos').download('settings/dttr_store.json');
+          if (!error && data) {
+            const text = await data.text();
+            const parsed = JSON.parse(text);
+            if (parsed && typeof parsed === 'object') {
+              return sendJson(res, 200, parsed);
+            }
+          }
+        } catch (err) {
+          console.warn('API get-dttr notice:', err);
+        }
+        return sendJson(res, 200, { monthlyDttrs: [], timeRecords: [] });
+      }
+
       if (action === 'get-upload-url') {
         const storagePath = query.path;
         if (!storagePath) {
@@ -404,6 +460,91 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { success: true, count: reports.length });
         } catch (err) {
           return sendJson(res, 500, { error: err.message || 'Failed to save monitoring reports' });
+        }
+      }
+
+      // Support server-side save of OJT Evaluations & Trainee Questionnaires
+      if (body.action === 'save-evaluations') {
+        try {
+          const evaluations = Array.isArray(body.evaluations) ? body.evaluations : [];
+          const jsonStr = JSON.stringify(evaluations);
+          const buffer = Buffer.from(jsonStr, 'utf8');
+          const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/evaluations_store.json', buffer, {
+            contentType: 'application/json',
+            cacheControl: '0',
+            upsert: true,
+          });
+          if (upErr) {
+            return sendJson(res, 500, { error: upErr.message });
+          }
+          return sendJson(res, 200, { success: true, count: evaluations.length });
+        } catch (err) {
+          return sendJson(res, 500, { error: err.message || 'Failed to save evaluations' });
+        }
+      }
+
+      // Support server-side save of DTTR (Monthly DTTR Tasks + Attendance Time Records)
+      if (body.action === 'save-dttr') {
+        try {
+          let existingStore = { monthlyDttrs: [], timeRecords: [] };
+          try {
+            const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/dttr_store.json', 60);
+            if (signed?.signedUrl) {
+              const r = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
+              if (r.ok) {
+                const parsed = await r.json();
+                if (parsed && typeof parsed === 'object') existingStore = parsed;
+              }
+            }
+          } catch {}
+
+          const monthlyDttrs = Array.isArray(body.monthlyDttrs)
+            ? body.monthlyDttrs
+            : Array.isArray(existingStore.monthlyDttrs)
+            ? existingStore.monthlyDttrs
+            : [];
+
+          const rawTimeRecords = Array.isArray(body.timeRecords)
+            ? body.timeRecords
+            : Array.isArray(existingStore.timeRecords)
+            ? existingStore.timeRecords
+            : [];
+
+          // Strip inline base64 photos from DTTR store so JSON stays tiny and fast
+          const slimTimeRecords = rawTimeRecords.slice(0, 600).map((r) => {
+            if (!r || typeof r !== 'object') return r;
+            const copy = { ...r };
+            if (typeof copy.timeInPhoto === 'string' && copy.timeInPhoto.startsWith('data:')) {
+              delete copy.timeInPhoto;
+            }
+            if (typeof copy.timeOutPhoto === 'string' && copy.timeOutPhoto.startsWith('data:')) {
+              delete copy.timeOutPhoto;
+            }
+            return copy;
+          });
+
+          const payload = {
+            monthlyDttrs,
+            timeRecords: slimTimeRecords,
+            updatedAt: new Date().toISOString(),
+          };
+          const jsonStr = JSON.stringify(payload);
+          const buffer = Buffer.from(jsonStr, 'utf8');
+          const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/dttr_store.json', buffer, {
+            contentType: 'application/json',
+            cacheControl: '0',
+            upsert: true,
+          });
+          if (upErr) {
+            return sendJson(res, 500, { error: upErr.message });
+          }
+          return sendJson(res, 200, {
+            success: true,
+            monthlyDttrsCount: monthlyDttrs.length,
+            timeRecordsCount: slimTimeRecords.length,
+          });
+        } catch (err) {
+          return sendJson(res, 500, { error: err.message || 'Failed to save DTTR store' });
         }
       }
 

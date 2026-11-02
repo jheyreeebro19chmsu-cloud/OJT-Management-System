@@ -960,6 +960,7 @@ function mergeTimeRecords(
         if (remoteMatch.amDepartureGeofenced === undefined && localR.amDepartureGeofenced !== undefined) remoteMatch.amDepartureGeofenced = localR.amDepartureGeofenced;
         if (remoteMatch.pmArrivalGeofenced === undefined && localR.pmArrivalGeofenced !== undefined) remoteMatch.pmArrivalGeofenced = localR.pmArrivalGeofenced;
         if (remoteMatch.pmDepartureGeofenced === undefined && localR.pmDepartureGeofenced !== undefined) remoteMatch.pmDepartureGeofenced = localR.pmDepartureGeofenced;
+        if (!remoteMatch.notes && localR.notes) remoteMatch.notes = localR.notes;
 
         if (!remoteMatch.timeOut && localR.timeOut) {
           remoteMatch.timeOut = localR.timeOut;
@@ -1010,79 +1011,7 @@ function mergeEvaluations(remoteEvaluations: Evaluation[], currentLocalEvaluatio
   if (!currentLocalEvaluations || currentLocalEvaluations.length === 0) {
     return remoteEvaluations;
   }
-
-  const remoteMapById = new Map<string, Evaluation>();
-  const remoteMapByEmp = new Map<string, Evaluation>();
-
-  remoteEvaluations.forEach((rev) => {
-    remoteMapById.set(rev.id, rev);
-    if (rev.employeeId) {
-      remoteMapByEmp.set(rev.employeeId.toLowerCase(), rev);
-    }
-  });
-
-  const merged = remoteEvaluations.map((rev) => {
-    const localMatch = currentLocalEvaluations.find(
-      (lev) =>
-        lev.id === rev.id ||
-        (lev.employeeId && rev.employeeId && lev.employeeId.toLowerCase() === rev.employeeId.toLowerCase())
-    );
-
-    if (!localMatch) return rev;
-
-    // Merge questionnaires: NEVER overwrite answered questions with blank/empty values!
-    const localQ = localMatch.questionnaire;
-    const remoteQ = rev.questionnaire;
-
-    let mergedQ = remoteQ;
-    if (localQ && remoteQ) {
-      mergedQ = { ...remoteQ };
-      (Object.keys(localQ) as (keyof EvaluationQuestionnaire)[]).forEach((key) => {
-        const localVal = String(localQ[key] || '').trim();
-        const remoteVal = String(remoteQ[key] || '').trim();
-        if (localVal && (!remoteVal || localVal.length > remoteVal.length)) {
-          mergedQ![key] = localQ[key];
-        }
-      });
-    } else if (localQ && !remoteQ) {
-      mergedQ = localQ;
-    }
-
-    // Preserve status hierarchy so trainee submission is never downgraded by a stale draft record
-    const STATUS_ORDER: Record<string, number> = {
-      draft: 1,
-      submitted_by_trainee: 2,
-      passed_to_hte: 3,
-      submitted_to_instructor: 4,
-      reviewed_by_instructor: 5,
-      final: 4,
-    };
-
-    let mergedStatus = rev.status || localMatch.status;
-    const localRank = STATUS_ORDER[localMatch.status || 'draft'] || 1;
-    const remoteRank = STATUS_ORDER[rev.status || 'draft'] || 1;
-    if (localRank > remoteRank) {
-      mergedStatus = localMatch.status;
-    }
-
-    return {
-      ...rev,
-      status: mergedStatus,
-      questionnaire: mergedQ,
-      ratings: rev.ratings && Object.keys(rev.ratings).length > 0 ? rev.ratings : (localMatch.ratings || rev.ratings),
-      ratingComments: rev.ratingComments && Object.keys(rev.ratingComments).length > 0 ? rev.ratingComments : (localMatch.ratingComments || rev.ratingComments),
-      commentsSuggestions: rev.commentsSuggestions || localMatch.commentsSuggestions,
-    };
-  });
-
-  // Preserve any local evaluations that are pending cloud creation (e.g. temporary eval- IDs)
-  const localOnly = currentLocalEvaluations.filter((lev) => {
-    if (remoteMapById.has(lev.id)) return false;
-    if (lev.employeeId && remoteMapByEmp.has(lev.employeeId.toLowerCase())) return false;
-    return true;
-  });
-
-  return [...merged, ...localOnly];
+  return supabaseService.mergeEvaluationsList(remoteEvaluations, currentLocalEvaluations);
 }
 
 function mergeEmployees(
@@ -1642,38 +1571,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
             supabaseService.fetchMonitoringReportsFromStorage().then((remoteReports) => {
               if (isMounted && Array.isArray(remoteReports) && remoteReports.length > 0) {
                 setMonitoringReports((prev) => {
-                  const map = new Map<string, MonitoringReport>();
-                  for (const r of remoteReports) {
-                    if (
-                      Boolean(r.createdByRole) ||
-                      (Array.isArray(r.instructorFiles) && r.instructorFiles.length > 0) ||
-                      (Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) ||
-                      (Array.isArray(r.submissions) && r.submissions.length > 0)
-                    ) {
-                      map.set(r.id, r);
-                    }
-                  }
-                  for (const p of prev) {
-                    const existing = map.get(p.id);
-                    if (!existing) {
-                      map.set(p.id, p);
-                    } else {
-                      // Merge submissions
-                      const subMap = new Map<string, any>();
-                      (existing.submissions || []).forEach((s) => subMap.set(s.id, s));
-                      (p.submissions || []).forEach((s) => subMap.set(s.id, s));
-                      const pTime = new Date(p.updatedAt || p.createdAt || 0).getTime();
-                      const eTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-                      map.set(p.id, {
-                        ...(pTime >= eTime ? { ...existing, ...p } : { ...p, ...existing }),
-                        submissions: Array.from(subMap.values()),
-                      });
-                    }
-                  }
-                  const merged = Array.from(map.values());
+                  const merged = supabaseService.mergeMonitoringReportsList(remoteReports, prev);
                   saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
                   return merged;
                 });
+              }
+            }),
+            supabaseService.fetchDttrStoreFromStorage().then((dttrStore) => {
+              if (isMounted && dttrStore) {
+                if (Array.isArray(dttrStore.monthlyDttrs) && dttrStore.monthlyDttrs.length > 0) {
+                  setMonthlyDttrs((prev) => {
+                    const merged = supabaseService.mergeMonthlyDttrsList(dttrStore.monthlyDttrs, prev);
+                    saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, merged);
+                    return merged;
+                  });
+                }
+                if (Array.isArray(dttrStore.timeRecords) && dttrStore.timeRecords.length > 0) {
+                  setTimeRecords((prev) => {
+                    const merged = mergeTimeRecords(dttrStore.timeRecords, prev);
+                    saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+                    return merged;
+                  });
+                }
               }
             }),
           ]).finally(() => {
@@ -1909,6 +1828,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseHostSupervisors,
         supabaseRequiredDocs,
         supabaseMonitoringReports,
+        supabaseDttrStore,
       ] = await Promise.all([
         supabaseService.fetchEmployees(),
         supabaseService.fetchTimeRecords(),
@@ -1921,38 +1841,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseService.fetchHostSupervisors(),
         supabaseService.fetchRequiredDocumentsFromStorage(),
         supabaseService.fetchMonitoringReportsFromStorage(),
+        supabaseService.fetchDttrStoreFromStorage(),
       ]);
+
+      if (supabaseDttrStore && Array.isArray(supabaseDttrStore.monthlyDttrs) && supabaseDttrStore.monthlyDttrs.length > 0) {
+        setMonthlyDttrs((prev) => {
+          const merged = supabaseService.mergeMonthlyDttrsList(supabaseDttrStore.monthlyDttrs, prev);
+          saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, merged);
+          return merged;
+        });
+      }
 
       if (Array.isArray(supabaseMonitoringReports) && supabaseMonitoringReports.length > 0) {
         setMonitoringReports((prev) => {
-          const map = new Map<string, MonitoringReport>();
-          for (const r of supabaseMonitoringReports) {
-            if (
-              Boolean(r.createdByRole) ||
-              (Array.isArray(r.instructorFiles) && r.instructorFiles.length > 0) ||
-              (Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) ||
-              (Array.isArray(r.submissions) && r.submissions.length > 0)
-            ) {
-              map.set(r.id, r);
-            }
-          }
-          for (const p of prev) {
-            const existing = map.get(p.id);
-            if (!existing) {
-              map.set(p.id, p);
-            } else {
-              const subMap = new Map<string, any>();
-              (existing.submissions || []).forEach((s) => subMap.set(s.id, s));
-              (p.submissions || []).forEach((s) => subMap.set(s.id, s));
-              const pTime = new Date(p.updatedAt || p.createdAt || 0).getTime();
-              const eTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-              map.set(p.id, {
-                ...(pTime >= eTime ? { ...existing, ...p } : { ...p, ...existing }),
-                submissions: Array.from(subMap.values()),
-              });
-            }
-          }
-          const merged = Array.from(map.values());
+          const merged = supabaseService.mergeMonitoringReportsList(supabaseMonitoringReports, prev);
           saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
           return merged;
         });
@@ -4021,6 +3923,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeRecords((prev) => {
       const updated = [newRecord, ...prev.filter((r) => r.id !== newRecord.id)];
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+      supabaseService.saveDttrStoreToStorage({ timeRecords: [newRecord] }).catch(() => {});
       return updated;
     });
 
@@ -4049,6 +3952,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               };
               const updated = [mergedCreated, ...prev.filter((r) => r.id !== newRecord.id && r.id !== created.id)];
               saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+              supabaseService.saveDttrStoreToStorage({ timeRecords: [mergedCreated] }).catch(() => {});
               return updated;
             });
           }
@@ -4101,6 +4005,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
 
     setTimeRecords((prev) => {
+      let modifiedRec: TimeRecord | null = null;
       const updated = prev.map((r) => {
         if (r.id === id) {
           const next = { ...r, ...enrichedData };
@@ -4110,11 +4015,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if ('timeOutPhoto' in data && !data.timeOutPhoto) {
             delete (next as any).timeOutPhoto;
           }
+          modifiedRec = next;
           return next;
         }
         return r;
       });
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
+      if (modifiedRec) {
+        supabaseService.saveDttrStoreToStorage({ timeRecords: [modifiedRec] }).catch(() => {});
+      }
       return updated;
     });
 
@@ -4586,7 +4495,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
   // ─── Evaluations ─────────────────────────────────────────────────────────────
   const addEvaluation = (data: Omit<Evaluation, 'id'>): Evaluation => {
     const tempId = `eval-${Date.now()}`;
-    const newEval: Evaluation = { ...data, id: tempId };
+    const nowIso = new Date().toISOString();
+    const newEval: Evaluation = { ...data, id: tempId, evaluatedAt: data.evaluatedAt || nowIso, ...( { updatedAt: nowIso } as any ) };
 
     setEvaluations((prev) => {
       const existingIdx = prev.findIndex(
@@ -4594,11 +4504,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
       let updated: Evaluation[];
       if (existingIdx >= 0) {
-        updated = prev.map((e, idx) => (idx === existingIdx ? { ...e, ...data } : e));
+        updated = prev.map((e, idx) => (idx === existingIdx ? { ...e, ...data, evaluatedAt: nowIso, ...( { updatedAt: nowIso } as any ) } : e));
       } else {
         updated = [newEval, ...prev];
       }
       saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
+      supabaseService.saveEvaluationsToStorage(updated).catch(() => {});
       return updated;
     });
 
@@ -4608,16 +4519,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .then((created) => {
           if (created) {
             setEvaluations((prev) => {
-              const updated = [created, ...prev.filter((e) => e.id !== tempId && e.id !== created.id && (data.employeeId ? e.employeeId !== data.employeeId : true))];
+              const updated = [
+                { ...created, ...( { updatedAt: nowIso } as any ) },
+                ...prev.filter((e) => e.id !== tempId && e.id !== created.id && (data.employeeId ? e.employeeId !== data.employeeId : true)),
+              ];
               saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
+              supabaseService.saveEvaluationsToStorage(updated).catch(() => {});
               return updated;
             });
           }
         })
         .catch((err) => {
-          console.error('[AppContext] Failed to save evaluation to Supabase:', err);
-          // Preserve local storage so user responses are NEVER lost!
-          toast.error('Cloud synchronization delayed: responses are saved locally on your device.');
+          console.warn('[AppContext] Supabase table createEvaluation notice (saved via cloud storage):', err);
         });
     }
 
@@ -4627,19 +4540,23 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const updateEvaluation = (id: string, data: Partial<Evaluation>) => {
     const previous = evaluations.find((e) => e.id === id || (data.employeeId && e.employeeId === data.employeeId));
     const targetId = previous ? previous.id : id;
+    const nowIso = new Date().toISOString();
 
     setEvaluations((prev) => {
-      const updated = prev.map((e) => (e.id === targetId || (data.employeeId && e.employeeId === data.employeeId) ? { ...e, ...data } : e));
+      const updated = prev.map((e) =>
+        e.id === targetId || (data.employeeId && e.employeeId === data.employeeId)
+          ? { ...e, ...data, evaluatedAt: nowIso, ...( { updatedAt: nowIso } as any ) }
+          : e
+      );
       saveToStorage(STORAGE_KEYS.EVALUATIONS, updated);
+      supabaseService.saveEvaluationsToStorage(updated).catch(() => {});
       return updated;
     });
 
     if (useSupabase) {
       const resolvedEmployeeId = data.employeeId || previous?.employeeId;
       supabaseService.updateEvaluation(targetId, { ...data, employeeId: resolvedEmployeeId }).catch((err) => {
-        console.error('[AppContext] Failed to update evaluation in Supabase:', err);
-        // Preserve local state so responses are NEVER lost!
-        toast.error('Cloud synchronization delayed: changes are saved locally on your device.');
+        console.warn('[AppContext] Supabase table updateEvaluation notice (saved via cloud storage):', err);
       });
     }
   };
@@ -5767,6 +5684,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         next = [...prev, updatedRecord];
       }
       saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, next);
+      supabaseService.saveDttrStoreToStorage({ monthlyDttrs: next }).catch(() => {});
       return next;
     });
   }, [employees]);
@@ -5831,6 +5749,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         next = [...prev, updated];
       }
       saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, next);
+      supabaseService.saveDttrStoreToStorage({ monthlyDttrs: next }).catch(() => {});
       return next;
     });
   }, [employees]);

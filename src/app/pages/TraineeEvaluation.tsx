@@ -59,21 +59,96 @@ export function TraineeEvaluation() {
   // Trainee is in edit mode by default so they can answer all questionnaire questions
   const [isEditing, setIsEditing] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const isDirtyRef = React.useRef<boolean>(false);
+  const autoSaveTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Sync latest evaluations on mount
+  // Sync latest evaluations on mount and periodically when not actively typing
   useEffect(() => {
-    refreshData();
+    refreshData({ force: true }).catch(() => {});
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible' && !isDirtyRef.current) {
+        refreshData({ force: true }).catch(() => {});
+      }
+    }, 8000);
+    return () => clearInterval(interval);
   }, [refreshData]);
 
-  // Sync when evaluation updates
+  // Sync when evaluation updates without overwriting non-empty local answers with blanks
   useEffect(() => {
-    if (evaluation?.questionnaire) {
-      setTraineeQuestionnaire((prev) => ({
-        ...prev,
-        ...evaluation.questionnaire,
-      }));
+    if (evaluation?.questionnaire && !isDirtyRef.current) {
+      setTraineeQuestionnaire((prev) => {
+        const next = { ...prev };
+        for (const [k, v] of Object.entries(evaluation.questionnaire || {})) {
+          const valStr = String(v ?? '').trim();
+          const curStr = String((prev as any)[k] ?? '').trim();
+          if (valStr || !curStr) {
+            (next as any)[k] = v;
+          }
+        }
+        return next;
+      });
     }
   }, [evaluation?.questionnaire]);
+
+  const persistQuestionnaire = React.useCallback(
+    (q: EvaluationQuestionnaire, asSubmit: boolean) => {
+      if (!employee) return;
+      const currentStatus = evaluation?.status;
+      const newStatus: Evaluation['status'] = (() => {
+        if (currentStatus === 'reviewed_by_instructor') return 'reviewed_by_instructor';
+        if (currentStatus === 'submitted_to_instructor') return 'submitted_to_instructor';
+        if (currentStatus === 'passed_to_hte') return 'passed_to_hte';
+        if (asSubmit || countAnsweredQuestions(q) > 0) return 'submitted_by_trainee';
+        return currentStatus || 'draft';
+      })();
+
+      if (evaluation) {
+        updateEvaluation(evaluation.id, {
+          employeeId: employee.id,
+          questionnaire: q,
+          status: newStatus,
+        });
+      } else {
+        addEvaluation({
+          employeeId: employee.id,
+          academicYear: employee.academicYear || settings?.activeAcademicYear || '2026-2027',
+          evaluatedBy: employee.supervisorName || 'HTE Supervisor',
+          evaluatorName: employee.supervisorName || 'HTE Supervisor',
+          evaluatorPosition: 'HTE Supervisor',
+          date: new Date().toISOString().split('T')[0],
+          attendanceScore: 85,
+          performanceScore: 85,
+          attitudeScore: 85,
+          punctualityScore: 85,
+          communicationScore: 85,
+          overallScore: 85,
+          grade: 'Very Good',
+          strengths: 'Active trainee participant in OJT program.',
+          areasForImprovement: 'Continuous technical enhancement.',
+          recommendations: 'Awaiting formal supervisor ratings.',
+          evaluatedAt: new Date().toISOString(),
+          status: newStatus,
+          questionnaire: q,
+        });
+      }
+    },
+    [employee, evaluation, settings?.activeAcademicYear, updateEvaluation, addEvaluation]
+  );
+
+  const handleQuestionnaireChange = React.useCallback(
+    (updatedQ: EvaluationQuestionnaire) => {
+      isDirtyRef.current = true;
+      setTraineeQuestionnaire(updatedQ);
+      if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
+      autoSaveTimerRef.current = setTimeout(() => {
+        persistQuestionnaire(updatedQ, false);
+        setTimeout(() => {
+          isDirtyRef.current = false;
+        }, 1500);
+      }, 900);
+    },
+    [persistQuestionnaire]
+  );
 
   const instructorName = React.useMemo(() => {
     if (employee?.instructorId) {
@@ -103,58 +178,23 @@ export function TraineeEvaluation() {
       return;
     }
 
+    if (autoSaveTimerRef.current) clearTimeout(autoSaveTimerRef.current);
     setIsSaving(true);
     const currentStatus = evaluation?.status;
-    const newStatus: Evaluation['status'] = (() => {
-      // Preserve workflow status if already in HTE rating or reviewed
-      if (currentStatus === 'reviewed_by_instructor') return 'reviewed_by_instructor';
-      if (currentStatus === 'submitted_to_instructor') return 'submitted_to_instructor';
-      if (currentStatus === 'passed_to_hte') return 'passed_to_hte';
-      if (asSubmit) return 'submitted_by_trainee';
-      return currentStatus || 'draft';
-    })();
 
     try {
-      if (evaluation) {
-        updateEvaluation(evaluation.id, {
-          employeeId: employee.id,
-          questionnaire: traineeQuestionnaire,
-          status: newStatus,
-        });
-      } else {
-        addEvaluation({
-          employeeId: employee.id,
-          academicYear: employee.academicYear || settings?.activeAcademicYear || '2026-2027',
-          evaluatedBy: employee.supervisorName || 'HTE Supervisor',
-          evaluatorName: employee.supervisorName || 'HTE Supervisor',
-          evaluatorPosition: 'HTE Supervisor',
-          date: new Date().toISOString().split('T')[0],
-          attendanceScore: 85,
-          performanceScore: 85,
-          attitudeScore: 85,
-          punctualityScore: 85,
-          communicationScore: 85,
-          overallScore: 85,
-          grade: 'Very Good',
-          strengths: 'Active trainee participant in OJT program.',
-          areasForImprovement: 'Continuous technical enhancement.',
-          recommendations: 'Awaiting formal supervisor ratings.',
-          evaluatedAt: new Date().toISOString(),
-          status: asSubmit ? 'submitted_by_trainee' : 'draft',
-          questionnaire: traineeQuestionnaire,
-        });
-      }
+      persistQuestionnaire(traineeQuestionnaire, asSubmit);
+      isDirtyRef.current = false;
 
       if (asSubmit) {
         toast.success(
           currentStatus === 'reviewed_by_instructor' || currentStatus === 'submitted_to_instructor'
-            ? '✓ Questionnaire responses updated successfully!'
-            : '✓ Questionnaire submitted to Instructor! Your coordinator will review and endorse to your HTE.'
+            ? '✓ Questionnaire responses updated and synced to Instructor!'
+            : '✓ Questionnaire submitted to Instructor! Your coordinator can now view your responses.'
         );
       } else {
-        toast.success('Draft questionnaire responses saved.');
+        toast.success('Draft questionnaire responses saved and synced.');
       }
-      await refreshData();
     } catch (err: any) {
       console.error('Save questionnaire error:', err);
       toast.error('Failed to save questionnaire. Please try again.');
@@ -350,7 +390,7 @@ export function TraineeEvaluation() {
         role="trainee"
         initialPageTab="page2"
         hideTopBar={true}
-        onQuestionnaireChange={setTraineeQuestionnaire}
+        onQuestionnaireChange={handleQuestionnaireChange}
         onSaveDraft={() => handleSaveQuestionnaire(false)}
         onSubmitFinal={() => handleSaveQuestionnaire(true)}
         onEditToggle={() => setIsEditing(true)}
