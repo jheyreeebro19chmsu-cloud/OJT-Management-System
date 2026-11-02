@@ -143,7 +143,7 @@ export function Login() {
           ? window.location.origin
           : 'https://chmsuojtmis.site';
 
-      const { error: oauthError } = await supabase.auth.signInWithOAuth({
+      const oauthPromise = supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${redirectOrigin}/oauth-callback`,
@@ -152,6 +152,21 @@ export function Login() {
           },
         },
       });
+
+      const timeoutPromise = new Promise<{ error: { message: string } | null }>((resolve) =>
+        setTimeout(
+          () =>
+            resolve({
+              error: {
+                message:
+                  'Google sign-in timed out because the database server is unresponsive. Please check your Supabase project status or restart the project in the Supabase dashboard.',
+              },
+            }),
+          14000
+        )
+      );
+
+      const { error: oauthError } = await Promise.race([oauthPromise, timeoutPromise]);
       if (oauthError) {
         setError(oauthError.message || 'Failed to initialize Google sign-in.');
         setGoogleLoading(false);

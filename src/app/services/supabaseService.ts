@@ -3889,8 +3889,8 @@ export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringRep
   // 2. Fallback: Direct cache-busted public Supabase URL with no-store
   try {
     const pubRes = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json?t=${Date.now()}`,
-      { cache: 'no-store' }
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json`,
+      { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
     );
     if (pubRes.ok) {
       const data = await pubRes.json();
@@ -4025,8 +4025,8 @@ export async function fetchEvaluationsFromStorage(): Promise<Evaluation[]> {
 
   try {
     const pubRes = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/evaluations_store.json?t=${Date.now()}`,
-      { cache: 'no-store' }
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/evaluations_store.json`,
+      { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
     );
     if (pubRes.ok) {
       const data = await pubRes.json();
@@ -4154,8 +4154,8 @@ export async function fetchDttrStoreFromStorage(): Promise<{
 
   try {
     const pubRes = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/dttr_store.json?t=${Date.now()}`,
-      { cache: 'no-store' }
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/dttr_store.json`,
+      { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
     );
     if (pubRes.ok) {
       const data = await pubRes.json();
