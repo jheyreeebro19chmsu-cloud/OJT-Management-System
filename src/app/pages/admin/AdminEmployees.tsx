@@ -7,7 +7,7 @@ import { toast } from 'sonner';
 import { FaceCapture } from '../../components/FaceCapture';
 import { isSecurityApiConfigured, registerFace } from '../../services/securityApi';
 import { useApp } from '../../store/AppContext';
-import { Employee, TraineeDocuments, TraineeDocumentFile } from '../../types';
+import { Employee, TraineeDocuments, TraineeDocumentFile, RequiredDocument, TraineeDocumentItem } from '../../types';
 import { getPhotoUrl } from '../../services/config';
 import { saveDocumentPassStatus, uploadDocumentToStorage } from '../../services/supabaseService';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
@@ -196,6 +196,101 @@ export function AdminEmployees() {
         fileUrl: resolveSafeDocumentViewUrl(resolvedData) || resolvedData,
       };
     });
+  };
+
+  // Helper to retrieve custom (File #11+) departmental/instructor requirements for an employee
+  const getCustomRequirementsForEmp = (emp: Employee | null | undefined): RequiredDocument[] => {
+    if (!emp) return [];
+    const empId = emp.id || emp.employeeId;
+    const specific = getEmployeeRequiredDocuments(empId).filter((r) => !r.targetRequirementKey);
+    const globalCustom = (requiredDocuments || []).filter((r) => !r.targetRequirementKey);
+
+    const map = new Map<string, RequiredDocument>();
+    for (const r of specific) {
+      if (r && r.id) map.set(r.id, r);
+    }
+    for (const r of globalCustom) {
+      if (r && r.id && !map.has(r.id)) {
+        if (!r.assignedEmployeeIds || r.assignedEmployeeIds.length === 0 || r.assignedEmployeeIds.includes('all') || r.assignedEmployeeIds.includes(empId)) {
+          map.set(r.id, r);
+        }
+      }
+    }
+    return Array.from(map.values());
+  };
+
+  // Helper to robustly resolve custom document submission, attached files, and pass status
+  const resolveCustomTraineeDoc = (
+    emp: Employee | null | undefined,
+    req: RequiredDocument
+  ): {
+    doc: TraineeDocumentItem | undefined;
+    files: TraineeDocumentFile[];
+    hasFile: boolean;
+    isPassed: boolean;
+    fileName?: string;
+    fileUrl?: string;
+    fileCount: number;
+  } => {
+    if (!emp) return { doc: undefined, files: [], hasFile: false, isPassed: false, fileCount: 0 };
+    const docs = (emp.submittedDocuments || {}) as Record<string, any>;
+    const empId = emp.id || emp.employeeId;
+
+    // 1. Direct key match: req.id, req.targetRequirementKey, req.title, or slugified req.title
+    let docItem: TraineeDocumentItem | undefined =
+      docs[req.id] ||
+      (req.targetRequirementKey ? docs[req.targetRequirementKey] : undefined) ||
+      docs[req.title] ||
+      docs[req.title.toLowerCase().replace(/[^a-z0-9]/g, '_')] ||
+      docs[req.title.toLowerCase().replace(/\s+/g, '')];
+
+    // 2. Case-insensitive key match
+    if (!docItem) {
+      const targetKeyLower = (req.id || '').toLowerCase();
+      const titleLower = (req.title || '').toLowerCase();
+      const matchedKey = Object.keys(docs).find((k) => {
+        const kl = k.toLowerCase();
+        return kl === targetKeyLower || kl === titleLower || (req.targetRequirementKey && kl === req.targetRequirementKey.toLowerCase());
+      });
+      if (matchedKey) {
+        docItem = docs[matchedKey];
+      }
+    }
+
+    // 3. Fallback: Check getRequiredDocumentSubmission
+    const sub = getRequiredDocumentSubmission(req.id, empId) || (req.targetRequirementKey ? getRequiredDocumentSubmission(req.targetRequirementKey, empId) : null);
+    if (sub && (!docItem || (!docItem.fileUrl && !docItem.dataUrl && !docItem.name))) {
+      const isSubPassed = sub.status === 'approved' || sub.verificationStatus === 'passed';
+      docItem = {
+        name: sub.fileName || `${req.title}.pdf`,
+        fileUrl: sub.fileUrl,
+        dataUrl: sub.fileDataUrl || sub.fileUrl,
+        size: (sub as any).fileSize || 0,
+        fileType: (sub as any).fileType || 'application/pdf',
+        status: isSubPassed ? 'passed' : 'submitted',
+        uploadedAt: sub.submittedAt,
+        files: sub.files,
+        notes: sub.note,
+      };
+    }
+
+    // 4. Resolve files with resolveTraineeDocFiles
+    const files = resolveTraineeDocFiles(empId, req.id, docItem);
+    const isPassed = docItem?.status === 'passed' || sub?.status === 'approved' || sub?.verificationStatus === 'passed';
+    const hasFile = files.length > 0 || Boolean(docItem?.name || docItem?.fileUrl || docItem?.dataUrl || sub?.fileName || sub?.fileUrl);
+    const primaryFile = files[0];
+    const fileName = primaryFile?.name || docItem?.name || sub?.fileName;
+    const fileUrl = primaryFile?.fileUrl || primaryFile?.dataUrl || docItem?.fileUrl || docItem?.dataUrl || sub?.fileUrl || sub?.fileDataUrl;
+
+    return {
+      doc: docItem,
+      files,
+      hasFile,
+      isPassed,
+      fileName,
+      fileUrl,
+      fileCount: files.length > 0 ? files.length : hasFile ? 1 : 0,
+    };
   };
 
   const handleInstructorUploadTraineeDoc = async (
@@ -713,8 +808,17 @@ export function AdminEmployees() {
       if (docFilterStatus === 'incomplete' && (isCompliant || hasPending)) return false;
 
       if (docFilterRequirement !== 'all') {
-        const targetDoc = getTraineeDocItem(docs, docFilterRequirement as any);
-        if (!targetDoc?.dataUrl && !targetDoc?.fileUrl && !targetDoc?.name) return false;
+        const isStandard = REQUIRED_TRAINEE_DOC_KEYS.includes(docFilterRequirement as any);
+        if (isStandard) {
+          const targetDoc = getTraineeDocItem(docs, docFilterRequirement as any);
+          if (!targetDoc?.dataUrl && !targetDoc?.fileUrl && !targetDoc?.name) return false;
+        } else {
+          const customReq = requiredDocuments.find((r) => r.id === docFilterRequirement);
+          if (customReq) {
+            const res = resolveCustomTraineeDoc(t, customReq);
+            if (!res.hasFile) return false;
+          }
+        }
       }
 
       return true;
@@ -2661,12 +2765,21 @@ export function AdminEmployees() {
                         }}
                         className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-xl text-xs font-semibold text-gray-700 focus:outline-none focus:ring-2 focus:ring-violet-500/20 max-w-[200px]"
                       >
-                        <option value="all">All 10 Requirements</option>
+                        <option value="all">
+                          All Requirements ({REQUIRED_TRAINEE_DOCUMENTS.length + requiredDocuments.filter((r) => !r.targetRequirementKey).length})
+                        </option>
                         {REQUIRED_TRAINEE_DOCUMENTS.map((req) => (
                           <option key={req.key} value={req.key}>
                             {req.num}. {req.title}
                           </option>
                         ))}
+                        {requiredDocuments
+                          .filter((r) => !r.targetRequirementKey)
+                          .map((cReq, cIdx) => (
+                            <option key={cReq.id} value={cReq.id}>
+                              #{REQUIRED_TRAINEE_DOCUMENTS.length + cIdx + 1}. {cReq.title} (Custom)
+                            </option>
+                          ))}
                       </select>
 
                       {/* Course Filter */}
@@ -2953,42 +3066,40 @@ export function AdminEmployees() {
                                   {/* Custom Instructor-Added Requirements in Matrix */}
                                   {requiredDocuments
                                     .filter((r) => !r.targetRequirementKey)
-                                    .map((cReq) => {
-                                      const cDoc = (docs as any)?.[cReq.id];
-                                      const resolvedFiles = resolveTraineeDocFiles(trainee.id, cReq.id, cDoc);
-                                      const isDocPassed = cDoc?.status === 'passed';
-                                      const hasFile = Boolean(cDoc?.dataUrl || cDoc?.fileUrl || cDoc?.name || resolvedFiles.length > 0);
-                                      if (hasFile) {
+                                    .map((cReq, cIdx) => {
+                                      const res = resolveCustomTraineeDoc(trainee, cReq);
+                                      const docNum = REQUIRED_TRAINEE_DOCUMENTS.length + cIdx + 1;
+                                      if (res.hasFile) {
                                         return (
                                           <button
                                             key={cReq.id}
                                             type="button"
                                             onClick={() => {
-                                              const firstFile = resolvedFiles[0];
+                                              const firstFile = res.files[0];
                                               setPreviewInstructorDoc({
                                                 studentName: trainee.name,
                                                 studentId: trainee.employeeId,
-                                                title: cReq.title,
-                                                fileName: firstFile?.name || cDoc?.name || `${cReq.title}.pdf`,
-                                                fileUrl: resolveSafeDocumentViewUrl(firstFile?.fileUrl || firstFile?.dataUrl || cDoc?.fileUrl || cDoc?.dataUrl) || undefined,
-                                                files: resolvedFiles.length > 0 ? resolvedFiles : undefined,
+                                                title: `#${docNum}. ${cReq.title}`,
+                                                fileName: firstFile?.name || res.fileName || `${cReq.title}.pdf`,
+                                                fileUrl: resolveSafeDocumentViewUrl(firstFile?.fileUrl || firstFile?.dataUrl || res.fileUrl) || undefined,
+                                                files: res.files.length > 0 ? res.files : undefined,
                                                 activeFileIndex: 0,
-                                                note: cDoc?.notes || `Submitted for ${cReq.title}`,
-                                                date: cDoc?.uploadedAt ? new Date(cDoc.uploadedAt).toLocaleDateString() : 'Submitted',
+                                                note: res.doc?.notes || `Submitted for ${cReq.title} by ${trainee.name}`,
+                                                date: res.doc?.uploadedAt ? new Date(res.doc.uploadedAt).toLocaleDateString() : 'Submitted',
                                               });
                                             }}
                                             className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-colors inline-flex items-center gap-1 cursor-pointer ${
-                                              isDocPassed
-                                                ? 'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100'
-                                                : 'bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200'
+                                              res.isPassed
+                                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                                                : 'bg-blue-100 text-blue-800 border border-blue-300 hover:bg-blue-200 animate-pulse'
                                             }`}
-                                            title={`${cReq.title}: ${isDocPassed ? 'PASSED' : 'SUBMITTED'} (Click to review)`}
+                                            title={`#${docNum} ${cReq.title}: ${res.isPassed ? 'PASSED' : 'SUBMITTED (Pending Review)'} (Click to preview${res.fileCount > 1 ? ` ${res.fileCount} files` : ''})`}
                                           >
-                                            {isDocPassed ? <Check size={9} className="stroke-[3]" /> : <Clock size={9} />}
-                                            <span className="truncate max-w-[80px]">{cReq.title.split(' ')[0]}</span>
-                                            {resolvedFiles.length > 1 && (
-                                              <span className="text-[8px] px-1 rounded bg-white/80">
-                                                {resolvedFiles.length}
+                                            {res.isPassed ? <Check size={9} className="stroke-[3]" /> : <Clock size={9} />}
+                                            <span className="truncate max-w-[80px]">#{docNum} {cReq.title.split(' ')[0]}</span>
+                                            {res.fileCount > 1 && (
+                                              <span className="text-[8px] px-1 rounded bg-white/80 font-mono">
+                                                {res.fileCount}
                                               </span>
                                             )}
                                           </button>
@@ -3000,9 +3111,9 @@ export function AdminEmployees() {
                                           type="button"
                                           onClick={() => openReview(trainee)}
                                           className="px-1.5 py-0.5 rounded text-[10px] text-violet-500 bg-violet-50/70 border border-dashed border-violet-200 font-semibold hover:bg-violet-100 cursor-pointer"
-                                          title={`Custom Requirement "${cReq.title}": Pending Trainee Upload (Click to open review)`}
+                                          title={`#${docNum} Custom Requirement "${cReq.title}": Pending Trainee Upload (Click to open review)`}
                                         >
-                                          +{cReq.title.split(' ')[0]}
+                                          #{docNum} {cReq.title.split(' ')[0]}
                                         </button>
                                       );
                                     })}
@@ -4535,38 +4646,42 @@ export function AdminEmployees() {
                           {isTrainee && (
                             <div className="rounded-2xl border border-violet-100 bg-violet-50/70 p-4 space-y-3">
                               <div className="flex items-center justify-between">
-                                <div>
-                                  <p className="text-sm font-bold text-violet-900 flex items-center gap-1.5">
-                                    <FileCheck size={16} className="text-violet-600" />
-                                    OJT Documents Monitoring ({REQUIRED_TRAINEE_DOCUMENTS.length} Documents)
-                                  </p>
-                                  <p className="text-[11px] text-violet-600 mt-0.5">
-                                    {REQUIRED_TRAINEE_DOCUMENTS.length} Official Compliance Documents Required for Trainee Activation & Deployment
-                                  </p>
-                                </div>
                                 {(() => {
+                                  const customReqs = getCustomRequirementsForEmp(selectedEmp);
+                                  const totalReqsCount = REQUIRED_TRAINEE_DOCUMENTS.length + customReqs.length;
                                   const missingCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
                                     const d = getTraineeDocItem(selectedEmp.submittedDocuments, k);
                                     return !d?.dataUrl && !d?.name;
-                                  }).length;
+                                  }).length + customReqs.filter((cr) => !resolveCustomTraineeDoc(selectedEmp, cr).hasFile).length;
                                   const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
                                     const d = getTraineeDocItem(selectedEmp.submittedDocuments, k);
                                     return d?.status === 'passed';
-                                  }).length;
-                                  const isCompliant = missingCount === 0 && passedCount === REQUIRED_TRAINEE_DOCUMENTS.length && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
+                                  }).length + customReqs.filter((cr) => resolveCustomTraineeDoc(selectedEmp, cr).isPassed).length;
+                                  const isCompliant = missingCount === 0 && passedCount === totalReqsCount && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
 
                                   return (
-                                    <span
-                                      className={`text-xs font-bold px-3 py-1 rounded-full border ${
-                                        isCompliant
-                                          ? 'bg-green-100 text-green-700 border-green-200'
-                                          : 'bg-amber-100 text-amber-700 border-amber-200'
-                                      }`}
-                                    >
-                                      {isCompliant
-                                        ? `${REQUIRED_TRAINEE_DOCUMENTS.length}/${REQUIRED_TRAINEE_DOCUMENTS.length} Passed (Compliant)`
-                                        : `${passedCount}/${REQUIRED_TRAINEE_DOCUMENTS.length} Passed (Pending)`}
-                                    </span>
+                                    <>
+                                      <div>
+                                        <p className="text-sm font-bold text-violet-900 flex items-center gap-1.5">
+                                          <FileCheck size={16} className="text-violet-600" />
+                                          OJT Documents Monitoring ({totalReqsCount} Documents)
+                                        </p>
+                                        <p className="text-[11px] text-violet-600 mt-0.5">
+                                          {totalReqsCount} Official Compliance Documents Required for Trainee Activation & Deployment
+                                        </p>
+                                      </div>
+                                      <span
+                                        className={`text-xs font-bold px-3 py-1 rounded-full border ${
+                                          isCompliant
+                                            ? 'bg-green-100 text-green-700 border-green-200'
+                                            : 'bg-amber-100 text-amber-700 border-amber-200'
+                                        }`}
+                                      >
+                                        {isCompliant
+                                          ? `${totalReqsCount}/${totalReqsCount} Passed (Compliant)`
+                                          : `${passedCount}/${totalReqsCount} Passed (Pending)`}
+                                      </span>
+                                    </>
                                   );
                                 })()}
                               </div>
@@ -4797,6 +4912,232 @@ export function AdminEmployees() {
                                   );
                                 })}
                               </div>
+
+                              {/* Custom Departmental & Instructor Requirements (File #11+) */}
+                              {(() => {
+                                const customReqs = getCustomRequirementsForEmp(selectedEmp);
+                                if (customReqs.length === 0) return null;
+                                return (
+                                  <div className="pt-3 border-t border-violet-200/80 space-y-2.5">
+                                    <div className="flex items-center justify-between">
+                                      <p className="text-xs font-bold text-violet-900 flex items-center gap-1.5">
+                                        <Sparkles size={14} className="text-violet-600" />
+                                        Additional Department Requirements ({customReqs.length})
+                                      </p>
+                                      <span className="text-[10px] text-violet-600 font-semibold">Instructor Specific</span>
+                                    </div>
+                                    {customReqs.map((cReq, cIdx) => {
+                                      const docNum = REQUIRED_TRAINEE_DOCUMENTS.length + cIdx + 1;
+                                      const res = resolveCustomTraineeDoc(selectedEmp, cReq);
+                                      const isPassed = res.isPassed;
+                                      const hasFile = res.hasFile;
+                                      const isPendingDoc = hasFile && !isPassed;
+                                      const filesList = res.files;
+                                      const activeFile = filesList[0];
+                                      const targetUrl = resolveSafeDocumentViewUrl(activeFile?.fileUrl || activeFile?.dataUrl || res.fileUrl) || undefined;
+
+                                      return (
+                                        <div
+                                          key={cReq.id}
+                                          className={`flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 sm:px-4 sm:py-3 rounded-2xl border transition-all ${
+                                            isPassed
+                                              ? 'bg-emerald-50/40 border-emerald-200/90 hover:bg-emerald-50/60 shadow-2xs'
+                                              : isPendingDoc
+                                              ? 'bg-blue-50/40 border-blue-200/90 hover:bg-blue-50/60 shadow-2xs'
+                                              : 'bg-slate-50/70 border-slate-200 hover:bg-slate-50 shadow-2xs'
+                                          }`}
+                                        >
+                                          {/* Attachment Left */}
+                                          <div className="flex items-center gap-3.5 min-w-0 flex-1">
+                                            <div
+                                              className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 shadow-2xs border ${
+                                                isPassed
+                                                  ? 'bg-emerald-600 border-emerald-700 text-white'
+                                                  : isPendingDoc
+                                                  ? 'bg-blue-600 border-blue-700 text-white'
+                                                  : 'bg-white border-slate-200 text-slate-500'
+                                              }`}
+                                            >
+                                              {isPassed ? (
+                                                <FileCheck size={18} className="stroke-[2.5]" />
+                                              ) : (
+                                                <span className="font-extrabold text-xs">#{docNum}</span>
+                                              )}
+                                            </div>
+
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex items-center gap-2 flex-wrap">
+                                                <span className="text-xs sm:text-sm font-bold text-gray-900 truncate" title={cReq.title}>
+                                                  {docNum}. {cReq.title}
+                                                </span>
+                                                <span
+                                                  className={`text-[9px] font-extrabold px-2 py-0.5 rounded-full border shrink-0 ${
+                                                    isPassed
+                                                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                                      : isPendingDoc
+                                                      ? 'bg-blue-100 text-blue-800 border-blue-200'
+                                                      : 'bg-amber-100 text-amber-800 border-amber-200'
+                                                  }`}
+                                                >
+                                                  {isPassed ? '✓ PASSED' : isPendingDoc ? 'PENDING REVIEW' : 'PENDING'}
+                                                </span>
+                                              </div>
+
+                                              {hasFile ? (
+                                                <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
+                                                  {filesList.length > 1 ? (
+                                                    <span
+                                                      className="inline-flex items-center gap-1 font-bold text-[11px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-2 py-0.5 rounded-md"
+                                                      title={`${filesList.length} files attached`}
+                                                    >
+                                                      <Files size={12} /> {filesList.length} Files Attached
+                                                    </span>
+                                                  ) : (
+                                                    <span
+                                                      className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                                      title={res.fileName || 'Attached document'}
+                                                    >
+                                                      📎 {res.fileName || 'Attached document'}
+                                                    </span>
+                                                  )}
+                                                  {res.doc?.size ? (
+                                                    <span className="text-[10px] text-slate-500 font-medium">
+                                                      {(Number(res.doc.size) / 1024).toFixed(0)} KB
+                                                    </span>
+                                                  ) : null}
+                                                  {res.doc?.uploadedAt ? (
+                                                    <span className="text-[10px] text-slate-400">
+                                                      • {new Date(res.doc.uploadedAt).toLocaleDateString()}
+                                                    </span>
+                                                  ) : null}
+                                                </div>
+                                              ) : (
+                                                <div className="flex items-center gap-1.5 mt-1 text-[11px] text-slate-400">
+                                                  <span className="italic">No submission yet</span>
+                                                  {cReq.description && (
+                                                    <>
+                                                      <span className="hidden sm:inline text-slate-300">•</span>
+                                                      <span className="hidden sm:inline truncate max-w-[320px] text-slate-500 not-italic">
+                                                        {cReq.description}
+                                                      </span>
+                                                    </>
+                                                  )}
+                                                </div>
+                                              )}
+                                            </div>
+                                          </div>
+
+                                          {/* Attachment Right: Actions */}
+                                          <div className="flex items-center gap-1.5 shrink-0 flex-wrap self-start sm:self-center">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setPreviewInstructorDoc({
+                                                  studentName: selectedEmp.name,
+                                                  studentId: selectedEmp.employeeId,
+                                                  title: `${docNum}. ${cReq.title}`,
+                                                  fileName: activeFile?.name || res.fileName || `${cReq.title}.pdf`,
+                                                  fileUrl: targetUrl,
+                                                  note: hasFile
+                                                    ? `Uploaded File${filesList.length > 1 ? `s (${filesList.length})` : ''}: ${res.fileName || cReq.title}`
+                                                    : `Requirement: ${cReq.description || cReq.title}`,
+                                                  date: res.doc?.uploadedAt ? new Date(res.doc.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                                                  files: filesList.length > 0 ? filesList : undefined,
+                                                  activeFileIndex: 0,
+                                                });
+                                              }}
+                                              className="py-1.5 px-3 rounded-xl bg-violet-50 text-violet-700 hover:bg-violet-100 border border-violet-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                              title={hasFile ? 'Preview attached document' : 'View requirement'}
+                                            >
+                                              <Eye size={13} /> {hasFile ? (filesList.length > 1 ? `Preview (${filesList.length})` : 'Preview') : 'View Doc'}
+                                            </button>
+
+                                            {hasFile && targetUrl && (
+                                              <button
+                                                type="button"
+                                                onClick={() =>
+                                                  downloadDocument(
+                                                    targetUrl,
+                                                    res.fileName || `${cReq.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}`
+                                                  )
+                                                }
+                                                className="py-1.5 px-3 rounded-xl bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
+                                                title="Download attached student document"
+                                              >
+                                                <Download size={13} /> Download
+                                              </button>
+                                            )}
+
+                                            <button
+                                              type="button"
+                                              onClick={async () => {
+                                                const newDocStatus: 'passed' | 'pending' = isPassed ? 'pending' : 'passed';
+                                                const currentDocs = selectedEmp.submittedDocuments || {};
+                                                const updatedDocs: TraineeDocuments = {
+                                                  ...currentDocs,
+                                                  [cReq.id]: {
+                                                    ...(currentDocs[cReq.id] || res.doc || {
+                                                      name: res.fileName || `${cReq.title}.pdf`,
+                                                      fileType: 'application/pdf',
+                                                      size: 0,
+                                                      uploadedAt: new Date().toISOString(),
+                                                    }),
+                                                    status: newDocStatus,
+                                                  },
+                                                };
+                                                const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
+                                                const stdPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
+                                                const customPassed = customReqs.every((cr) => (cr.id === cReq.id ? newDocStatus === 'passed' : updatedDocs[cr.id]?.status === 'passed'));
+                                                const allPassed = stdPassed && customPassed;
+                                                const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed') || customReqs.some((cr) => (cr.id === cReq.id ? newDocStatus === 'passed' : updatedDocs[cr.id]?.status === 'passed'));
+                                                const finalDocStatus = allPassed ? 'passed' : anyPassed ? 'partial' : 'pending';
+
+                                                await updateEmployee(selectedEmp.id, {
+                                                  submittedDocuments: updatedDocs,
+                                                  documentsPassed: allPassed,
+                                                  documentsStatus: finalDocStatus,
+                                                });
+                                                saveDocumentPassStatus(selectedEmp.id, {
+                                                  docKey: cReq.id,
+                                                  status: newDocStatus,
+                                                  allPassed,
+                                                  documentsStatus: finalDocStatus,
+                                                  submittedDocuments: updatedDocs,
+                                                  documentItem: updatedDocs[cReq.id],
+                                                }).catch(console.warn);
+                                                submitRequiredDocument(cReq.id, selectedEmp.id, {
+                                                  fileName: res.fileName || `${cReq.title}.pdf`,
+                                                  fileUrl: res.fileUrl || '',
+                                                  status: newDocStatus === 'passed' ? 'approved' : 'submitted',
+                                                  verificationStatus: newDocStatus === 'passed' ? 'passed' : 'pending',
+                                                });
+                                                setSelectedEmp({
+                                                  ...selectedEmp,
+                                                  submittedDocuments: updatedDocs,
+                                                  documentsPassed: allPassed,
+                                                  documentsStatus: finalDocStatus,
+                                                });
+                                                toast.success(
+                                                  newDocStatus === 'passed'
+                                                    ? `${cReq.title} marked as PASSED`
+                                                    : `${cReq.title} marked as PENDING`
+                                                );
+                                              }}
+                                              className={`py-1.5 px-3.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-2xs ${
+                                                isPassed
+                                                  ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                                  : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                                              }`}
+                                            >
+                                              {isPassed ? 'Revoke' : '✓ Approve'}
+                                            </button>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                );
+                              })()}
 
                               {/* Bulk Toggle All Documents Action */}
                               {(() => {
@@ -5783,23 +6124,23 @@ export function AdminEmployees() {
                     </div>
 
                     {/* Custom Departmental Requirements Section */}
-                    {requiredDocuments.filter((r) => !r.targetRequirementKey).length > 0 && (
+                    {getCustomRequirementsForEmp(selectedEmp).length > 0 && (
                       <div className="pt-4 mt-2 border-t border-gray-100 space-y-2.5">
                         <div className="flex items-center justify-between">
                           <h5 className="text-xs font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
                             <Sparkles size={13} className="text-violet-600" />
-                            Custom Department Requirements ({requiredDocuments.filter((r) => !r.targetRequirementKey).length})
+                            Custom Department Requirements ({getCustomRequirementsForEmp(selectedEmp).length})
                           </h5>
                           <span className="text-[10px] text-gray-500">Instructor Specific</span>
                         </div>
 
-                        {requiredDocuments
-                          .filter((r) => !r.targetRequirementKey)
+                        {getCustomRequirementsForEmp(selectedEmp)
                           .map((cReq, cIdx) => {
-                            const cDoc = (selectedEmp.submittedDocuments as any)?.[cReq.id];
-                            const resolvedCustomFiles = resolveTraineeDocFiles(selectedEmp.id, cReq.id, cDoc);
-                            const isPassed = cDoc?.status === 'passed';
-                            const hasFile = resolvedCustomFiles.length > 0 || Boolean(cDoc?.dataUrl || cDoc?.fileUrl || cDoc?.name);
+                            const res = resolveCustomTraineeDoc(selectedEmp, cReq);
+                            const cDoc = res.doc;
+                            const resolvedCustomFiles = res.files;
+                            const isPassed = res.isPassed;
+                            const hasFile = res.hasFile;
                             const hasInstructorTpl = Boolean(cReq.fileUrl || cReq.dataUrl || cReq.fileName || (cReq.files && cReq.files.length > 0));
 
                             return (
@@ -6023,8 +6364,8 @@ export function AdminEmployees() {
                                       const updatedDocs = {
                                         ...currentDocs,
                                         [cReq.id]: {
-                                          ...((currentDocs as any)[cReq.id] || {
-                                            name: `${cReq.title}.pdf`,
+                                          ...((currentDocs as any)[cReq.id] || cDoc || {
+                                            name: res.fileName || `${cReq.title}.pdf`,
                                             fileType: 'application/pdf',
                                             size: 0,
                                             uploadedAt: new Date().toISOString(),
@@ -6042,6 +6383,12 @@ export function AdminEmployees() {
                                         submittedDocuments: updatedDocs as any,
                                         documentItem: (updatedDocs as any)[cReq.id],
                                       }).catch(console.warn);
+                                      submitRequiredDocument(cReq.id, selectedEmp.id, {
+                                        fileName: res.fileName || `${cReq.title}.pdf`,
+                                        fileUrl: res.fileUrl || '',
+                                        status: newDocStatus === 'passed' ? 'approved' : 'submitted',
+                                        verificationStatus: newDocStatus === 'passed' ? 'passed' : 'pending',
+                                      });
                                       setSelectedEmp({
                                         ...selectedEmp,
                                         submittedDocuments: updatedDocs as any,
