@@ -140,7 +140,7 @@ export function HTEAnnouncements() {
   // Filters & State
   const [searchTerm, setSearchTerm] = useState('');
   const [activeFilter, setActiveFilter] = useState<'all' | 'my_posts' | 'university' | 'attachments'>('all');
-  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [datePreset, setDatePreset] = useState<'all' | 'sept_oct' | 'september' | 'october' | 'today' | 'week' | 'month'>('all');
   const [filterDate, setFilterDate] = useState('');
   const [timePeriod, setTimePeriod] = useState<'all' | 'morning' | 'afternoon' | 'evening'>('all');
   const [filterTime, setFilterTime] = useState('');
@@ -239,6 +239,10 @@ export function HTEAnnouncements() {
       if (filterDate) {
         if (annDateStr !== filterDate) return false;
       } else if (datePreset !== 'all') {
+        const m = createdDate.getMonth();
+        if (datePreset === 'sept_oct' && m !== 8 && m !== 9) return false;
+        if (datePreset === 'september' && m !== 8) return false;
+        if (datePreset === 'october' && m !== 9) return false;
         if (datePreset === 'today' && annDateStr !== todayStr) return false;
         if (datePreset === 'week') {
           const diffDays = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
@@ -653,6 +657,9 @@ export function HTEAnnouncements() {
               className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
             >
               <option value="all">All Dates</option>
+              <option value="sept_oct">Sept – Oct (OJT Period)</option>
+              <option value="september">September</option>
+              <option value="october">October</option>
               <option value="today">Today</option>
               <option value="week">Last 7 Days</option>
               <option value="month">This Month</option>

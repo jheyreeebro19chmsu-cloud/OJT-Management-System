@@ -11,6 +11,8 @@ import {
   XCircle,
   Plus,
   Trash2,
+  Edit2,
+  Save,
   Pin,
   Info,
   AlertTriangle,
@@ -106,6 +108,7 @@ export function Announcements() {
     getAnnouncementSubmissionStatus,
     submitAnnouncementResponse,
     addAnnouncement,
+    updateAnnouncement,
     deleteAnnouncement,
     getAnnouncementComments,
     addAnnouncementComment,
@@ -165,11 +168,16 @@ export function Announcements() {
   const [searchQuery, setSearchQuery] = useState('');
   const [sourceFilter, setSourceFilter] = useState<'all' | 'instructor' | 'hte'>('all');
   const [typeFilter, setTypeFilter] = useState<'all' | Announcement['type']>('all');
-  const [datePreset, setDatePreset] = useState<'all' | 'today' | 'week' | 'month'>('all');
+  const [datePreset, setDatePreset] = useState<'all' | 'sept_oct' | 'september' | 'october' | 'today' | 'week' | 'month'>('all');
   const [filterDate, setFilterDate] = useState('');
   const [timePeriod, setTimePeriod] = useState<'all' | 'morning' | 'afternoon' | 'evening'>('all');
   const [filterTime, setFilterTime] = useState('');
   const [sortOrder, setSortOrder] = useState<'newest' | 'oldest'>('newest');
+
+  // Inline Date & Time adjustment state for Instructors
+  const [editingDateTimeId, setEditingDateTimeId] = useState<string | null>(null);
+  const [editDateVal, setEditDateVal] = useState('');
+  const [editTimeVal, setEditTimeVal] = useState('');
 
   const hasActiveFilters = Boolean(
     searchQuery.trim() ||
@@ -252,11 +260,18 @@ export function Announcements() {
       const annDateStr = toLocalDateStr(ann.createdAt);
       const annTimeStr = toLocalTimeStr(ann.createdAt);
 
-      // 4. Specific Date filter (YYYY-MM-DD)
+      // 4. Specific Date filter (YYYY-MM-DD) or Period Preset
       if (filterDate) {
         if (annDateStr !== filterDate) return false;
       } else if (datePreset !== 'all') {
-        if (datePreset === 'today') {
+        const m = createdDate.getMonth(); // 8 = Sept, 9 = Oct
+        if (datePreset === 'sept_oct') {
+          if (m !== 8 && m !== 9) return false;
+        } else if (datePreset === 'september') {
+          if (m !== 8) return false;
+        } else if (datePreset === 'october') {
+          if (m !== 9) return false;
+        } else if (datePreset === 'today') {
           if (annDateStr !== todayStr) return false;
         } else if (datePreset === 'week') {
           const diffDays = (now.getTime() - createdDate.getTime()) / (1000 * 60 * 60 * 24);
@@ -494,6 +509,38 @@ export function Announcements() {
       deleteAnnouncement(id);
       toast.success('Announcement removed.');
     }
+  };
+
+  const handleOpenEditDateTime = (ann: Announcement) => {
+    setEditingDateTimeId(ann.id);
+    setEditDateVal(toLocalDateStr(ann.createdAt) || '2026-09-15');
+    setEditTimeVal(toLocalTimeStr(ann.createdAt) || '09:00');
+  };
+
+  const handleSaveDateTime = (ann: Announcement) => {
+    if (!editDateVal) {
+      toast.error('Please select a valid date.');
+      return;
+    }
+    const timePart = editTimeVal || '08:30';
+    const parsed = new Date(`${editDateVal}T${timePart}`);
+    if (isNaN(parsed.getTime())) {
+      toast.error('Invalid date or time format.');
+      return;
+    }
+    updateAnnouncement(ann.id, { createdAt: parsed.toISOString() });
+    setEditingDateTimeId(null);
+    toast.success(
+      `Announcement date & time adjusted to ${parsed.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      })} at ${parsed.toLocaleTimeString('en-US', {
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true,
+      })}!`
+    );
   };
 
   if (!activeUser) {
@@ -940,6 +987,9 @@ export function Announcements() {
               className="w-full px-2.5 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium text-slate-700"
             >
               <option value="all">All Dates</option>
+              <option value="sept_oct">Sept – Oct (OJT Period)</option>
+              <option value="september">September</option>
+              <option value="october">October</option>
               <option value="today">Today</option>
               <option value="week">Last 7 Days</option>
               <option value="month">This Month</option>
@@ -1082,7 +1132,55 @@ export function Announcements() {
                         hour12: true,
                       })}
                     </span>
+
+                    {/* Instructor Quick Adjust Date & Time Trigger */}
+                    {isInstructor && editingDateTimeId !== announcement.id && (
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditDateTime(announcement)}
+                        className="text-[10px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-full inline-flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Adjust announcement date & time"
+                      >
+                        <Edit2 size={9} />
+                        Adjust Date & Time
+                      </button>
+                    )}
                   </div>
+
+                  {/* Inline Date & Time Editor for Instructors */}
+                  {isInstructor && editingDateTimeId === announcement.id && (
+                    <div className="flex flex-wrap items-center gap-2 p-2.5 rounded-xl bg-blue-50/80 border border-blue-200 mt-1">
+                      <span className="text-[11px] font-bold text-blue-900 flex items-center gap-1">
+                        <Calendar size={12} className="text-blue-600" /> Adjust Date & Time:
+                      </span>
+                      <input
+                        type="date"
+                        value={editDateVal}
+                        onChange={(e) => setEditDateVal(e.target.value)}
+                        className="px-2.5 py-1 text-xs bg-white border border-blue-200 rounded-lg font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <input
+                        type="time"
+                        value={editTimeVal}
+                        onChange={(e) => setEditTimeVal(e.target.value)}
+                        className="px-2.5 py-1 text-xs bg-white border border-blue-200 rounded-lg font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveDateTime(announcement)}
+                        className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold inline-flex items-center gap-1 shadow-2xs cursor-pointer"
+                      >
+                        <Save size={11} /> Save
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setEditingDateTimeId(null)}
+                        className="px-2 py-1 rounded-lg bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 text-[11px] font-semibold cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  )}
 
                   <h3 className="font-bold text-slate-900 text-base">{announcement.title}</h3>
                   <p className="text-xs sm:text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{announcement.content}</p>

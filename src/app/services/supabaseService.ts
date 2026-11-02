@@ -2391,7 +2391,7 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     deadline_at: announcement.deadlineAt,
     comments: announcement.comments,
     requires_submission: announcement.requiresSubmission,
-    // created_at intentionally omitted — let the DB default (now()) set it
+    created_at: announcement.createdAt || new Date().toISOString(),
   };
 
   // 1. Primary path: Service role endpoint /api/announcements (bypasses RLS to guarantee persistence)
@@ -2458,6 +2458,7 @@ export async function updateAnnouncement(id: string, updates: Partial<Announceme
   if (updates.comments !== undefined) supabaseUpdates.comments = updates.comments;
   if (updates.requiresSubmission !== undefined) supabaseUpdates.requires_submission = updates.requiresSubmission;
   if (updates.createdByRole !== undefined) supabaseUpdates.created_by_role = updates.createdByRole;
+  if (updates.createdAt !== undefined) supabaseUpdates.created_at = updates.createdAt;
 
   // 1. Primary path: Service role endpoint /api/announcements (bypasses RLS)
   try {

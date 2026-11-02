@@ -207,6 +207,8 @@ export default async function handler(req, res) {
         comments,
         requiresSubmission,
         requires_submission,
+        createdAt,
+        created_at,
       } = body;
 
       const payload = {
@@ -224,6 +226,7 @@ export default async function handler(req, res) {
         deadline_at: deadlineAt ?? deadline_at ?? null,
         comments: comments ?? null,
         requires_submission: requiresSubmission ?? requires_submission ?? false,
+        created_at: createdAt ?? created_at ?? new Date().toISOString(),
       };
 
       const { data, error } = await supabase
@@ -275,6 +278,9 @@ export default async function handler(req, res) {
       }
       if (body.createdByRole !== undefined || body.created_by_role !== undefined) {
         updates.created_by_role = body.createdByRole ?? body.created_by_role;
+      }
+      if (body.createdAt !== undefined || body.created_at !== undefined) {
+        updates.created_at = body.createdAt ?? body.created_at;
       }
 
       const { data, error } = await supabase

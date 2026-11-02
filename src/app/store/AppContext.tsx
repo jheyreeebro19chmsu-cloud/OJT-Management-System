@@ -96,7 +96,7 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
     type: 'success',
     targetRole: 'all',
     isPinned: true,
-    createdAt: new Date().toISOString(),
+    createdAt: '2026-09-07T08:30:00+08:00',
     createdBy: 'OJT Instructor',
   },
   {
@@ -107,7 +107,7 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
     type: 'warning',
     targetRole: 'employee',
     isPinned: false,
-    createdAt: new Date(Date.now() - 86400000).toISOString(),
+    createdAt: '2026-10-05T09:00:00+08:00',
     createdBy: 'OJT Instructor',
   },
 ];
