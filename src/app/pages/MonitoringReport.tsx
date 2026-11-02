@@ -111,7 +111,6 @@ export function MonitoringReport() {
     currentUser,
     getCurrentEmployee,
     monitoringReports,
-    addMonitoringReport,
     updateMonitoringReport,
   } = useApp();
 
@@ -123,16 +122,14 @@ export function MonitoringReport() {
   const [selectedCategory, setSelectedCategory] = useState<'all' | MonitoringReportCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Submit / Attach File Modal state
+  // Submit / Attach File Modal state (ONLY for an Instructor-created report)
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [targetReportForSubmit, setTargetReportForSubmit] = useState<MonitoringReportType | null>(null);
-  const [submitCategory, setSubmitCategory] = useState<MonitoringReportCategory>('midterm');
-  const [submitTitle, setSubmitTitle] = useState('Mid-Term Monitoring Report');
   const [submitNotes, setSubmitNotes] = useState('');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Quick inline attach state per card
+  // Quick inline attach state per Instructor-created card
   const [attachingReportId, setAttachingReportId] = useState<string | null>(null);
 
   // Preview Modal state
@@ -142,22 +139,18 @@ export function MonitoringReport() {
     categoryLabel: string;
   } | null>(null);
 
-  // Reports visible to this trainee:
-  // 1) Any report posted by Instructor for 'all' trainees or specifically this trainee
-  // 2) Any report created/submitted by this trainee
+  // Only show Monitoring Reports created by the Instructor for 'all' trainees or specifically this trainee
   const visibleReports = useMemo(() => {
     const cleanId = traineeId.toLowerCase();
     const cleanStudentId = studentId.toLowerCase();
     return monitoringReports.filter((r) => {
-      if (r.targetTraineeId === 'all' || r.traineeId === 'all' || r.createdByRole === 'instructor') {
-        if (!r.targetTraineeId || r.targetTraineeId === 'all') return true;
-        const target = r.targetTraineeId.toLowerCase();
-        if (target === cleanId || (cleanStudentId && target === cleanStudentId)) return true;
-      }
+      if (r.createdByRole === 'trainee') return false;
+      if (!r.targetTraineeId || r.targetTraineeId === 'all' || r.traineeId === 'all') return true;
+      const target = r.targetTraineeId.toLowerCase();
       const rTrainee = (r.traineeId || '').toLowerCase();
       const rStudent = (r.studentId || '').toLowerCase();
-      if (cleanId && (rTrainee === cleanId || rStudent === cleanId)) return true;
-      if (cleanStudentId && (rTrainee === cleanStudentId || rStudent === cleanStudentId)) return true;
+      if (cleanId && (target === cleanId || rTrainee === cleanId || rStudent === cleanId)) return true;
+      if (cleanStudentId && (target === cleanStudentId || rTrainee === cleanStudentId || rStudent === cleanStudentId)) return true;
       return false;
     });
   }, [monitoringReports, traineeId, studentId]);
@@ -176,31 +169,7 @@ export function MonitoringReport() {
       );
     });
 
-    if (matchedSub) return matchedSub;
-
-    if (
-      report.createdByRole === 'trainee' &&
-      Array.isArray(report.traineeFiles) &&
-      report.traineeFiles.length > 0
-    ) {
-      return {
-        id: `sub-${report.id}`,
-        reportId: report.id,
-        traineeId: report.traineeId,
-        traineeName: report.traineeName,
-        studentId: report.studentId,
-        course: report.course,
-        hteCompanyName: report.hteCompanyName,
-        category: getReportCategory(report),
-        files: report.traineeFiles,
-        notes: report.description || report.tasksAccomplished,
-        submittedAt: report.createdAt,
-        status: report.status === 'reviewed' ? 'reviewed' : 'submitted',
-        instructorRemarks: report.instructorRemarks,
-      };
-    }
-
-    return null;
+    return matchedSub || null;
   };
 
   const counts = useMemo(() => {
@@ -249,33 +218,12 @@ export function MonitoringReport() {
     });
   }, [visibleReports, selectedCategory, searchQuery]);
 
-  const openSubmitModal = (report?: MonitoringReportType, defaultCat?: MonitoringReportCategory) => {
-    if (report) {
-      const cat = getReportCategory(report);
-      const existingSub = getMySubmissionForReport(report);
-      setTargetReportForSubmit(report);
-      setSubmitCategory(cat);
-      setSubmitTitle(report.title || report.periodCovered || CATEGORY_META[cat].defaultTitle);
-      setSubmitNotes(existingSub?.notes || '');
-      setPendingFiles([]);
-      setShowSubmitModal(true);
-    } else {
-      const cat = defaultCat || (selectedCategory !== 'all' ? selectedCategory : 'midterm');
-      setTargetReportForSubmit(null);
-      setSubmitCategory(cat);
-      setSubmitTitle(CATEGORY_META[cat].defaultTitle);
-      setSubmitNotes('');
-      setPendingFiles([]);
-      setShowSubmitModal(true);
-    }
-  };
-
-  const handleCategoryChangeInModal = (cat: MonitoringReportCategory) => {
-    const prevDefault = CATEGORY_META[submitCategory].defaultTitle;
-    setSubmitCategory(cat);
-    if (!submitTitle.trim() || submitTitle === prevDefault) {
-      setSubmitTitle(CATEGORY_META[cat].defaultTitle);
-    }
+  const openSubmitModal = (report: MonitoringReportType) => {
+    const existingSub = getMySubmissionForReport(report);
+    setTargetReportForSubmit(report);
+    setSubmitNotes(existingSub?.notes || '');
+    setPendingFiles([]);
+    setShowSubmitModal(true);
   };
 
   const handleFilesSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -349,14 +297,12 @@ export function MonitoringReport() {
 
     await updateMonitoringReport(report.id, {
       submissions: updatedSubs,
-      ...(report.createdByRole === 'trainee'
-        ? { traineeFiles: [...(report.traineeFiles || []), ...newFiles] }
-        : {}),
     });
   };
 
   const handleSubmitModalForm = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!targetReportForSubmit) return;
     if (pendingFiles.length === 0) {
       toast.error('Please select at least one file to submit/attach.');
       return;
@@ -364,68 +310,12 @@ export function MonitoringReport() {
 
     setIsSubmitting(true);
     try {
-      const uploadedFiles = await uploadFilesList(pendingFiles, `trainee_mr_${submitCategory}_${Date.now()}`);
-
-      if (targetReportForSubmit) {
-        await attachFilesToReport(targetReportForSubmit, uploadedFiles, submitNotes);
-      } else {
-        // Create a new Monitoring Report entry with the trainee's submission
-        const subId = `sub-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-        const title = submitTitle.trim() || CATEGORY_META[submitCategory].defaultTitle;
-        await addMonitoringReport({
-          reportType: submitCategory,
-          category: submitCategory,
-          term: submitCategory === 'endterm' ? 'endterm' : 'midterm',
-          frequency: submitCategory === 'monthly' ? 'monthly' : 'evaluation',
-          createdByRole: 'trainee',
-          targetTraineeId: traineeId || studentId || 'all',
-          traineeId: traineeId || studentId || 'trainee',
-          traineeName,
-          studentId: studentId || undefined,
-          course: employee?.course || 'BSIT',
-          department: employee?.department || 'College of Computer Studies',
-          academicYear: '2026-2027',
-          hteCompanyName: employee?.companyName || 'Host Training Establishment',
-          title,
-          description: submitNotes.trim(),
-          periodCovered: title,
-          dateSubmitted: new Date().toISOString().split('T')[0],
-          hoursRenderedThisPeriod: 0,
-          tasksAccomplished: submitNotes.trim() || `${CATEGORY_META[submitCategory].label} Trainee Submission`,
-          questionnaire: {
-            q1_dutiesBriefly: '',
-            q2_strongestPerformanceArea: '',
-            q3_areasImprovedMost: '',
-            q4_areasNeedImprovement: '',
-            q5_situationChallengedMost: '',
-            q6_howOvercameChallenge: '',
-            q7_whatLearnedFromExperience: '',
-            q8_isQualifiedLinkage: '',
-            q9_ojtSuggestionsRecommendations: '',
-          },
-          traineeFiles: uploadedFiles,
-          submissions: [
-            {
-              id: subId,
-              reportId: '',
-              traineeId: traineeId || studentId || 'trainee',
-              traineeName,
-              studentId: studentId || undefined,
-              course: employee?.course || 'BSIT',
-              hteCompanyName: employee?.companyName || 'Host Training Establishment',
-              category: submitCategory,
-              files: uploadedFiles,
-              notes: submitNotes.trim() || undefined,
-              submittedAt: new Date().toISOString(),
-              status: 'submitted',
-            },
-          ],
-          status: 'submitted',
-        });
-      }
+      const cat = getReportCategory(targetReportForSubmit);
+      const uploadedFiles = await uploadFilesList(pendingFiles, `trainee_mr_${cat}_${Date.now()}`);
+      await attachFilesToReport(targetReportForSubmit, uploadedFiles, submitNotes);
 
       toast.success(
-        `Your ${CATEGORY_META[submitCategory].label} file${
+        `Your ${CATEGORY_META[cat].label} file${
           uploadedFiles.length > 1 ? 's have' : ' has'
         } been submitted and synced to the Instructor account!`
       );
@@ -479,7 +369,6 @@ export function MonitoringReport() {
 
     await updateMonitoringReport(report.id, {
       submissions: updatedSubs,
-      ...(report.createdByRole === 'trainee' ? { traineeFiles: remainingFiles } : {}),
     });
     toast.success('Removed submitted file.');
   };
@@ -502,7 +391,7 @@ export function MonitoringReport() {
 
   return (
     <div className="space-y-6 pb-10">
-      {/* Page Header */}
+      {/* Page Header (Trainees wait for Instructor to post; no create button here) */}
       <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-6">
         <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
           <div>
@@ -512,20 +401,16 @@ export function MonitoringReport() {
             </span>
             <h1 className="text-2xl font-bold text-gray-900">Monitoring Report</h1>
             <p className="text-sm text-gray-600 mt-1">
-              View and preview <span className="font-semibold text-gray-800">Mid-Term</span>,{' '}
-              <span className="font-semibold text-gray-800">End-Term</span>, and{' '}
-              <span className="font-semibold text-gray-800">Monthly</span> Monitoring Report files from your
-              Instructor, and submit or attach your completed file(s).
+              Wait for your Instructor to post <span className="font-semibold text-gray-800">Mid-Term</span>,{' '}
+              <span className="font-semibold text-gray-800">End-Term</span>, or{' '}
+              <span className="font-semibold text-gray-800">Monthly</span> Monitoring Report files. Once posted by
+              the Instructor, you can view, preview, and attach your completed file on the report item below.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={() => openSubmitModal()}
-            className="inline-flex items-center justify-center gap-2 px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-sm shadow-sm transition-colors shrink-0"
-          >
-            <Upload className="w-4 h-4" />
-            Submit / Attach File
-          </button>
+          <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold shrink-0">
+            <Clock className="w-4 h-4 text-amber-600 shrink-0" />
+            Instructor-Assigned Only
+          </div>
         </div>
 
         {/* Summary Cards */}
@@ -659,41 +544,16 @@ export function MonitoringReport() {
           </div>
           <h3 className="text-lg font-bold text-gray-900">
             {selectedCategory === 'all'
-              ? 'No Monitoring Report Files Yet'
-              : `No ${CATEGORY_META[selectedCategory].label} Monitoring Report Files Yet`}
+              ? 'Waiting for Instructor Monitoring Report File'
+              : `No ${CATEGORY_META[selectedCategory].label} Monitoring Report Posted by Instructor Yet`}
           </h3>
-          <p className="text-sm text-gray-500 max-w-md mx-auto mt-1 mb-6">
-            When your Instructor adds a Monitoring Report file, it will appear here automatically. You can also
-            directly submit or attach your <span className="font-semibold text-gray-700">Mid-Term</span>,{' '}
+          <p className="text-sm text-gray-500 max-w-md mx-auto mt-1">
+            Only your OJT Instructor can create and post Monitoring Report files. Once your Instructor uploads a{' '}
+            <span className="font-semibold text-gray-700">Mid-Term</span>,{' '}
             <span className="font-semibold text-gray-700">End-Term</span>, or{' '}
-            <span className="font-semibold text-gray-700">Monthly</span> file below.
+            <span className="font-semibold text-gray-700">Monthly</span> file, it will automatically appear here so
+            you can preview it and attach your submission.
           </p>
-          <div className="flex flex-wrap items-center justify-center gap-2">
-            <button
-              type="button"
-              onClick={() => openSubmitModal(undefined, 'midterm')}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm"
-            >
-              <Upload className="w-4 h-4" />
-              Submit Mid-Term File
-            </button>
-            <button
-              type="button"
-              onClick={() => openSubmitModal(undefined, 'endterm')}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm"
-            >
-              <Upload className="w-4 h-4" />
-              Submit End-Term File
-            </button>
-            <button
-              type="button"
-              onClick={() => openSubmitModal(undefined, 'monthly')}
-              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-xs font-semibold shadow-sm"
-            >
-              <Upload className="w-4 h-4" />
-              Submit Monthly File
-            </button>
-          </div>
         </div>
       ) : (
         <div className="space-y-5">
@@ -738,7 +598,7 @@ export function MonitoringReport() {
                         </span>
                       )}
                       <span className="text-xs text-gray-400">
-                        Posted{' '}
+                        Posted by Instructor on{' '}
                         {new Date(report.createdAt).toLocaleDateString('en-US', {
                           month: 'short',
                           day: 'numeric',
@@ -754,7 +614,7 @@ export function MonitoringReport() {
                     )}
                   </div>
 
-                  {/* Action button to attach/submit file directly onto this Monitoring Report */}
+                  {/* Action button to attach/submit file directly onto this Instructor-created Monitoring Report */}
                   <div className="flex items-center gap-2 shrink-0">
                     <label className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer shadow-sm transition-colors">
                       <Upload className="w-3.5 h-3.5" />
@@ -954,17 +814,15 @@ export function MonitoringReport() {
         </div>
       )}
 
-      {/* Modal: Submit / Attach File */}
-      {showSubmitModal && (
+      {/* Modal: Attach File to Instructor-Assigned Monitoring Report */}
+      {showSubmitModal && targetReportForSubmit && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-gray-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
             <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2.5">
                 <Upload className="w-5 h-5 text-emerald-400" />
                 <h2 className="text-base font-bold">
-                  {targetReportForSubmit
-                    ? `Attach File to ${targetReportForSubmit.title || targetReportForSubmit.periodCovered}`
-                    : 'Submit / Attach Monitoring Report File'}
+                  Attach File to {targetReportForSubmit.title || targetReportForSubmit.periodCovered}
                 </h2>
               </div>
               <button
@@ -977,50 +835,6 @@ export function MonitoringReport() {
             </div>
 
             <form onSubmit={handleSubmitModalForm} className="p-6 space-y-4">
-              {/* Period / Category Selector */}
-              {!targetReportForSubmit && (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
-                    Select Monitoring Period *
-                  </label>
-                  <div className="grid grid-cols-3 gap-2.5">
-                    {(['midterm', 'endterm', 'monthly'] as MonitoringReportCategory[]).map((cat) => {
-                      const active = submitCategory === cat;
-                      return (
-                        <button
-                          key={cat}
-                          type="button"
-                          onClick={() => handleCategoryChangeInModal(cat)}
-                          className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                            active
-                              ? CATEGORY_META[cat].activeTabClass
-                              : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                          }`}
-                        >
-                          {CATEGORY_META[cat].label}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {!targetReportForSubmit && (
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">
-                    Title *
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={submitTitle}
-                    onChange={(e) => setSubmitTitle(e.target.value)}
-                    placeholder="e.g., Mid-Term Monitoring Report"
-                    className="w-full px-3.5 py-2.5 text-sm rounded-xl border border-gray-300 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-              )}
-
               {/* Optional Note */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">
