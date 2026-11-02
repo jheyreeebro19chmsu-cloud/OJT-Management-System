@@ -1,5 +1,5 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor, RequiredDocument } from '../types';
+import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor, RequiredDocument, MonitoringReport } from '../types';
 import { isWithinNegrosOccidental } from '../utils/geo';
 import { TRAINEE_REQUIRED_HOURS } from '../data/ojtConstants';
 
@@ -3694,6 +3694,76 @@ export async function saveRequiredDocumentsToStorage(docs: RequiredDocument[]): 
     if (!error) return true;
   } catch (err) {
     console.warn('saveRequiredDocumentsToStorage notice:', err);
+  }
+  return false;
+}
+
+// ─── Monitoring Reports Cloud Sync (Mid-Term, End-Term, Monthly) ────────────
+
+export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringReport[]> {
+  // 1. Try server-side API proxy (service role)
+  try {
+    const apiRes = await fetch(`/api/documents?action=get-monitoring-reports&t=${Date.now()}`);
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch {}
+
+  // 2. Direct public Supabase URL
+  try {
+    const res = await fetch(
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json?t=${Date.now()}`
+    );
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data)) {
+        return data;
+      }
+    }
+  } catch {}
+
+  // 3. Supabase client download
+  if (isSupabaseConfigured()) {
+    try {
+      const { data, error } = await supabase.storage.from('face-photos').download('settings/monitoring_reports_store.json');
+      if (!error && data) {
+        const text = await data.text();
+        const parsed = JSON.parse(text);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
+  }
+
+  return [];
+}
+
+export async function saveMonitoringReportsToStorage(reports: MonitoringReport[]): Promise<boolean> {
+  // 1. Try server-side API proxy (service role)
+  try {
+    const apiRes = await fetch('/api/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'save-monitoring-reports', reports }),
+    });
+    if (apiRes.ok) return true;
+  } catch {}
+
+  // 2. Direct Supabase client upload
+  if (!isSupabaseConfigured()) return false;
+  try {
+    const jsonStr = JSON.stringify(reports);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+
+    const { error } = await supabase.storage.from('face-photos').upload('settings/monitoring_reports_store.json', blob, {
+      contentType: 'application/json',
+      upsert: true,
+    });
+    if (!error) return true;
+  } catch (err) {
+    console.warn('saveMonitoringReportsToStorage notice:', err);
   }
   return false;
 }

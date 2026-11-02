@@ -618,6 +618,35 @@ export interface MonitoringReport {
   traineeAcknowledgedAt?: string;
   traineeFeedback?: string;
   renderedHours?: number;
+
+  // File-based Monitoring Report fields (Mid-Term, End-Term, Monthly)
+  category?: 'midterm' | 'endterm' | 'monthly';
+  title?: string;
+  description?: string;
+  createdByRole?: 'instructor' | 'trainee';
+  targetTraineeId?: string; // 'all' or specific traineeId
+  instructorFiles?: TraineeDocumentFile[];
+  traineeFiles?: TraineeDocumentFile[];
+  submissions?: MonitoringReportSubmission[];
+}
+
+export type MonitoringReportCategory = 'midterm' | 'endterm' | 'monthly';
+
+export interface MonitoringReportSubmission {
+  id: string;
+  reportId: string;
+  traineeId: string;
+  traineeName: string;
+  studentId?: string;
+  course?: string;
+  hteCompanyName?: string;
+  category: MonitoringReportCategory;
+  files: TraineeDocumentFile[];
+  notes?: string;
+  submittedAt: string;
+  status: 'submitted' | 'reviewed';
+  instructorRemarks?: string;
+  reviewedAt?: string;
 }
 
 export interface TraineeSelfMonitoringReport {

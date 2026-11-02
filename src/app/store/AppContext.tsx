@@ -116,802 +116,9 @@ const DEFAULT_HOST_SUPERVISORS: HostSupervisor[] = [];
 
 const DEFAULT_HOST_FEEDBACK: HostFeedback[] = [];
 
-const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [
-  {
-    id: 'mr-demo-weekly-1',
-    reportNumber: 'CHMSU-MR-2026-W04',
-    reportType: 'weekly',
-    term: 'midterm',
-    frequency: 'weekly',
-    traineeId: '20231379',
-    traineeName: 'Juan Dela Cruz',
-    studentId: '20231379',
-    course: 'Bachelor of Science in Information Technology',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
-    hteAddress: 'Gatuslao St., Bacolod City, Negros Occidental',
-    supervisorName: 'Engr. Roberto M. Tan',
-    supervisorContact: '+63 917 555 4321',
-    supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Mid-Term Week 4 (October 12 – October 16, 2026)',
-    dateSubmitted: '2026-10-16',
-    hoursRenderedThisPeriod: 40,
-    totalCumulativeHours: 160,
-    requiredHours: TRAINEE_REQUIRED_HOURS,
-    remainingHours: 440,
-    tasksAccomplished: 'Assisted network engineers with structured cabling, termination of CAT6 keystones, switch port VLAN configuration, and verified connectivity across Building B.',
-    skillsApplied: 'LAN Switching, RJ45 crimping, IP subnetting, network troubleshooting tools.',
-    challengesEncountered: 'Encountered intermittent packet loss on port 14 of floor switch; resolved by replacing damaged patch cord.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 555 4321',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'None',
-      q1_dutiesBriefly: 'Assisted network engineers with structured cabling, termination of CAT6 keystones, switch port VLAN configuration, and verified connectivity across Building B.',
-      q2_strongestPerformanceArea: 'Technical troubleshooting, structured cabling, and network switch configuration.',
-      q3_areasImprovedMost: 'Hands-on network infrastructure deployment and systematic hardware diagnostics.',
-      q4_areasNeedImprovement: 'Advanced router access control lists and enterprise firewall configurations.',
-      q5_situationChallengedMost: 'Encountered intermittent packet loss on port 14 of floor switch during active departmental hours.',
-      q6_howOvercameChallenge: 'Tested lines with modular cable scanner, isolated the faulty patch cord, and re-crimped with supervisor guidance.',
-      q7_whatLearnedFromExperience: 'Real-world enterprise network reliability requires strict adherence to physical layer standards and documentation.',
-      q8_isQualifiedLinkage: 'Yes, highly qualified with modern enterprise networking equipment and dedicated technical mentorship.',
-      q9_ojtSuggestionsRecommendations: 'Recommend giving succeeding student interns earlier exposure to core routing configs.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 4,
-      teamworkScore: 5,
-      overallScore: 96,
-      strengths: 'Very organized workplace; mentor Engr. Tan patiently walks through network topologies before deployment.',
-      areasForImprovement: 'Would appreciate exposure to firewall configuration rules and router access control lists.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Excellent weekly monitoring submission Juan! Your structured documentation of the VLAN setup is commendable.',
-    reviewedByInstructorAt: '2026-10-17T09:30:00Z',
-    createdAt: '2026-10-16T17:00:00Z',
-  },
-  {
-    id: 'mr-demo-monthly-1',
-    reportNumber: 'CHMSU-MR-2026-M01',
-    reportType: 'monthly',
-    term: 'midterm',
-    frequency: 'monthly',
-    traineeId: 'emp-1',
-    traineeName: 'Maria Santos',
-    studentId: '20231380',
-    course: 'Bachelor of Science in Information Systems',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Negros CyberCenter Tech Solutions',
-    hteAddress: 'Lacson St., Bacolod City',
-    supervisorName: 'Ms. Clarisse Gomez',
-    supervisorContact: '+63 920 888 1234',
-    supervisorDesignation: 'Lead Business Analyst',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Mid-Term Month 1 (September 2026)',
-    dateSubmitted: '2026-09-30',
-    hoursRenderedThisPeriod: 160,
-    totalCumulativeHours: 160,
-    requiredHours: TRAINEE_REQUIRED_HOURS,
-    remainingHours: 440,
-    tasksAccomplished: 'Prepared software requirements specifications (SRS), created Figma user journey wireframes, and participated in daily standups for client ERP upgrade.',
-    skillsApplied: 'Agile/Scrum, Business Process Modeling (BPMN), Figma UI prototyping, JIRA backlog management.',
-    challengesEncountered: 'Shifting client requirement priorities during sprint mid-cycle.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 920 888 1234',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Quality Assurance',
-      q1_dutiesBriefly: 'Drafted software requirements specifications, conducted user story mapping, and built interactive UI prototypes in Figma.',
-      q2_strongestPerformanceArea: 'High attention to detail in UX design and business process modeling notation.',
-      q3_areasImprovedMost: 'Agile sprint collaboration and clear technical communication with development leads.',
-      q4_areasNeedImprovement: 'Complex database schema queries and automated backend testing suites.',
-      q5_situationChallengedMost: 'Rapid scope changes requested by stakeholders 2 days prior to sprint review.',
-      q6_howOvercameChallenge: 'Maintained calm, organized backlog items with mentor Ms. Gomez, and reprioritized deliverables.',
-      q7_whatLearnedFromExperience: 'Understanding end-user requirements thoroughly prevents costly rework during software implementation.',
-      q8_isQualifiedLinkage: 'Yes, outstanding environment for Information Systems interns seeking real Agile team exposure.',
-      q9_ojtSuggestionsRecommendations: 'Allow student interns to observe live staging deployments earlier in the rotation.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 4,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 96,
-      strengths: 'Exceptional mentorship and collaborative team atmosphere. Supervisors provide detailed feedback on every wireframe.',
-      areasForImprovement: 'Provide access to actual test staging server earlier in the sprint.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Impressive progress Maria. Continue refining your system requirement documents according to ISO specifications.',
-    reviewedByInstructorAt: '2026-10-02T10:15:00Z',
-    createdAt: '2026-09-30T16:30:00Z',
-  },
-  {
-    id: 'mr-demo-juan-mid-monthly-1',
-    reportNumber: 'CHMSU-MR-2026-JM01',
-    reportType: 'monthly',
-    term: 'midterm',
-    frequency: 'monthly',
-    traineeId: '20231379',
-    traineeName: 'Juan Dela Cruz',
-    studentId: '20231379',
-    course: 'Bachelor of Science in Information Technology',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
-    hteAddress: 'Gatuslao St., Bacolod City, Negros Occidental',
-    supervisorName: 'Engr. Roberto M. Tan',
-    supervisorContact: '+63 917 555 4321',
-    supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Mid-Term Month 1 (September 2026)',
-    dateSubmitted: '2026-09-30',
-    hoursRenderedThisPeriod: 160,
-    totalCumulativeHours: 160,
-    requiredHours: TRAINEE_REQUIRED_HOURS,
-    remainingHours: 440,
-    tasksAccomplished: 'Installed and configured network monitoring tools (Nagios / Zabbix), mapped local area network switches, and documented monthly server uptime.',
-    skillsApplied: 'Network monitoring, SNMP, Linux server administration, network mapping.',
-    challengesEncountered: 'Configuring firewall ports for remote SNMP trap listeners.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 555 4321',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Network Operations',
-      q1_dutiesBriefly: 'Configuring network monitoring agents, reviewing event logs, and assisting with server room cable management.',
-      q2_strongestPerformanceArea: 'High diligence in system monitoring and structured cabling maintenance.',
-      q3_areasImprovedMost: 'Command-line system diagnostics and network protocol analysis.',
-      q4_areasNeedImprovement: 'Advanced router BGP routing protocols.',
-      q5_situationChallengedMost: 'Troubleshooting packet drops on high-throughput switch uplinks.',
-      q6_howOvercameChallenge: 'Captured network packets with Wireshark and analyzed MTU size discrepancies.',
-      q7_whatLearnedFromExperience: 'Continuous network monitoring prevents system outages before they impact end-users.',
-      q8_isQualifiedLinkage: 'Yes, outstanding environment for Information Technology interns.',
-      q9_ojtSuggestionsRecommendations: 'Continue the institutional partnership with CHMSU.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 98,
-      strengths: 'Very dependable, organized, and enthusiastic about enterprise infrastructure.',
-      areasForImprovement: 'Keep practicing advanced routing configurations.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Great first month Juan! Keep up the commendable documentation of network monitoring operations.',
-    reviewedByInstructorAt: '2026-10-02T10:00:00Z',
-    createdAt: '2026-09-30T17:00:00Z',
-  },
-  {
-    id: 'mr-demo-midterm-1',
-    reportNumber: 'CHMSU-MR-2026-MID',
-    reportType: 'midterm',
-    term: 'midterm',
-    frequency: 'evaluation',
-    traineeId: '20231379',
-    traineeName: 'Juan Dela Cruz',
-    studentId: '20231379',
-    course: 'Bachelor of Science in Information Technology',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
-    hteAddress: 'Gatuslao St., Bacolod City, Negros Occidental',
-    supervisorName: 'Engr. Roberto M. Tan',
-    supervisorContact: '+63 917 555 4321',
-    supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Mid-Term Evaluation (300 Hours Milestone)',
-    dateSubmitted: '2026-10-10',
-    hoursRenderedThisPeriod: 140,
-    totalCumulativeHours: 300,
-    requiredHours: TRAINEE_REQUIRED_HOURS,
-    remainingHours: 300,
-    tasksAccomplished: 'Completed midterm evaluation milestone. Deployed centralized Active Directory domain accounts, configured automated night backups, and audited 40 departmental workstations.',
-    skillsApplied: 'Windows Server 2022, Active Directory, PowerShell scripting, RAID storage maintenance.',
-    challengesEncountered: 'Legacy backup script syntax errors during server migration.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 555 4321',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Systems Administration',
-      q1_dutiesBriefly: 'Managing server user accounts, administering network backups, and providing tier-2 workstation IT support.',
-      q2_strongestPerformanceArea: 'Proactive server maintenance and PowerShell automation scripting.',
-      q3_areasImprovedMost: 'Confidence in administering enterprise domain controllers without fear of system disruption.',
-      q4_areasNeedImprovement: 'Linux server command-line administration and Docker container management.',
-      q5_situationChallengedMost: 'Restoring user profile permissions following unexpected local drive failure.',
-      q6_howOvercameChallenge: 'Executed incremental shadow copy restores and verified integrity before notifying the department head.',
-      q7_whatLearnedFromExperience: 'Robust backup systems and disciplined system documentation protect organizations from catastrophic loss.',
-      q8_isQualifiedLinkage: 'Yes, highly recommended. Real production environments provide unparalleled practical skills.',
-      q9_ojtSuggestionsRecommendations: 'Continue the institutional partnership with CHMSU for future IT student cohorts.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'First-rate enterprise equipment, supportive management, and meaningful technical responsibility given to interns.',
-      areasForImprovement: 'Keep up the current training program pace; opportunity to observe disaster recovery drill.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Congratulations on reaching the 300-hour midpoint Juan! Your supervisor notes you are functioning on par with junior IT personnel.',
-    reviewedByInstructorAt: '2026-10-12T11:00:00Z',
-    createdAt: '2026-10-10T15:00:00Z',
-  },
-  {
-    id: 'mr-demo-juan-end-weekly-1',
-    reportNumber: 'CHMSU-MR-2026-EW10',
-    reportType: 'weekly',
-    term: 'endterm',
-    frequency: 'weekly',
-    traineeId: '20231379',
-    traineeName: 'Juan Dela Cruz',
-    studentId: '20231379',
-    course: 'Bachelor of Science in Information Technology',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
-    hteAddress: 'Gatuslao St., Bacolod City, Negros Occidental',
-    supervisorName: 'Engr. Roberto M. Tan',
-    supervisorContact: '+63 917 555 4321',
-    supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'End-Term Week 10 (October 26 – October 30, 2026)',
-    dateSubmitted: '2026-10-30',
-    hoursRenderedThisPeriod: 40,
-    totalCumulativeHours: 400,
-    requiredHours: TRAINEE_REQUIRED_HOURS,
-    remainingHours: 200,
-    tasksAccomplished: 'Second half practicum: Configured enterprise SSL certificates, implemented automated database replica sync, and assisted with data center hardware migration.',
-    skillsApplied: 'SSL/TLS, OpenSSL, MySQL replication, server rack mounting, power redundancy testing.',
-    challengesEncountered: 'Handling certificate chain validation errors on internal CA.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 555 4321',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Infrastructure',
-      q1_dutiesBriefly: 'Managing server certificates, database replica monitoring, and server room hardware installation.',
-      q2_strongestPerformanceArea: 'High discipline with security credentials and careful hardware handling.',
-      q3_areasImprovedMost: 'Server security protocols and high-availability database architectures.',
-      q4_areasNeedImprovement: 'Multi-cloud hybrid disaster recovery strategies.',
-      q5_situationChallengedMost: 'Root certificate renewal without interrupting departmental transactions.',
-      q6_howOvercameChallenge: 'Tested renewal in staging subnet, validated trust store, and coordinated off-peak rollout.',
-      q7_whatLearnedFromExperience: 'Zero-downtime maintenance requires methodical rehearsal in isolated environments.',
-      q8_isQualifiedLinkage: 'Yes, highly qualified Host Training Establishment.',
-      q9_ojtSuggestionsRecommendations: 'Maintain the partnership with CHMSU College of Computer Studies.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 98,
-      strengths: 'Very solid work ethic and proactive technical inquiry.',
-      areasForImprovement: 'Continue studying cloud infrastructure.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Commendable performance Juan! Excellent work on the replica synchronization.',
-    reviewedByInstructorAt: '2026-10-31T09:00:00Z',
-    createdAt: '2026-10-30T17:00:00Z',
-  },
-  {
-    id: 'mr-demo-juan-end-monthly-1',
-    reportNumber: 'CHMSU-MR-2026-EM03-J',
-    reportType: 'monthly',
-    term: 'endterm',
-    frequency: 'monthly',
-    traineeId: '20231379',
-    traineeName: 'Juan Dela Cruz',
-    studentId: '20231379',
-    course: 'Bachelor of Science in Information Technology',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
-    hteAddress: 'Gatuslao St., Bacolod City, Negros Occidental',
-    supervisorName: 'Engr. Roberto M. Tan',
-    supervisorContact: '+63 917 555 4321',
-    supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'End-Term Month 3 (October 2026)',
-    dateSubmitted: '2026-10-31',
-    hoursRenderedThisPeriod: 160,
-    totalCumulativeHours: 480,
-    requiredHours: TRAINEE_REQUIRED_HOURS,
-    remainingHours: 120,
-    tasksAccomplished: 'Monthly End-Term milestone review: Audited firewall access logs, updated vulnerability patches on 35 servers, and conducted disaster recovery simulation drill.',
-    skillsApplied: 'Firewall rules, vulnerability scanning, security patching, disaster recovery planning.',
-    challengesEncountered: 'Service dependency order during cold-boot server recovery sequence.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 555 4321',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Cybersecurity Operations',
-      q1_dutiesBriefly: 'Reviewing security incident logs, vulnerability scanning, and testing emergency power restore scripts.',
-      q2_strongestPerformanceArea: 'Keen analytical attention to security anomalies and disciplined log auditing.',
-      q3_areasImprovedMost: 'Incident triage and enterprise IT risk mitigation protocols.',
-      q4_areasNeedImprovement: 'SIEM orchestration and automated threat response rules.',
-      q5_situationChallengedMost: 'Isolating an anomalous outbound port scan from an unpatched lab workstation.',
-      q6_howOvercameChallenge: 'Quarantined the host on VLAN 99, scanned for malware, and applied critical vendor patches.',
-      q7_whatLearnedFromExperience: 'Defense-in-depth and rapid network isolation are vital to enterprise cybersecurity.',
-      q8_isQualifiedLinkage: 'Yes, extraordinary learning environment for IT students.',
-      q9_ojtSuggestionsRecommendations: 'Continue inviting CHMSU students for infrastructure internships.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'First-class technical intuition, outstanding reliability, and strong professional etiquette.',
-      areasForImprovement: 'Keep striving for excellence.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Superb monthly progress Juan! You are almost at the 600-hour milestone.',
-    reviewedByInstructorAt: '2026-11-02T10:00:00Z',
-    createdAt: '2026-10-31T17:00:00Z',
-  },
-  {
-    id: 'mr-demo-juan-end-eval-1',
-    reportNumber: 'CHMSU-MR-2026-END-600H-J',
-    reportType: 'endterm',
-    term: 'endterm',
-    frequency: 'evaluation',
-    traineeId: '20231379',
-    traineeName: 'Juan Dela Cruz',
-    studentId: '20231379',
-    course: 'Bachelor of Science in Information Technology',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
-    hteAddress: 'Gatuslao St., Bacolod City, Negros Occidental',
-    supervisorName: 'Engr. Roberto M. Tan',
-    supervisorContact: '+63 917 555 4321',
-    supervisorDesignation: 'Senior Systems Administrator & OJT Mentor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'End-Term Final Completion (600 Hours Milestone)',
-    dateSubmitted: '2026-11-15',
-    hoursRenderedThisPeriod: 120,
-    totalCumulativeHours: 600,
-    requiredHours: 600,
-    remainingHours: 0,
-    tasksAccomplished: 'Successfully completed the entire 600-hour practicum! Finalized data center documentation, trained incoming junior OJT batches on structured cabling, and presented final practicum portfolio to division heads.',
-    skillsApplied: 'Data center management, documentation, leadership, network switching, enterprise IT support.',
-    challengesEncountered: 'Consolidating multi-month technical logs into concise executive presentation.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 555 4321',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Executive IT Staff',
-      q1_dutiesBriefly: 'Finalized enterprise network documentation, conducted handover sessions, and completed final practicum exit requirements.',
-      q2_strongestPerformanceArea: 'Comprehensive systems troubleshooting, network infrastructure management, and teamwork.',
-      q3_areasImprovedMost: 'Professional confidence, technical communication, and real-world system architecture.',
-      q4_areasNeedImprovement: 'Industry certifications (CCNA, CompTIA Security+).',
-      q5_situationChallengedMost: 'Managing time across simultaneous server migrations while documenting network changes.',
-      q6_howOvercameChallenge: 'Applied daily prioritized task checklists and reviewed milestones each morning with supervisor.',
-      q7_whatLearnedFromExperience: 'Technical mastery combined with integrity, punctuality, and clear communication makes a successful IT professional.',
-      q8_isQualifiedLinkage: 'Yes, outstanding Host Training Establishment that genuinely invests in student intern growth.',
-      q9_ojtSuggestionsRecommendations: 'Express sincere gratitude to CHMSU CCS and the Provincial Government IT Division for this life-shaping opportunity.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'Outstanding work ethic, highly commended by division head Engr. Tan, and job-ready technical competence.',
-      areasForImprovement: 'Pursue professional IT industry certifications upon graduation.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Congratulations Juan on successfully completing all 600 required OJT hours with flying colors! Recommended for graduation.',
-    reviewedByInstructorAt: '2026-11-16T10:00:00Z',
-    createdAt: '2026-11-15T16:00:00Z',
-  },
-  {
-    id: 'mr-demo-jheyree-mid-weekly-1',
-    reportNumber: 'CHMSU-MR-2026-MW04',
-    reportType: 'weekly',
-    term: 'midterm',
-    frequency: 'weekly',
-    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
-    traineeName: 'Jhey Ree C Ebro',
-    studentId: '20231331',
-    course: 'Bachelor of Science in Information Systems',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Concentrix',
-    hteAddress: 'Bacolod City, Negros Occidental',
-    supervisorName: 'Jhey Ree C Ebro',
-    supervisorContact: '+63 917 123 4567',
-    supervisorDesignation: 'OJT Training Supervisor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Mid-Term Week 4 (September 15 – September 19, 2026)',
-    dateSubmitted: '2026-09-19',
-    hoursRenderedThisPeriod: 40,
-    totalCumulativeHours: 160,
-    requiredHours: 600,
-    remainingHours: 440,
-    tasksAccomplished: 'Designed and developed trainee profile forms, implemented client-side validation rules, and built reusable Tailwind/vanilla CSS UI components for internal dashboard.',
-    skillsApplied: 'React, TypeScript, CSS modules, responsive web layout, git branch management.',
-    challengesEncountered: 'Component styling conflicts between nested layout elements.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 123 4567',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Software Engineering',
-      q1_dutiesBriefly: 'Frontend UI component engineering, form validation workflows, and cross-browser testing for trainee onboarding portal.',
-      q2_strongestPerformanceArea: 'Fast component delivery, precise visual implementation, and adherence to clean code standards.',
-      q3_areasImprovedMost: 'TypeScript strict typing patterns and state management with React hooks.',
-      q4_areasNeedImprovement: 'Complex database joins and serverless backend API design.',
-      q5_situationChallengedMost: 'Fixing hydration and rendering discrepancies across different browser engines.',
-      q6_howOvercameChallenge: 'Researched DOM rendering lifecycles, consulted senior engineer, and standardized CSS reset rules.',
-      q7_whatLearnedFromExperience: 'Writing maintainable, modular components early saves days of refactoring as project scope scales.',
-      q8_isQualifiedLinkage: 'Yes, highly recommended. Provides modern tools, encouraging mentors, and high standard of engineering practices.',
-      q9_ojtSuggestionsRecommendations: 'Maintain continuous coordination between university supervisors and company team leads.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'Outstanding visual attention to detail, proactive communication, and quick turnaround on assigned tasks.',
-      areasForImprovement: 'Continue broadening backend API integration experience.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Excellent Mid-Term weekly report Jhey Ree! The documentation of component architecture is exemplary.',
-    reviewedByInstructorAt: '2026-09-20T10:00:00Z',
-    createdAt: '2026-09-19T17:00:00Z',
-  },
-  {
-    id: 'mr-demo-jheyree-mid-monthly-1',
-    reportNumber: 'CHMSU-MR-2026-MM01',
-    reportType: 'monthly',
-    term: 'midterm',
-    frequency: 'monthly',
-    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
-    traineeName: 'Jhey Ree C Ebro',
-    studentId: '20231331',
-    course: 'Bachelor of Science in Information Systems',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Concentrix',
-    hteAddress: 'Bacolod City, Negros Occidental',
-    supervisorName: 'Jhey Ree C Ebro',
-    supervisorContact: '+63 917 123 4567',
-    supervisorDesignation: 'OJT Training Supervisor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Mid-Term Month 1 (September 2026)',
-    dateSubmitted: '2026-09-30',
-    hoursRenderedThisPeriod: 160,
-    totalCumulativeHours: 160,
-    requiredHours: 600,
-    remainingHours: 440,
-    tasksAccomplished: 'Monthly milestone review: Successfully delivered the attendance logging module, integrated Leaflet geofencing maps, and drafted user documentation for HR supervisors.',
-    skillsApplied: 'Geofencing, Leaflet GIS, React Hooks, technical writing, user acceptance testing.',
-    challengesEncountered: 'Accurate coordinate calculations for irregular polygonal geofence boundaries.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 123 4567',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Quality Assurance',
-      q1_dutiesBriefly: 'Implemented geofence boundary validation, interactive maps, and monthly attendance calculation logic.',
-      q2_strongestPerformanceArea: 'Algorithm implementation for ray-casting point-in-polygon checks and responsive UI layout.',
-      q3_areasImprovedMost: 'Architectural planning for geospatial features and test case formulation.',
-      q4_areasNeedImprovement: 'Advanced spatial database indexing with PostGIS.',
-      q5_situationChallengedMost: 'Mobile GPS drift causing occasional false out-of-bounds notifications for trainees indoors.',
-      q6_howOvercameChallenge: 'Implemented a 25-meter tolerance buffer algorithm and high-accuracy GPS thresholding.',
-      q7_whatLearnedFromExperience: 'Real-world sensors produce noisy data; defensive programming and smoothing algorithms are critical.',
-      q8_isQualifiedLinkage: 'Yes, extraordinary learning environment for software engineering and information systems interns.',
-      q9_ojtSuggestionsRecommendations: 'Keep expanding the practicum partnership with CHMSU CCS students.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'Exceptional self-starter, highly reliable attendance, and outstanding technical ingenuity.',
-      areasForImprovement: 'Keep maintaining excellent work standards.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Great first month Jhey Ree! Your geospatial work demonstrates sophisticated technical maturity.',
-    reviewedByInstructorAt: '2026-10-02T09:00:00Z',
-    createdAt: '2026-09-30T17:00:00Z',
-  },
-  {
-    id: 'mr-demo-jheyree-mid-eval-1',
-    reportNumber: 'CHMSU-MR-2026-MID-300H',
-    reportType: 'midterm',
-    term: 'midterm',
-    frequency: 'evaluation',
-    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
-    traineeName: 'Jhey Ree C Ebro',
-    studentId: '20231331',
-    course: 'Bachelor of Science in Information Systems',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Concentrix',
-    hteAddress: 'Bacolod City, Negros Occidental',
-    supervisorName: 'Jhey Ree C Ebro',
-    supervisorContact: '+63 917 123 4567',
-    supervisorDesignation: 'OJT Training Supervisor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'Mid-Term Evaluation (300 Hours Milestone)',
-    dateSubmitted: '2026-10-10',
-    hoursRenderedThisPeriod: 140,
-    totalCumulativeHours: 300,
-    requiredHours: 600,
-    remainingHours: 300,
-    tasksAccomplished: 'Fulfilled official 300-hour Mid-Term practicum milestone. Successfully migrated state persistence layer to Supabase real-time subscriptions, verified facial recognition pipelines, and prepared mid-term progress demo.',
-    skillsApplied: 'Supabase real-time, WebRTC camera capture, client-side face recognition, database migration.',
-    challengesEncountered: 'Handling variable lighting conditions during camera biometric capture.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: '+63 917 123 4567',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'Research & Development',
-      q1_dutiesBriefly: 'Biometric face recognition verification, database migration scripting, and mid-term milestone reporting.',
-      q2_strongestPerformanceArea: 'High adaptability with modern AI web technologies and comprehensive full-stack problem solving.',
-      q3_areasImprovedMost: 'End-to-end software integration and understanding production data compliance regulations.',
-      q4_areasNeedImprovement: 'Enterprise automated container orchestration and cloud load balancers.',
-      q5_situationChallengedMost: 'Optimizing client-side face descriptor extraction for low-end trainee smartphones.',
-      q6_howOvercameChallenge: 'Quantized neural net weights and enabled off-screen Web Worker processing.',
-      q7_whatLearnedFromExperience: 'User experience depends as much on edge optimization and device compatibility as core functionality.',
-      q8_isQualifiedLinkage: 'Yes, outstanding company with high-level technology exposure and exceptional mentorship.',
-      q9_ojtSuggestionsRecommendations: 'Continue the institutional OJT program with CHMSU.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'Outstanding problem solver, innovative engineering approach, and dependable deliverer.',
-      areasForImprovement: 'Keep leading technical projects.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Congratulations Jhey Ree on successfully reaching the 300-hour midpoint milestone! Your technical achievements are among the highest in your cohort.',
-    reviewedByInstructorAt: '2026-10-12T09:30:00Z',
-    createdAt: '2026-10-10T16:00:00Z',
-  },
-  {
-    id: 'mr-demo-endterm-w1',
-    reportNumber: 'CHMSU-MR-2026-EW09',
-    reportType: 'weekly',
-    term: 'endterm',
-    frequency: 'weekly',
-    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
-    traineeName: 'Jhey Ree C Ebro',
-    studentId: '20231331',
-    course: 'Bachelor of Science in Information Systems',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Concentrix',
-    hteAddress: 'Bacolod City, Negros Occidental',
-    supervisorName: 'Jhey Ree C Ebro',
-    supervisorContact: '+63 917 123 4567',
-    supervisorDesignation: 'OJT Training Supervisor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'End-Term Week 9 (October 19 – October 23, 2026)',
-    dateSubmitted: '2026-10-23',
-    hoursRenderedThisPeriod: 40,
-    totalCumulativeHours: 360,
-    requiredHours: 600,
-    remainingHours: 240,
-    tasksAccomplished: 'Initiated second half of practicum. Implemented real-time biometric synchronization and offline caching for field staff attendance devices.',
-    skillsApplied: 'IndexedDB, Service Workers, TypeScript, REST API.',
-    challengesEncountered: 'Handling state consistency during sudden network disconnects.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: 'N/A',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'None',
-      q1_dutiesBriefly: 'Developing offline-first sync mechanisms and IndexedDB schemas for field attendance tracking.',
-      q2_strongestPerformanceArea: 'High problem-solving velocity and clean TypeScript architecture.',
-      q3_areasImprovedMost: 'PWA lifecycle management and background sync APIs.',
-      q4_areasNeedImprovement: 'Complex SQL window functions.',
-      q5_situationChallengedMost: 'Race conditions when synchronizing concurrent offline logs.',
-      q6_howOvercameChallenge: 'Applied idempotent transaction queues with UUID tracking.',
-      q7_whatLearnedFromExperience: 'Robust software accounts for unstable network environments from day one.',
-      q8_isQualifiedLinkage: 'Yes, outstanding technical environment.',
-      q9_ojtSuggestionsRecommendations: 'Maintain strong industry collaboration with CHMSU.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'First-rate enterprise equipment and supportive management.',
-      areasForImprovement: 'Continue current mentoring schedule.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Great start to your End-Term practicum phase Jhey Ree! The offline sync architecture is impressive.',
-    reviewedByInstructorAt: '2026-10-24T10:00:00Z',
-    createdAt: '2026-10-23T17:00:00Z',
-  },
-  {
-    id: 'mr-demo-endterm-m1',
-    reportNumber: 'CHMSU-MR-2026-EM03',
-    reportType: 'monthly',
-    term: 'endterm',
-    frequency: 'monthly',
-    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
-    traineeName: 'Jhey Ree C Ebro',
-    studentId: '20231331',
-    course: 'Bachelor of Science in Information Systems',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Concentrix',
-    hteAddress: 'Bacolod City, Negros Occidental',
-    supervisorName: 'Jhey Ree C Ebro',
-    supervisorContact: '+63 917 123 4567',
-    supervisorDesignation: 'OJT Training Supervisor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'End-Term Month 3 (October 2026)',
-    dateSubmitted: '2026-10-31',
-    hoursRenderedThisPeriod: 160,
-    totalCumulativeHours: 480,
-    requiredHours: 600,
-    remainingHours: 120,
-    tasksAccomplished: 'Monthly End-Term milestone review. Optimized PostgreSQL database query execution plans, authored audit trails, and conducted load testing for 500 concurrent trainee sessions.',
-    skillsApplied: 'PostgreSQL, query planning, indexing, performance profiling.',
-    challengesEncountered: 'Slow join performance on large attendance logs table.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: 'N/A',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'None',
-      q1_dutiesBriefly: 'Database tuning, index optimization, and high-concurrency load testing.',
-      q2_strongestPerformanceArea: 'Database query optimization and performance profiling.',
-      q3_areasImprovedMost: 'PostgreSQL execution plan analysis and index strategy.',
-      q4_areasNeedImprovement: 'Automated CI/CD deployment pipelines.',
-      q5_situationChallengedMost: 'High latency query bottleneck on non-indexed timestamp columns.',
-      q6_howOvercameChallenge: 'Created composite B-tree indices and partitioned historical data.',
-      q7_whatLearnedFromExperience: 'Proper indexing and database normalization are essential for production scale.',
-      q8_isQualifiedLinkage: 'Yes, highly recommended.',
-      q9_ojtSuggestionsRecommendations: 'Continue the institutional partnership with CHMSU.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'Modern enterprise infrastructure and high developer autonomy.',
-      areasForImprovement: 'Keep up the current pace.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'reviewed',
-    instructorRemarks: 'Excellent progress towards completion Jhey Ree! 480 hours successfully documented.',
-    reviewedByInstructorAt: '2026-11-02T09:00:00Z',
-    createdAt: '2026-10-31T17:00:00Z',
-  },
-  {
-    id: 'mr-demo-endterm-1',
-    reportNumber: 'CHMSU-MR-2026-END',
-    reportType: 'endterm',
-    term: 'endterm',
-    frequency: 'evaluation',
-    traineeId: '2089636c-7a7f-4943-ac23-23fd70afd4fd',
-    traineeName: 'Jhey Ree C Ebro',
-    studentId: '20231331',
-    course: 'Bachelor of Science in Information Systems',
-    department: 'College of Computer Studies',
-    campus: 'Talisay (Main Campus)',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Concentrix',
-    hteAddress: 'Bacolod City, Negros Occidental',
-    supervisorName: 'Jhey Ree C Ebro',
-    supervisorContact: '+63 917 123 4567',
-    supervisorDesignation: 'OJT Training Supervisor',
-    instructorName: 'Prof. Ma. Cristina Ramos, MIT',
-    periodCovered: 'End-Term Final Completion (600 Hours Milestone)',
-    dateSubmitted: '2026-10-18',
-    hoursRenderedThisPeriod: 120,
-    totalCumulativeHours: 600,
-    requiredHours: 600,
-    remainingHours: 0,
-    tasksAccomplished: 'Completed full 600-hour practicum! Finalized OJT management system database migrations, API error handling, trainee document compliance verification, and deployment documentation.',
-    skillsApplied: 'Full-stack development, PostgreSQL, Supabase, React/TypeScript, Vercel cloud deployment, automated testing.',
-    challengesEncountered: 'Handling large base64 file payloads and serverless timeout boundaries.',
-    questionnaire: {
-      employabilityStatus: 'OJT Trainee',
-      allowanceSalary: 'None / Stipend',
-      telephoneNo: 'N/A',
-      department: 'COLLEGE OF COMPUTER STUDIES',
-      position: 'ON - THE - JOB TRAINEE',
-      otherDeptAssigned: 'None',
-      q1_dutiesBriefly: 'Full-stack web application development, database management, and UI component implementation for institutional OJT portal.',
-      q2_strongestPerformanceArea: 'High proficiency in React, TypeScript, responsive UI design, and problem solving under tight timelines.',
-      q3_areasImprovedMost: 'Architecting robust state management and understanding production web security practices.',
-      q4_areasNeedImprovement: 'Continuous integration and end-to-end automated regression testing.',
-      q5_situationChallengedMost: 'Managing high-resolution attachment payloads without causing storage quota exhaustion.',
-      q6_howOvercameChallenge: 'Engineered client-side canvas image downscaling and storage sanitation before database persistence.',
-      q7_whatLearnedFromExperience: 'Software engineering is an iterative craft where empathy for the end user and system performance go hand in hand.',
-      q8_isQualifiedLinkage: 'Yes, premier Host Training Establishment with supportive management and modern technical infrastructure.',
-      q9_ojtSuggestionsRecommendations: 'Express sincere gratitude to CHMSU and Concentrix for the life-changing internship journey.',
-      attendanceScore: 5,
-      performanceScore: 5,
-      attitudeScore: 5,
-      communicationScore: 5,
-      teamworkScore: 5,
-      overallScore: 100,
-      strengths: 'Outstanding learning environment, high-velocity real project exposure, and top-tier mentorship.',
-      areasForImprovement: 'Maintain current industry partnership programs for succeeding student batches.',
-      recommendation: 'Highly Recommended',
-    },
-    status: 'submitted',
-    instructorRemarks: '',
-    createdAt: '2026-10-18T18:00:00Z',
-  },
-];
+const DEFAULT_MONITORING_REPORTS: MonitoringReport[] = [];
 
-
-
-const DEFAULT_TRAINEE_SELF_REPORTS: TraineeSelfMonitoringReport[] = [
-  {
-    id: 'smr-demo-1',
-    traineeId: '20231379',
-    traineeName: 'Juan Dela Cruz',
-    studentId: '20231379',
-    course: 'Bachelor of Science in Information Technology',
-    academicYear: '2026-2027',
-    hteCompanyName: 'Provincial Government of Negros Occidental - IT Division',
-    supervisorName: 'Engr. Roberto M. Tan',
-    periodCovered: 'Month 1 (Weeks 1 - 4)',
-    dateSubmitted: '2026-09-15',
-    hoursRenderedThisPeriod: 160,
-    totalCumulativeHours: 160,
-    keyAccomplishments: 'Configured 25 local workstations, terminated CAT6 cables for 3 departmental conference rooms, and logged hardware inventory assets.',
-    skillsApplied: 'IP Addressing, Subnetting, Hardware troubleshooting, Google Workspace Admin setup.',
-    challengesEncountered: 'Intermittent packet loss on Building B second floor switch.',
-    resolutionOrAction: 'Isolated faulty patch cable using cable tester and re-crimped RJ45 connectors with mentor supervision.',
-    selfRating: 5,
-    status: 'reviewed',
-    instructorRemarks: 'Excellent self-monitoring report Juan! Your technical problem solving is exemplary. Keep up the great work.',
-    reviewedByInstructorAt: '2026-09-17T14:30:00Z',
-    createdAt: '2026-09-15T16:00:00Z',
-  },
-];
+const DEFAULT_TRAINEE_SELF_REPORTS: TraineeSelfMonitoringReport[] = [];
 
 export const DEFAULT_OJT_REQUIRED_DOCUMENTS = [
   {
@@ -2202,159 +1409,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [monitoringReports, setMonitoringReports] = useState<MonitoringReport[]>(() => {
     const stored = loadFromStorage<MonitoringReport[]>(STORAGE_KEYS.MONITORING_REPORTS, []);
-    if (stored.length === 0) {
-      saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, DEFAULT_MONITORING_REPORTS);
-      return DEFAULT_MONITORING_REPORTS;
+    // Keep only file-based Monitoring Reports (Mid-Term, End-Term, Monthly) and remove all legacy auto-generated 9-question cards
+    const cleaned = stored.filter(
+      (r) =>
+        Boolean(r.createdByRole) ||
+        (Array.isArray(r.instructorFiles) && r.instructorFiles.length > 0) ||
+        (Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) ||
+        (Array.isArray(r.submissions) && r.submissions.length > 0)
+    );
+    if (cleaned.length !== stored.length) {
+      saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, cleaned);
     }
-
-    // Ensure any new default templates are merged if missing
-    const combined = [...stored];
-    for (const def of DEFAULT_MONITORING_REPORTS) {
-      if (!combined.some((r) => r.id === def.id)) {
-        combined.push(def);
-      }
-    }
-
-    // Auto-migrate legacy reports to ensure full 2-term (Mid-Term / End-Term), frequency, periodCovered, and questionnaire compatibility
-    const migrated = combined.map((r, idx) => {
-      let reportType: MonitoringPeriodType = r.reportType || 'weekly';
-      if (!r.reportType) {
-        const num = (r.reportNumber || '').toUpperCase();
-        const visit = ((r as any).visitType || '').toLowerCase();
-        if (visit === 'midterm' || num.includes('MID')) {
-          reportType = 'midterm';
-        } else if (visit === 'final' || num.includes('END')) {
-          reportType = 'endterm';
-        } else if (num.includes('M0') || num.includes('MONTH')) {
-          reportType = 'monthly';
-        } else {
-          reportType = 'weekly';
-        }
-      }
-
-      // Assign term: 'midterm' | 'endterm'
-      let term: MonitoringTermType = r.term || (
-        reportType === 'endterm' ||
-        (r.reportNumber || '').toUpperCase().includes('END') ||
-        (r.periodCovered || '').toLowerCase().includes('end-term') ||
-        (r.totalCumulativeHours || 0) > 300
-          ? 'endterm'
-          : 'midterm'
-      );
-
-      // Assign frequency: 'weekly' | 'monthly' | 'evaluation'
-      let frequency: MonitoringFrequencyType = r.frequency || (
-        reportType === 'midterm' || reportType === 'endterm'
-          ? 'evaluation'
-          : reportType === 'monthly' || (r.periodCovered || '').toLowerCase().includes('month')
-          ? 'monthly'
-          : 'weekly'
-      );
-
-      let periodCovered = r.periodCovered;
-      if (!periodCovered || periodCovered.trim() === '') {
-        const termPrefix = term === 'midterm' ? 'Mid-Term' : 'End-Term';
-        if (frequency === 'weekly') {
-          periodCovered = `${termPrefix} Week ${idx + 1} Progress Review`;
-        } else if (frequency === 'monthly') {
-          periodCovered = `${termPrefix} Month ${idx + 1} Assessment`;
-        } else {
-          periodCovered = term === 'midterm'
-            ? 'Mid-Term Evaluation (300 Hours Milestone)'
-            : 'End-Term Final Completion (600 Hours Milestone)';
-        }
-      }
-
-      const hoursRenderedThisPeriod =
-        r.hoursRenderedThisPeriod ||
-        (frequency === 'weekly' ? 40 : frequency === 'monthly' ? 160 : term === 'midterm' ? 140 : 150);
-
-      const tasks =
-        r.tasksAccomplished ||
-        r.tasksObserved ||
-        r.questionnaire?.q1_dutiesBriefly ||
-        (r.traineeName === 'Juan Dela Cruz'
-          ? 'Assisted network engineers with structured cabling, termination of CAT6 keystones, switch port VLAN configuration, and verified connectivity across Building B.'
-          : r.traineeName === 'Maria Santos'
-          ? 'Prepared software requirements specifications (SRS), created Figma user journey wireframes, and participated in daily standups for client ERP upgrade.'
-          : 'Completed departmental tasks, technical support operations, and workstation setup.');
-
-      const dateSubmitted = r.dateSubmitted || r.visitDate || (r.createdAt ? r.createdAt.split('T')[0] : '2026-09-18');
-
-      const q: MonitoringQuestionnaire = {
-        employabilityStatus: r.questionnaire?.employabilityStatus || 'OJT Trainee',
-        allowanceSalary: r.questionnaire?.allowanceSalary || 'None / Stipend',
-        telephoneNo: r.questionnaire?.telephoneNo || r.supervisorContact || '+63 917 555 4321',
-        department: r.questionnaire?.department || r.department || 'COLLEGE OF COMPUTER STUDIES',
-        position: r.questionnaire?.position || 'ON - THE - JOB TRAINEE',
-        otherDeptAssigned: r.questionnaire?.otherDeptAssigned || 'None',
-        q1_dutiesBriefly: r.questionnaire?.q1_dutiesBriefly || tasks,
-        q2_strongestPerformanceArea:
-          r.questionnaire?.q2_strongestPerformanceArea ||
-          r.highlights ||
-          'Fast learner with strong technical troubleshooting and programming capabilities.',
-        q3_areasImprovedMost:
-          r.questionnaire?.q3_areasImprovedMost ||
-          r.skillsApplied ||
-          'Enhanced workplace communication, practical networking, and systems deployment.',
-        q4_areasNeedImprovement:
-          r.questionnaire?.q4_areasNeedImprovement ||
-          r.issuesIdentified ||
-          'Advanced server security and automated deployment pipelines.',
-        q5_situationChallengedMost:
-          r.questionnaire?.q5_situationChallengedMost ||
-          r.challengesEncountered ||
-          'Diagnosing intermittent connectivity bottlenecks on departmental switches.',
-        q6_howOvercameChallenge:
-          r.questionnaire?.q6_howOvercameChallenge ||
-          'Applied systematic hardware scanning and re-crimped connectors with mentor guidance.',
-        q7_whatLearnedFromExperience:
-          r.questionnaire?.q7_whatLearnedFromExperience ||
-          'Enterprise reliability depends on strict documentation and disciplined standard operating procedures.',
-        q8_isQualifiedLinkage:
-          r.questionnaire?.q8_isQualifiedLinkage ||
-          'Yes, highly qualified with modern equipment and dedicated technical mentorship.',
-        q9_ojtSuggestionsRecommendations:
-          r.questionnaire?.q9_ojtSuggestionsRecommendations ||
-          'Recommend this Host Training Establishment to future batches of CHMSU OJT students.',
-        attendanceScore: r.questionnaire?.attendanceScore ?? 5,
-        performanceScore: r.questionnaire?.performanceScore ?? 5,
-        attitudeScore: r.questionnaire?.attitudeScore ?? 5,
-        communicationScore: r.questionnaire?.communicationScore ?? 5,
-        teamworkScore: r.questionnaire?.teamworkScore ?? 5,
-        overallScore: r.questionnaire?.overallScore ?? 100,
-        strengths: r.questionnaire?.strengths || r.highlights || 'Supportive mentorship and modern production environment.',
-        areasForImprovement: r.questionnaire?.areasForImprovement || r.issuesIdentified || 'Maintain regular feedback sessions.',
-        recommendation: r.questionnaire?.recommendation || 'Highly Recommended',
-      };
-
-      return {
-        ...r,
-        term,
-        frequency,
-        reportType,
-        periodCovered,
-        hoursRenderedThisPeriod,
-        tasksAccomplished: tasks,
-        dateSubmitted,
-        questionnaire: q,
-        requiredHours: TRAINEE_REQUIRED_HOURS,
-        totalCumulativeHours: r.totalCumulativeHours || r.renderedHours || hoursRenderedThisPeriod,
-        status: r.status || 'submitted',
-      };
-    });
-
-    saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, migrated);
-    return migrated;
+    return cleaned;
   });
 
   const [traineeSelfMonitoringReports, setTraineeSelfMonitoringReports] = useState<TraineeSelfMonitoringReport[]>(() => {
     const stored = loadFromStorage<TraineeSelfMonitoringReport[]>(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, []);
-    if (stored.length === 0) {
-      saveToStorage(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, DEFAULT_TRAINEE_SELF_REPORTS);
-      return DEFAULT_TRAINEE_SELF_REPORTS;
+    const cleaned = stored.filter((r) => !r.id.startsWith('smr-demo-'));
+    if (cleaned.length !== stored.length) {
+      saveToStorage(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, cleaned);
     }
-    return stored;
+    return cleaned;
   });
 
   useEffect(() => {
@@ -2365,49 +1440,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
     saveToStorage(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, traineeSelfMonitoringReports);
   }, [traineeSelfMonitoringReports]);
 
-  // Ensure ALL Trainee accounts in the institution have full Monitoring Reports (Mid-Term & End-Term)
+  // Real-time cross-tab synchronization for Monitoring Reports between Instructor and Trainee tabs
   useEffect(() => {
-    if (employees.length === 0) return;
-    const trainees = employees.filter((e) => isTraineeRole(e));
-    if (trainees.length === 0) return;
-
-    setMonitoringReports((prevReports) => {
-      const existingKeys = new Set<string>();
-      prevReports.forEach((r) => {
-        const term = r.term || (r.reportType === 'endterm' ? 'endterm' : 'midterm');
-        const freq =
-          r.frequency ||
-          (r.reportType === 'monthly'
-            ? 'monthly'
-            : r.reportType === 'midterm' || r.reportType === 'endterm'
-            ? 'evaluation'
-            : 'weekly');
-        if (r.traineeId) existingKeys.add(`${r.traineeId.toLowerCase()}_${term}_${freq}`);
-        if (r.studentId) existingKeys.add(`${r.studentId.toLowerCase()}_${term}_${freq}`);
-      });
-
-      const missingReports: MonitoringReport[] = [];
-      for (const trainee of trainees) {
-        const traineeDefaults = buildDefaultReportsForTrainee(trainee);
-        for (const rep of traineeDefaults) {
-          const key1 = `${(rep.traineeId || '').toLowerCase()}_${rep.term}_${rep.frequency}`;
-          const key2 = `${(rep.studentId || '').toLowerCase()}_${rep.term}_${rep.frequency}`;
-          if (!existingKeys.has(key1) && !existingKeys.has(key2)) {
-            missingReports.push(rep);
-            existingKeys.add(key1);
-            existingKeys.add(key2);
-          }
-        }
+    const handleStorageOrCustom = (e?: Event) => {
+      if (e && e.type === 'storage' && (e as StorageEvent).key && (e as StorageEvent).key !== STORAGE_KEYS.MONITORING_REPORTS) {
+        return;
       }
-
-      if (missingReports.length > 0) {
-        const updated = [...prevReports, ...missingReports];
-        saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, updated);
-        return updated;
-      }
-      return prevReports;
-    });
-  }, [employees]);
+      const latest = loadFromStorage<MonitoringReport[]>(STORAGE_KEYS.MONITORING_REPORTS, []).filter(
+        (r) =>
+          Boolean(r.createdByRole) ||
+          (Array.isArray(r.instructorFiles) && r.instructorFiles.length > 0) ||
+          (Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) ||
+          (Array.isArray(r.submissions) && r.submissions.length > 0)
+      );
+      setMonitoringReports(latest);
+    };
+    window.addEventListener('storage', handleStorageOrCustom);
+    window.addEventListener('ojt_monitoring_reports_updated', handleStorageOrCustom);
+    return () => {
+      window.removeEventListener('storage', handleStorageOrCustom);
+      window.removeEventListener('ojt_monitoring_reports_updated', handleStorageOrCustom);
+    };
+  }, []);
 
   // Check if Supabase is configured and load initial data
   useEffect(() => {
@@ -2581,6 +1635,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     }
                   }
                   saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, merged);
+                  return merged;
+                });
+              }
+            }),
+            supabaseService.fetchMonitoringReportsFromStorage().then((remoteReports) => {
+              if (isMounted && Array.isArray(remoteReports) && remoteReports.length > 0) {
+                setMonitoringReports((prev) => {
+                  const map = new Map<string, MonitoringReport>();
+                  for (const r of remoteReports) {
+                    if (
+                      Boolean(r.createdByRole) ||
+                      (Array.isArray(r.instructorFiles) && r.instructorFiles.length > 0) ||
+                      (Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) ||
+                      (Array.isArray(r.submissions) && r.submissions.length > 0)
+                    ) {
+                      map.set(r.id, r);
+                    }
+                  }
+                  for (const p of prev) {
+                    const existing = map.get(p.id);
+                    if (!existing) {
+                      map.set(p.id, p);
+                    } else {
+                      // Merge submissions
+                      const subMap = new Map<string, any>();
+                      (existing.submissions || []).forEach((s) => subMap.set(s.id, s));
+                      (p.submissions || []).forEach((s) => subMap.set(s.id, s));
+                      const pTime = new Date(p.updatedAt || p.createdAt || 0).getTime();
+                      const eTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+                      map.set(p.id, {
+                        ...(pTime >= eTime ? { ...existing, ...p } : { ...p, ...existing }),
+                        submissions: Array.from(subMap.values()),
+                      });
+                    }
+                  }
+                  const merged = Array.from(map.values());
+                  saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
                   return merged;
                 });
               }
@@ -2817,6 +1908,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseHostFeedback,
         supabaseHostSupervisors,
         supabaseRequiredDocs,
+        supabaseMonitoringReports,
       ] = await Promise.all([
         supabaseService.fetchEmployees(),
         supabaseService.fetchTimeRecords(),
@@ -2828,7 +1920,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseService.fetchHostFeedback(),
         supabaseService.fetchHostSupervisors(),
         supabaseService.fetchRequiredDocumentsFromStorage(),
+        supabaseService.fetchMonitoringReportsFromStorage(),
       ]);
+
+      if (Array.isArray(supabaseMonitoringReports) && supabaseMonitoringReports.length > 0) {
+        setMonitoringReports((prev) => {
+          const map = new Map<string, MonitoringReport>();
+          for (const r of supabaseMonitoringReports) {
+            if (
+              Boolean(r.createdByRole) ||
+              (Array.isArray(r.instructorFiles) && r.instructorFiles.length > 0) ||
+              (Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) ||
+              (Array.isArray(r.submissions) && r.submissions.length > 0)
+            ) {
+              map.set(r.id, r);
+            }
+          }
+          for (const p of prev) {
+            const existing = map.get(p.id);
+            if (!existing) {
+              map.set(p.id, p);
+            } else {
+              const subMap = new Map<string, any>();
+              (existing.submissions || []).forEach((s) => subMap.set(s.id, s));
+              (p.submissions || []).forEach((s) => subMap.set(s.id, s));
+              const pTime = new Date(p.updatedAt || p.createdAt || 0).getTime();
+              const eTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+              map.set(p.id, {
+                ...(pTime >= eTime ? { ...existing, ...p } : { ...p, ...existing }),
+                submissions: Array.from(subMap.values()),
+              });
+            }
+          }
+          const merged = Array.from(map.values());
+          saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
+          return merged;
+        });
+      }
 
       if (supabaseRequiredDocs && supabaseRequiredDocs.length > 0) {
         setRequiredDocuments((prev) => {
@@ -6713,46 +5841,62 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const year = new Date().getFullYear();
       const count = monitoringReports.length + 1;
       const reportNumber = `CHMSU-MR-${year}-${String(count).padStart(3, '0')}`;
-      const term = data.term || (
-        data.reportType === 'endterm' || (data.totalCumulativeHours || 0) > 300
-          ? 'endterm'
-          : 'midterm'
-      );
-      const frequency = data.frequency || (
-        data.reportType === 'midterm' || data.reportType === 'endterm'
-          ? 'evaluation'
-          : data.reportType === 'monthly'
-          ? 'monthly'
-          : 'weekly'
-      );
+      const category = data.category || (data.reportType === 'endterm' ? 'endterm' : data.reportType === 'monthly' ? 'monthly' : 'midterm');
+      const term = data.term || (category === 'endterm' ? 'endterm' : 'midterm');
+      const frequency = data.frequency || (category === 'monthly' ? 'monthly' : 'evaluation');
       const newReport: MonitoringReport = {
         ...data,
+        category,
         term,
         frequency,
-        id: `mr-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        createdByRole: data.createdByRole || 'instructor',
+        id: `mr-file-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         reportNumber,
         createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
-      setMonitoringReports((prev) => [newReport, ...prev]);
+      setMonitoringReports((prev) => {
+        const next = [newReport, ...prev];
+        saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, next);
+        supabaseService.saveMonitoringReportsToStorage(next).catch(() => {});
+        try {
+          window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
+        } catch {}
+        return next;
+      });
       return newReport;
     },
     [monitoringReports.length]
   );
 
   const updateMonitoringReport = useCallback(async (id: string, data: Partial<MonitoringReport>) => {
-    setMonitoringReports((prev) =>
-      prev.map((r) => (r.id === id ? { ...r, ...data, updatedAt: new Date().toISOString() } : r))
-    );
+    setMonitoringReports((prev) => {
+      const next = prev.map((r) => (r.id === id ? { ...r, ...data, updatedAt: new Date().toISOString() } : r));
+      saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, next);
+      supabaseService.saveMonitoringReportsToStorage(next).catch(() => {});
+      try {
+        window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
+      } catch {}
+      return next;
+    });
   }, []);
 
   const deleteMonitoringReport = useCallback(async (id: string) => {
-    setMonitoringReports((prev) => prev.filter((r) => r.id !== id));
+    setMonitoringReports((prev) => {
+      const next = prev.filter((r) => r.id !== id);
+      saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, next);
+      supabaseService.saveMonitoringReportsToStorage(next).catch(() => {});
+      try {
+        window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
+      } catch {}
+      return next;
+    });
   }, []);
 
   const reviewMonitoringReport = useCallback(
     async (id: string, instructorRemarks: string, status: 'reviewed' | 'acknowledged' = 'reviewed') => {
-      setMonitoringReports((prev) =>
-        prev.map((r) =>
+      setMonitoringReports((prev) => {
+        const next = prev.map((r) =>
           r.id === id
             ? {
                 ...r,
@@ -6762,16 +5906,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 updatedAt: new Date().toISOString(),
               }
             : r
-        )
-      );
+        );
+        saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, next);
+        supabaseService.saveMonitoringReportsToStorage(next).catch(() => {});
+        try {
+          window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
+        } catch {}
+        return next;
+      });
     },
     []
   );
 
   const getTraineeMonitoringReports = useCallback(
     (traineeId: string) => {
+      const cleanId = (traineeId || '').toLowerCase();
       return monitoringReports.filter(
-        (r) => r.traineeId === traineeId || r.studentId === traineeId
+        (r) =>
+          r.targetTraineeId === 'all' ||
+          r.traineeId === 'all' ||
+          (r.traineeId && r.traineeId.toLowerCase() === cleanId) ||
+          (r.studentId && r.studentId.toLowerCase() === cleanId) ||
+          (r.targetTraineeId && r.targetTraineeId.toLowerCase() === cleanId)
       );
     },
     [monitoringReports]

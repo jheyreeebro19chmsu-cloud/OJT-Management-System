@@ -135,6 +135,23 @@ export default async function handler(req, res) {
         return sendJson(res, 200, []);
       }
 
+      // Action: Retrieve Monitoring Reports (Mid-Term, End-Term, Monthly) and Trainee File Submissions
+      if (action === 'get-monitoring-reports') {
+        try {
+          const { data, error } = await supabase.storage.from('face-photos').download('settings/monitoring_reports_store.json');
+          if (!error && data) {
+            const text = await data.text();
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) {
+              return sendJson(res, 200, parsed);
+            }
+          }
+        } catch (err) {
+          console.warn('API get-monitoring-reports notice:', err);
+        }
+        return sendJson(res, 200, []);
+      }
+
       if (action === 'get-upload-url') {
         const storagePath = query.path;
         if (!storagePath) {
@@ -333,6 +350,25 @@ export default async function handler(req, res) {
           return sendJson(res, 200, { success: true, count: docs.length });
         } catch (err) {
           return sendJson(res, 500, { error: err.message || 'Failed to save requirements' });
+        }
+      }
+
+      // Support server-side save of Monitoring Reports & Trainee File Submissions
+      if (body.action === 'save-monitoring-reports') {
+        try {
+          const reports = body.reports || [];
+          const jsonStr = JSON.stringify(reports);
+          const buffer = Buffer.from(jsonStr, 'utf8');
+          const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/monitoring_reports_store.json', buffer, {
+            contentType: 'application/json',
+            upsert: true,
+          });
+          if (upErr) {
+            return sendJson(res, 500, { error: upErr.message });
+          }
+          return sendJson(res, 200, { success: true, count: reports.length });
+        } catch (err) {
+          return sendJson(res, 500, { error: err.message || 'Failed to save monitoring reports' });
         }
       }
 
