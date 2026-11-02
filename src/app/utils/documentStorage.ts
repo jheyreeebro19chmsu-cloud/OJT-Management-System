@@ -15,17 +15,26 @@ export async function uploadDocumentToStorage(
   employeeId: string,
   docKey: string
 ): Promise<{ fileUrl: string; dataUrl: string }> {
-  const dataUrl = await readFileAsDataUrl(file);
   let remoteUrl = '';
   try {
     remoteUrl = await supabaseUploadDoc(employeeId || 'monitoring', docKey, file, file.name);
   } catch {
     remoteUrl = '';
   }
-  const finalFileUrl = remoteUrl && remoteUrl.startsWith('http') ? remoteUrl : dataUrl;
+
+  // If uploaded to Supabase Storage with a public HTTP URL, use that lightweight URL for both fileUrl and dataUrl
+  if (remoteUrl && remoteUrl.startsWith('http')) {
+    return {
+      fileUrl: remoteUrl,
+      dataUrl: remoteUrl,
+    };
+  }
+
+  // Fallback to base64 dataUrl only if remote storage upload was unavailable
+  const dataUrl = await readFileAsDataUrl(file);
   return {
-    fileUrl: finalFileUrl,
-    dataUrl: dataUrl || finalFileUrl,
+    fileUrl: dataUrl,
+    dataUrl,
   };
 }
 
@@ -47,4 +56,3 @@ export function formatFileSize(size?: number | string): string {
   if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
   return `${(size / (1024 * 1024)).toFixed(2)} MB`;
 }
-

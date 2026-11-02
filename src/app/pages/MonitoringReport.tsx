@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../store/AppContext';
 import {
   MonitoringReport as MonitoringReportType,
@@ -112,7 +112,25 @@ export function MonitoringReport() {
     getCurrentEmployee,
     monitoringReports,
     updateMonitoringReport,
+    refreshData,
   } = useApp();
+
+  // Live auto-sync when Trainee opens or focuses Monitoring Report page
+  useEffect(() => {
+    refreshData({ force: true }).catch(() => {});
+    const onFocus = () => {
+      refreshData({ force: true }).catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      refreshData({ force: true }).catch(() => {});
+    }, 6000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
+  }, [refreshData]);
 
   const employee = getCurrentEmployee();
   const traineeId = employee?.id || currentUser?.id || '';
@@ -303,27 +321,24 @@ export function MonitoringReport() {
   const handleSubmitModalForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetReportForSubmit) return;
-    if (pendingFiles.length === 0) {
-      toast.error('Please select at least one file to submit/attach.');
-      return;
-    }
 
     setIsSubmitting(true);
     try {
       const cat = getReportCategory(targetReportForSubmit);
-      const uploadedFiles = await uploadFilesList(pendingFiles, `trainee_mr_${cat}_${Date.now()}`);
+      const uploadedFiles =
+        pendingFiles.length > 0
+          ? await uploadFilesList(pendingFiles, `trainee_mr_${cat}_${Date.now()}`)
+          : [];
       await attachFilesToReport(targetReportForSubmit, uploadedFiles, submitNotes);
 
       toast.success(
-        `Your ${CATEGORY_META[cat].label} file${
-          uploadedFiles.length > 1 ? 's have' : ' has'
-        } been submitted and synced to the Instructor account!`
+        `Your ${CATEGORY_META[cat].label} submission has been saved and synced to the Instructor account!`
       );
       setShowSubmitModal(false);
       setPendingFiles([]);
     } catch (err) {
-      console.error('Error submitting monitoring report file:', err);
-      toast.error('Failed to submit file. Please try again.');
+      console.error('Error submitting monitoring report:', err);
+      toast.error('Failed to submit. Please try again.');
     } finally {
       setIsSubmitting(false);
     }
@@ -849,15 +864,15 @@ export function MonitoringReport() {
                 />
               </div>
 
-              {/* File Picker */}
+              {/* File Picker (Optional) */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1.5">
-                  Attach File(s) *
+                  Attach File(s) (Optional)
                 </label>
                 <label className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-emerald-300 rounded-xl bg-emerald-50/40 hover:bg-emerald-50 cursor-pointer transition-colors">
                   <Upload className="w-6 h-6 text-emerald-600 mb-1.5" />
                   <span className="text-sm font-semibold text-emerald-900">
-                    Click to select file(s) to upload
+                    Click to select file(s) to upload (Optional)
                   </span>
                   <span className="text-xs text-gray-500 mt-0.5">
                     Supports PDF, Word (.doc, .docx), or Image files (multiple allowed)

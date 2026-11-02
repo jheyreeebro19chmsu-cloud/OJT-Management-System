@@ -137,7 +137,19 @@ export default async function handler(req, res) {
 
       // Action: Retrieve Monitoring Reports (Mid-Term, End-Term, Monthly) and Trainee File Submissions
       if (action === 'get-monitoring-reports') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
         try {
+          // Use signed URL first to bypass Cloudflare/Supabase public CDN cache
+          const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/monitoring_reports_store.json', 60);
+          if (signed?.signedUrl) {
+            const freshRes = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
+            if (freshRes.ok) {
+              const parsed = await freshRes.json();
+              if (Array.isArray(parsed)) {
+                return sendJson(res, 200, parsed);
+              }
+            }
+          }
           const { data, error } = await supabase.storage.from('face-photos').download('settings/monitoring_reports_store.json');
           if (!error && data) {
             const text = await data.text();
@@ -356,11 +368,34 @@ export default async function handler(req, res) {
       // Support server-side save of Monitoring Reports & Trainee File Submissions
       if (body.action === 'save-monitoring-reports') {
         try {
-          const reports = body.reports || [];
+          const slimFile = (f) => {
+            if (!f || typeof f !== 'object') return f;
+            const fileUrl = typeof f.fileUrl === 'string' ? f.fileUrl : '';
+            const dataUrl = typeof f.dataUrl === 'string' ? f.dataUrl : '';
+            const httpUrl = fileUrl.startsWith('http') ? fileUrl : dataUrl.startsWith('http') ? dataUrl : '';
+            return {
+              ...f,
+              fileUrl: httpUrl || fileUrl || dataUrl,
+              dataUrl: httpUrl || dataUrl,
+            };
+          };
+          const rawReports = Array.isArray(body.reports) ? body.reports : [];
+          const reports = rawReports.map((r) => ({
+            ...r,
+            instructorFiles: Array.isArray(r.instructorFiles) ? r.instructorFiles.map(slimFile) : r.instructorFiles,
+            traineeFiles: Array.isArray(r.traineeFiles) ? r.traineeFiles.map(slimFile) : r.traineeFiles,
+            submissions: Array.isArray(r.submissions)
+              ? r.submissions.map((s) => ({
+                  ...s,
+                  files: Array.isArray(s.files) ? s.files.map(slimFile) : s.files,
+                }))
+              : r.submissions,
+          }));
           const jsonStr = JSON.stringify(reports);
           const buffer = Buffer.from(jsonStr, 'utf8');
           const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/monitoring_reports_store.json', buffer, {
             contentType: 'application/json',
+            cacheControl: '0',
             upsert: true,
           });
           if (upErr) {

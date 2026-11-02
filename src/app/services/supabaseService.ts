@@ -3700,53 +3700,92 @@ export async function saveRequiredDocumentsToStorage(docs: RequiredDocument[]): 
 
 // ─── Monitoring Reports Cloud Sync (Mid-Term, End-Term, Monthly) ────────────
 
+function slimMonitoringFileItem(f: any): any {
+  if (!f || typeof f !== 'object') return f;
+  const fileUrl = typeof f.fileUrl === 'string' ? f.fileUrl : '';
+  const dataUrl = typeof f.dataUrl === 'string' ? f.dataUrl : '';
+  const httpUrl = fileUrl.startsWith('http') ? fileUrl : dataUrl.startsWith('http') ? dataUrl : '';
+  return {
+    ...f,
+    fileUrl: httpUrl || fileUrl || dataUrl,
+    dataUrl: httpUrl || dataUrl,
+  };
+}
+
+function slimMonitoringReportList(reports: MonitoringReport[]): MonitoringReport[] {
+  if (!Array.isArray(reports)) return [];
+  return reports.map((r) => ({
+    ...r,
+    instructorFiles: Array.isArray(r.instructorFiles) ? r.instructorFiles.map(slimMonitoringFileItem) : r.instructorFiles,
+    traineeFiles: Array.isArray(r.traineeFiles) ? r.traineeFiles.map(slimMonitoringFileItem) : r.traineeFiles,
+    submissions: Array.isArray(r.submissions)
+      ? r.submissions.map((s) => ({
+          ...s,
+          files: Array.isArray(s.files) ? s.files.map(slimMonitoringFileItem) : s.files,
+        }))
+      : r.submissions,
+  }));
+}
+
 export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringReport[]> {
-  // 1. Try server-side API proxy (service role)
-  try {
-    const apiRes = await fetch(`/api/documents?action=get-monitoring-reports&t=${Date.now()}`);
-    if (apiRes.ok) {
-      const data = await apiRes.json();
-      if (Array.isArray(data)) {
-        return data;
+  const results: MonitoringReport[][] = [];
+
+  await Promise.allSettled([
+    // 1. Server-side API proxy (uses signed URL to bypass CDN cache)
+    fetch(`/api/documents?action=get-monitoring-reports&t=${Date.now()}`, { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d)) results.push(d);
+      })
+      .catch(() => {}),
+    // 2. Direct cache-busted public Supabase URL with no-store
+    fetch(
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json?t=${Date.now()}`,
+      { cache: 'no-store' }
+    )
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (Array.isArray(d)) results.push(d);
+      })
+      .catch(() => {}),
+  ]);
+
+  if (results.length > 0) {
+    const map = new Map<string, MonitoringReport>();
+    for (const list of results) {
+      for (const r of list) {
+        if (!r || !r.id) continue;
+        const existing = map.get(r.id);
+        if (!existing) {
+          map.set(r.id, r);
+        } else {
+          const subMap = new Map<string, any>();
+          (existing.submissions || []).forEach((s) => subMap.set(s.id, s));
+          (r.submissions || []).forEach((s) => subMap.set(s.id, s));
+          const rTime = new Date(r.updatedAt || r.createdAt || 0).getTime();
+          const eTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+          map.set(r.id, {
+            ...(rTime >= eTime ? { ...existing, ...r } : { ...r, ...existing }),
+            submissions: Array.from(subMap.values()),
+          });
+        }
       }
     }
-  } catch {}
-
-  // 2. Direct public Supabase URL
-  try {
-    const res = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json?t=${Date.now()}`
-    );
-    if (res.ok) {
-      const data = await res.json();
-      if (Array.isArray(data)) {
-        return data;
-      }
-    }
-  } catch {}
-
-  // 3. Supabase client download
-  if (isSupabaseConfigured()) {
-    try {
-      const { data, error } = await supabase.storage.from('face-photos').download('settings/monitoring_reports_store.json');
-      if (!error && data) {
-        const text = await data.text();
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {}
+    return slimMonitoringReportList(Array.from(map.values()));
   }
 
   return [];
 }
 
 export async function saveMonitoringReportsToStorage(reports: MonitoringReport[]): Promise<boolean> {
+  const slimmed = slimMonitoringReportList(reports);
+
   // 1. Try server-side API proxy (service role)
   try {
     const apiRes = await fetch('/api/documents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save-monitoring-reports', reports }),
+      body: JSON.stringify({ action: 'save-monitoring-reports', reports: slimmed }),
     });
     if (apiRes.ok) return true;
   } catch {}
@@ -3754,11 +3793,12 @@ export async function saveMonitoringReportsToStorage(reports: MonitoringReport[]
   // 2. Direct Supabase client upload
   if (!isSupabaseConfigured()) return false;
   try {
-    const jsonStr = JSON.stringify(reports);
+    const jsonStr = JSON.stringify(slimmed);
     const blob = new Blob([jsonStr], { type: 'application/json' });
 
     const { error } = await supabase.storage.from('face-photos').upload('settings/monitoring_reports_store.json', blob, {
       contentType: 'application/json',
+      cacheControl: '0',
       upsert: true,
     });
     if (!error) return true;

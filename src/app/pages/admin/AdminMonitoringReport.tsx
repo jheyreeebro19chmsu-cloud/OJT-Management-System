@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useApp } from '../../store/AppContext';
 import {
   MonitoringReport,
@@ -117,7 +117,25 @@ export function AdminMonitoringReport() {
     addMonitoringReport,
     updateMonitoringReport,
     deleteMonitoringReport,
+    refreshData,
   } = useApp();
+
+  // Live auto-sync when Instructor opens or focuses Monitoring Report page
+  useEffect(() => {
+    refreshData({ force: true }).catch(() => {});
+    const onFocus = () => {
+      refreshData({ force: true }).catch(() => {});
+    };
+    window.addEventListener('focus', onFocus);
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      refreshData({ force: true }).catch(() => {});
+    }, 6000);
+    return () => {
+      window.removeEventListener('focus', onFocus);
+      clearInterval(interval);
+    };
+  }, [refreshData]);
 
   const trainees = useMemo(() => employees.filter((e) => isTraineeRole(e)), [employees]);
 
@@ -251,14 +269,13 @@ export function AdminMonitoringReport() {
 
   const handleCreateMonitoringReportFile = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (pendingFiles.length === 0) {
-      toast.error('Please attach at least one file for this Monitoring Report.');
-      return;
-    }
 
     setIsUploading(true);
     try {
-      const uploadedFiles = await processFilesUpload(pendingFiles, `mr_${formCategory}_${Date.now()}`);
+      const uploadedFiles =
+        pendingFiles.length > 0
+          ? await processFilesUpload(pendingFiles, `mr_${formCategory}_${Date.now()}`)
+          : [];
       const targetTraineeObj =
         formTargetTrainee === 'all'
           ? null
@@ -286,7 +303,7 @@ export function AdminMonitoringReport() {
         periodCovered: title,
         dateSubmitted: new Date().toISOString().split('T')[0],
         hoursRenderedThisPeriod: 0,
-        tasksAccomplished: formDescription.trim() || `${CATEGORY_META[formCategory].label} Monitoring Report File`,
+        tasksAccomplished: formDescription.trim() || `${CATEGORY_META[formCategory].label} Monitoring Report`,
         questionnaire: {
           q1_dutiesBriefly: '',
           q2_strongestPerformanceArea: '',
@@ -304,15 +321,14 @@ export function AdminMonitoringReport() {
       });
 
       toast.success(
-        `${CATEGORY_META[formCategory].label} file${uploadedFiles.length > 1 ? 's' : ''} added and synced to Trainee account${
-          formTargetTrainee === 'all' ? 's' : ''
+        `${CATEGORY_META[formCategory].label} Monitoring Report posted and synced to Trainee account${formTargetTrainee === 'all' ? 's' : ''
         }!`
       );
       setShowAddModal(false);
       setPendingFiles([]);
     } catch (err) {
-      console.error('Error uploading monitoring report file:', err);
-      toast.error('Failed to upload file. Please try again.');
+      console.error('Error creating monitoring report:', err);
+      toast.error('Failed to save Monitoring Report. Please try again.');
     } finally {
       setIsUploading(false);
     }
@@ -365,11 +381,11 @@ export function AdminMonitoringReport() {
     const updatedSubs = (report.submissions || []).map((s) =>
       s.id === submission.id
         ? {
-            ...s,
-            status: 'reviewed' as const,
-            instructorRemarks: remarks !== undefined ? remarks : s.instructorRemarks,
-            reviewedAt: new Date().toISOString(),
-          }
+          ...s,
+          status: 'reviewed' as const,
+          instructorRemarks: remarks !== undefined ? remarks : s.instructorRemarks,
+          reviewedAt: new Date().toISOString(),
+        }
         : s
     );
     await updateMonitoringReport(report.id, {
@@ -430,11 +446,10 @@ export function AdminMonitoringReport() {
           <button
             type="button"
             onClick={() => setSelectedCategory('all')}
-            className={`text-left p-4 rounded-xl border transition-all ${
-              selectedCategory === 'all'
+            className={`text-left p-4 rounded-xl border transition-all ${selectedCategory === 'all'
                 ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
                 : 'bg-gray-50 hover:bg-gray-100 text-gray-900 border-gray-200'
-            }`}
+              }`}
           >
             <div className="text-xs font-medium opacity-80">All Reports</div>
             <div className="text-2xl font-bold mt-1">{counts.all}</div>
@@ -446,11 +461,10 @@ export function AdminMonitoringReport() {
           <button
             type="button"
             onClick={() => setSelectedCategory('midterm')}
-            className={`text-left p-4 rounded-xl border transition-all ${
-              selectedCategory === 'midterm'
+            className={`text-left p-4 rounded-xl border transition-all ${selectedCategory === 'midterm'
                 ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                 : 'bg-blue-50/60 hover:bg-blue-50 text-blue-900 border-blue-200'
-            }`}
+              }`}
           >
             <div className="text-xs font-semibold uppercase tracking-wider opacity-85">Mid-Term</div>
             <div className="text-2xl font-bold mt-1">{counts.midterm}</div>
@@ -460,11 +474,10 @@ export function AdminMonitoringReport() {
           <button
             type="button"
             onClick={() => setSelectedCategory('endterm')}
-            className={`text-left p-4 rounded-xl border transition-all ${
-              selectedCategory === 'endterm'
+            className={`text-left p-4 rounded-xl border transition-all ${selectedCategory === 'endterm'
                 ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                 : 'bg-emerald-50/60 hover:bg-emerald-50 text-emerald-900 border-emerald-200'
-            }`}
+              }`}
           >
             <div className="text-xs font-semibold uppercase tracking-wider opacity-85">End-Term</div>
             <div className="text-2xl font-bold mt-1">{counts.endterm}</div>
@@ -474,11 +487,10 @@ export function AdminMonitoringReport() {
           <button
             type="button"
             onClick={() => setSelectedCategory('monthly')}
-            className={`text-left p-4 rounded-xl border transition-all ${
-              selectedCategory === 'monthly'
+            className={`text-left p-4 rounded-xl border transition-all ${selectedCategory === 'monthly'
                 ? 'bg-purple-600 text-white border-purple-600 shadow-sm'
                 : 'bg-purple-50/60 hover:bg-purple-50 text-purple-900 border-purple-200'
-            }`}
+              }`}
           >
             <div className="text-xs font-semibold uppercase tracking-wider opacity-85">Monthly</div>
             <div className="text-2xl font-bold mt-1">{counts.monthly}</div>
@@ -493,44 +505,40 @@ export function AdminMonitoringReport() {
           <button
             type="button"
             onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              selectedCategory === 'all'
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'all'
                 ? 'bg-slate-900 text-white shadow-sm'
                 : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
+              }`}
           >
             All ({counts.all})
           </button>
           <button
             type="button"
             onClick={() => setSelectedCategory('midterm')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              selectedCategory === 'midterm'
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'midterm'
                 ? CATEGORY_META.midterm.activeTabClass
                 : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-            }`}
+              }`}
           >
             Mid-Term ({counts.midterm})
           </button>
           <button
             type="button"
             onClick={() => setSelectedCategory('endterm')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              selectedCategory === 'endterm'
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'endterm'
                 ? CATEGORY_META.endterm.activeTabClass
                 : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-            }`}
+              }`}
           >
             End-Term ({counts.endterm})
           </button>
           <button
             type="button"
             onClick={() => setSelectedCategory('monthly')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              selectedCategory === 'monthly'
+            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'monthly'
                 ? CATEGORY_META.monthly.activeTabClass
                 : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
-            }`}
+              }`}
           >
             Monthly ({counts.monthly})
           </button>
@@ -604,22 +612,22 @@ export function AdminMonitoringReport() {
               ...(report.submissions || []),
               ...(report.createdByRole === 'trainee' && directTraineeFiles.length > 0 && !(report.submissions || []).length
                 ? [
-                    {
-                      id: `sub-${report.id}`,
-                      reportId: report.id,
-                      traineeId: report.traineeId,
-                      traineeName: report.traineeName,
-                      studentId: report.studentId,
-                      course: report.course,
-                      hteCompanyName: report.hteCompanyName,
-                      category: cat,
-                      files: directTraineeFiles,
-                      notes: report.description || report.tasksAccomplished,
-                      submittedAt: report.createdAt,
-                      status: report.status === 'reviewed' ? ('reviewed' as const) : ('submitted' as const),
-                      instructorRemarks: report.instructorRemarks,
-                    },
-                  ]
+                  {
+                    id: `sub-${report.id}`,
+                    reportId: report.id,
+                    traineeId: report.traineeId,
+                    traineeName: report.traineeName,
+                    studentId: report.studentId,
+                    course: report.course,
+                    hteCompanyName: report.hteCompanyName,
+                    category: cat,
+                    files: directTraineeFiles,
+                    notes: report.description || report.tasksAccomplished,
+                    submittedAt: report.createdAt,
+                    status: report.status === 'reviewed' ? ('reviewed' as const) : ('submitted' as const),
+                    instructorRemarks: report.instructorRemarks,
+                  },
+                ]
                 : []),
             ];
 
@@ -744,16 +752,14 @@ export function AdminMonitoringReport() {
                               >
                                 <Download className="w-3.5 h-3.5" />
                               </button>
-                              {instructorFiles.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveInstructorFile(report, file.id, file.name)}
-                                  className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-red-50 text-red-500"
-                                  title="Remove File"
-                                >
-                                  <X className="w-3.5 h-3.5" />
-                                </button>
-                              )}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveInstructorFile(report, file.id, file.name)}
+                                className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-red-50 text-red-500"
+                                title="Remove File"
+                              >
+                                <X className="w-3.5 h-3.5" />
+                              </button>
                             </div>
                           </div>
                         ))}
@@ -795,11 +801,10 @@ export function AdminMonitoringReport() {
                                       </span>
                                     )}
                                     <span
-                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${
-                                        sub.status === 'reviewed'
+                                      className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold ${sub.status === 'reviewed'
                                           ? 'bg-emerald-100 text-emerald-800'
                                           : 'bg-amber-100 text-amber-800'
-                                      }`}
+                                        }`}
                                     >
                                       {sub.status === 'reviewed' ? (
                                         <>
@@ -984,11 +989,10 @@ export function AdminMonitoringReport() {
                         key={cat}
                         type="button"
                         onClick={() => handleCategorySelectInModal(cat)}
-                        className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${
-                          active
+                        className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${active
                             ? CATEGORY_META[cat].activeTabClass
                             : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
-                        }`}
+                          }`}
                       >
                         {CATEGORY_META[cat].label}
                       </button>
@@ -1045,18 +1049,18 @@ export function AdminMonitoringReport() {
                 />
               </div>
 
-              {/* File Upload Picker */}
+              {/* File Upload Picker (Optional) */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1.5">
-                  Attach File(s) *
+                  Attach File(s) (Optional)
                 </label>
                 <label className="flex flex-col items-center justify-center p-5 border-2 border-dashed border-emerald-300 rounded-xl bg-emerald-50/40 hover:bg-emerald-50 cursor-pointer transition-colors">
                   <Upload className="w-6 h-6 text-emerald-600 mb-1.5" />
                   <span className="text-sm font-semibold text-emerald-900">
-                    Click to select file(s) to upload
+                    Click to select file(s) to upload (Optional)
                   </span>
                   <span className="text-xs text-gray-500 mt-0.5">
-                    Supports PDF, Word (.doc, .docx), or Image files (multiple allowed)
+                    Supports PDF, Word (.doc, .docx), or Image files — or leave empty to post without a file
                   </span>
                   <input
                     type="file"
