@@ -32,10 +32,10 @@ import { toast } from 'sonner';
 
 import { GeofenceMap } from '../../components/GeofenceMap';
 import { useApp } from '../../store/AppContext';
-import { GeofenceZone, Employee } from '../../types';
+import { GeofenceZone, Employee, TraineeGeofenceOverride } from '../../types';
 import { GEOFENCE_RADIUS_METERS, reverseGeocode, isWithinNegrosOccidental } from '../../utils/geo';
 import { getCampusLocation } from '../../utils/campusLocations';
-import { resolveHteLocation, isInvalidHteCompany } from '../../utils/hteLocation';
+import { resolveHteLocation, isInvalidHteCompany, getTraineeHteKey, getTraineeGeofenceOverride } from '../../utils/hteLocation';
 import { getPhotoUrl } from '../../services/config';
 import { getPaginationWindow } from '../../utils/pagination';
 
@@ -482,9 +482,17 @@ export function AdminGeofence() {
             zoneData.companyName = host.companyName;
           }
         } else if (account && isTraineeAccount(account)) {
-          // Trainee zone: Trainees MUST be geofenced to their assigned HTE establishment location!
+          // Trainee zone: Check instructor override first, otherwise use assigned HTE establishment location
+          const traineeOverride = getTraineeGeofenceOverride(account);
           const hteInfo = resolveHteLocation(account, hostSupervisors, employees, geofenceZones);
-          if (hteInfo) {
+          if (traineeOverride) {
+            zoneData.lat = traineeOverride.lat;
+            zoneData.lng = traineeOverride.lng;
+            zoneData.radius = traineeOverride.radius;
+            if (traineeOverride.address) zoneData.address = traineeOverride.address;
+            const comp = account.companyName && !isInvalidHteCompany(account.companyName) ? account.companyName : (hteInfo?.companyName || 'Assigned Workplace');
+            zoneData.name = `${account.name} - Trainee Geofence (${comp})`;
+          } else if (hteInfo) {
             zoneData.lat = hteInfo.lat;
             zoneData.lng = hteInfo.lng;
             // Prioritize custom / adjusted radius on the zone or trainee's account over the default HTE radius
@@ -579,10 +587,16 @@ export function AdminGeofence() {
       let stationRadius = (emp.registrationLocation as any)?.radius || (emp as any)?.registrationRadius || (emp as any)?.registration_radius || (isInst ? campusInfo.radius : GEOFENCE_RADIUS_METERS);
       let stationAddr = emp.registrationAddress || (isInst ? campusInfo.address : (emp.companyAddress || 'Trainee Registered Station'));
 
-      // For Trainees: strictly use their assigned HTE establishment location!
+      // For Trainees: strictly use their assigned HTE establishment location or instructor override
       if (!isInst && !isHte) {
+        const traineeOverride = getTraineeGeofenceOverride(emp);
         const hteInfo = resolveHteLocation(emp, hostSupervisors, employees, geofenceZones);
-        if (hteInfo) {
+        if (traineeOverride) {
+          regLat = traineeOverride.lat;
+          regLng = traineeOverride.lng;
+          stationRadius = traineeOverride.radius;
+          if (traineeOverride.address) stationAddr = traineeOverride.address;
+        } else if (hteInfo) {
           regLat = hteInfo.lat;
           regLng = hteInfo.lng;
           // Prioritize custom adjusted radius on trainee account over default HTE radius
@@ -782,12 +796,25 @@ export function AdminGeofence() {
     if (isTrainee || (account && isTraineeAccount(account))) {
       const traineeAcc = account || employees.find((e) => e.id === rawId || e.employeeId === rawId);
       if (traineeAcc) {
+        const traineeHteKey = getTraineeHteKey(traineeAcc);
+        const override: TraineeGeofenceOverride = {
+          lat: targetLat,
+          lng: targetLng,
+          radius: targetRadius,
+          address: targetAddress,
+          hteKey: traineeHteKey,
+          updatedAt: new Date().toISOString(),
+          updatedBy: currentUser?.name || currentUser?.id || 'Instructor',
+        };
+
         updateEmployee(traineeAcc.id, {
           registrationLocation: {
             lat: targetLat,
             lng: targetLng,
             radius: targetRadius,
-          },
+            geofenceOverride: override,
+          } as any,
+          geofenceOverride: override,
           registrationRadius: targetRadius,
           registrationAddress: targetAddress,
         });
@@ -1452,7 +1479,7 @@ export function AdminGeofence() {
               initial={{ opacity: 0, y: -15 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
-              className="absolute top-16 left-3 right-3 z-500 bg-slate-950/90 backdrop-blur-md text-white p-3 rounded-2xl shadow-2xl border border-blue-500/40 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3"
+              className="absolute top-16 left-3 right-3 z-500 bg-slate-950/90 backdrop-blur-md text-white p-3 rounded-2xl shadow-2xl border border-blue-500/40 flex flex-col md:flex-row items-start md:items-center justify-between gap-3"
             >
               <div className="flex items-center gap-3">
                 <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-400/50 flex items-center justify-center shrink-0">
@@ -1470,7 +1497,37 @@ export function AdminGeofence() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 self-end sm:self-auto">
+              {/* Quick radius buttons */}
+              <div className="flex items-center gap-1.5 bg-slate-900/80 px-2 py-1 rounded-xl border border-slate-700/60 flex-wrap">
+                <span className="text-[10px] uppercase font-bold text-slate-400">Radius:</span>
+                {[30, 50, 100, 150].map((r) => (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => {
+                      if (dragZoneId && draggedZone) {
+                        saveZoneCoordinates(dragZoneId, {
+                          lat: dragCoords.lat,
+                          lng: dragCoords.lng,
+                          radius: r,
+                          address: draggedZone.address,
+                          name: draggedZone.name,
+                        });
+                        toast.success(`Radius updated to ${r}m!`);
+                      }
+                    }}
+                    className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                      draggedZone.radius === r
+                        ? 'bg-blue-600 text-white shadow-sm'
+                        : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {r}m
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex items-center gap-2 self-end md:self-auto">
                 <button
                   type="button"
                   onClick={handleSaveDrag}

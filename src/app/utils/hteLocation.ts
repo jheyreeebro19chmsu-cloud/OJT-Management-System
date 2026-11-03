@@ -1,4 +1,47 @@
-import type { Employee, HostSupervisor, GeofenceZone } from '../types';
+import type { Employee, HostSupervisor, GeofenceZone, TraineeGeofenceOverride } from '../types';
+
+/**
+ * Stable identity of a trainee's current HTE assignment. Used to scope an
+ * instructor-set geofence override so it is automatically discarded if the
+ * trainee is later reassigned to a different HTE.
+ */
+export function getTraineeHteKey(trainee: { hteId?: string; companyName?: string } | null | undefined): string {
+  if (!trainee) return '';
+  if (trainee.hteId) return `id:${String(trainee.hteId).trim().toLowerCase()}`;
+  const comp = String(trainee.companyName || '').trim().toLowerCase();
+  return comp ? `co:${comp}` : '';
+}
+
+/**
+ * Returns the instructor-set permanent geofence for a trainee if it is valid
+ * for the trainee's current HTE assignment, otherwise null.
+ */
+export function getTraineeGeofenceOverride(trainee: any): TraineeGeofenceOverride | null {
+  if (!trainee) return null;
+  const ov = trainee.geofenceOverride ?? trainee.registrationLocation?.geofenceOverride;
+  if (!ov || typeof ov !== 'object') return null;
+  const lat = Number(ov.lat);
+  const lng = Number(ov.lng);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (lat === 0 && lng === 0) return null;
+  const currentKey = getTraineeHteKey(trainee);
+  // If the trainee was reassigned to another HTE, the old override no longer applies
+  if (ov.hteKey && currentKey && ov.hteKey !== currentKey) {
+    // Allow id/company equivalence: override saved with company key while trainee now has hteId (or vice versa)
+    const ovIsCo = String(ov.hteKey).startsWith('co:');
+    const comp = String(trainee.companyName || '').trim().toLowerCase();
+    if (!(ovIsCo && comp && ov.hteKey === `co:${comp}`)) return null;
+  }
+  return {
+    lat,
+    lng,
+    radius: Math.max(20, Number(ov.radius) || 40),
+    address: ov.address,
+    hteKey: ov.hteKey || currentKey,
+    updatedAt: ov.updatedAt,
+    updatedBy: ov.updatedBy,
+  };
+}
 
 export interface HteLocationInfo {
   lat: number;
@@ -108,6 +151,22 @@ export function resolveHteLocation(
   geofenceZones: GeofenceZone[] = []
 ): HteLocationInfo | null {
   if (!traineeOrHte) return null;
+
+  // 0. Priority: Instructor permanent custom geofence override for this trainee
+  const override = getTraineeGeofenceOverride(traineeOrHte);
+  if (override) {
+    const rawCompany = (traineeOrHte.companyName || '').trim();
+    const comp = rawCompany || (traineeOrHte as any)?.company || 'Assigned Workplace';
+    return {
+      lat: override.lat,
+      lng: override.lng,
+      radius: override.radius,
+      address: override.address || traineeOrHte.companyAddress || traineeOrHte.registrationAddress || `${comp} Workplace Premises`,
+      name: `${comp} Workplace Premises`,
+      companyName: comp,
+      source: 'geofence_zone',
+    };
+  }
 
   const hteId = traineeOrHte.hteId || traineeOrHte.assignedZoneId || (traineeOrHte.role === 'hte' ? traineeOrHte.id : undefined);
   const rawCompany = (traineeOrHte.companyName || '').trim();

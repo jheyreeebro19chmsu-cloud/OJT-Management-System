@@ -653,7 +653,8 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     updates.province !== undefined ||
     updates.documentsPassed !== undefined ||
     updates.documentsStatus !== undefined ||
-    updates.submittedDocuments !== undefined;
+    updates.submittedDocuments !== undefined ||
+    (updates as any).geofenceOverride !== undefined;
 
   if (hasRegLocUpdates) {
     let existingRegLoc: any = {};
@@ -700,6 +701,11 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   const regRadius = updates.registrationRadius ?? updates.registrationLocation?.radius;
   if (regRadius !== undefined && regRadius !== null) {
     updatedRegLoc.radius = Math.max(20, Number(regRadius));
+  }
+  if ((updates as any).geofenceOverride !== undefined) {
+    updatedRegLoc.geofenceOverride = (updates as any).geofenceOverride;
+  } else if (updates.registrationLocation && (updates.registrationLocation as any).geofenceOverride !== undefined) {
+    updatedRegLoc.geofenceOverride = (updates.registrationLocation as any).geofenceOverride;
   }
   if (updates.registrationAddress !== undefined) {
     updatedRegLoc.address = updates.registrationAddress;
@@ -2983,6 +2989,7 @@ export function transformSupabaseEmployee(data: any): Employee {
       return hoursVal > 0 ? { lat: 0, lng: 0, radius: radiusVal, renderedHours: hoursVal } : undefined;
     })(),
     registrationRadius: Math.max(20, Number(data.registration_radius ?? regLoc?.radius ?? 40)),
+    geofenceOverride: (data as any)?.geofence_override || regLoc?.geofenceOverride || undefined,
     registrationAddress: data.registration_address || regLoc?.address || undefined,
     contactPhone: phoneVal,
     phone: phoneVal,

@@ -1,3 +1,14 @@
+export interface TraineeGeofenceOverride {
+  lat: number;
+  lng: number;
+  radius: number;
+  address?: string;
+  /** HTE identity (hteId or normalized company name) the override was set for */
+  hteKey: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
 export interface Employee {
   id: string;
   name: string;
@@ -29,6 +40,12 @@ export interface Employee {
   registrationLocation?: { lat: number; lng: number; radius?: number; renderedHours?: number };
   registrationRadius?: number;
   registrationAddress?: string;
+  /**
+   * Instructor-set permanent geofence for a trainee (moved pin / adjusted radius).
+   * Takes precedence over the assigned HTE location while `hteKey` still matches
+   * the trainee's current HTE assignment.
+   */
+  geofenceOverride?: TraineeGeofenceOverride | null;
   address?: string;
   residentialAddress?: string;
   telephone?: string;

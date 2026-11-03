@@ -158,6 +158,9 @@ async function mapUpdatesToDbPayload(updates) {
   if (regRadiusVal !== undefined) {
     locObj.radius = Math.max(20, Number(regRadiusVal));
   }
+  if (updates.geofenceOverride !== undefined || updates.geofence_override !== undefined || locObj.geofenceOverride !== undefined) {
+    locObj.geofenceOverride = updates.geofenceOverride ?? updates.geofence_override ?? locObj.geofenceOverride;
+  }
   if (dbPayload.registration_lat != null) locObj.lat = Number(dbPayload.registration_lat);
   if (dbPayload.registration_lng != null) locObj.lng = Number(dbPayload.registration_lng);
   if (dbPayload.registration_address) locObj.address = dbPayload.registration_address;
@@ -182,6 +185,8 @@ async function mapUpdatesToDbPayload(updates) {
     Object.keys(locObj).length > 0 ||
     updates.registrationLocation !== undefined ||
     updates.registration_location !== undefined ||
+    updates.geofenceOverride !== undefined ||
+    updates.geofence_override !== undefined ||
     updates.documentsPassed !== undefined ||
     updates.documentsStatus !== undefined ||
     updates.submittedDocuments !== undefined ||

@@ -32,7 +32,7 @@ import {
 } from '../types';
 import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
-import { resolveHteLocation, isInvalidHteCompany, isTraineeRole } from '../utils/hteLocation';
+import { resolveHteLocation, isInvalidHteCompany, isTraineeRole, getTraineeGeofenceOverride } from '../utils/hteLocation';
 import { TRAINEE_REQUIRED_HOURS, normalizeTraineeRequiredHours } from '../data/ojtConstants';
 import { buildDefaultReportsForTrainee } from '../utils/monitoringReportGenerator';
 import { logActivity } from '../services/activityLogService';
@@ -2030,6 +2030,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let hasEmpUpdates = false;
     const updatedEmployees = employees.map((emp) => {
       if (!isTraineeRole(emp)) return emp;
+
+      const override = getTraineeGeofenceOverride(emp);
+      if (override) {
+        // Trainee has an instructor-set custom geofence override.
+        // Maintain override coordinates & radius permanently without resetting to HTE defaults.
+        const needsLocUpdate =
+          !emp.registrationLocation ||
+          Math.abs((emp.registrationLocation.lat || 0) - override.lat) > 0.0001 ||
+          Math.abs((emp.registrationLocation.lng || 0) - override.lng) > 0.0001 ||
+          Math.abs(((emp.registrationLocation as any)?.radius || emp.registrationRadius || 0) - override.radius) > 0.5 ||
+          !(emp.registrationLocation as any)?.geofenceOverride;
+
+        if (needsLocUpdate) {
+          hasEmpUpdates = true;
+          return {
+            ...emp,
+            geofenceOverride: override,
+            registrationLocation: {
+              lat: override.lat,
+              lng: override.lng,
+              radius: override.radius,
+              geofenceOverride: override,
+            },
+            registrationRadius: override.radius,
+            registrationAddress: override.address || emp.registrationAddress,
+          };
+        }
+        return emp;
+      }
+
       const hteLoc = resolveHteLocation(emp, hostSupervisors, employees, geofenceZones);
       if (!hteLoc) return emp;
 
@@ -2040,15 +2070,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       if (needsLocUpdate) {
         hasEmpUpdates = true;
+        const currentRadius = (emp.registrationLocation as any)?.radius || emp.registrationRadius || hteLoc.radius;
         return {
           ...emp,
           companyAddress: emp.companyAddress || hteLoc.address,
           registrationLocation: {
             lat: hteLoc.lat,
             lng: hteLoc.lng,
-            radius: hteLoc.radius,
+            radius: currentRadius,
           },
-          registrationRadius: hteLoc.radius,
+          registrationRadius: currentRadius,
         };
       }
       return emp;
@@ -3530,29 +3561,33 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     // AUTO-SYNC TRAINEE GEOFENCE ZONE WITH HTE WORKPLACE
-    if (updatedEmployee && (data.companyName || data.hteId || data.companyAddress || data.registrationLocation)) {
+    if (updatedEmployee && (data.companyName || data.hteId || data.companyAddress || data.registrationLocation || (data as any).geofenceOverride)) {
       const isStudentRole = isTraineeRole(updatedEmployee);
 
       if (isStudentRole && updatedEmployee.companyName && !isInvalidHteCompany(updatedEmployee.companyName)) {
+        const override = getTraineeGeofenceOverride(updatedEmployee);
         const hteLoc = resolveHteLocation(updatedEmployee, hostSupervisors, employees, geofenceZones);
 
-        if (hteLoc) {
+        if (override || hteLoc) {
+          const effectiveLoc = override || hteLoc!;
           const customRadius =
+            override?.radius ||
             (data.registrationLocation as any)?.radius ||
             (data as any)?.registrationRadius ||
             (updatedEmployee.registrationLocation as any)?.radius ||
             (updatedEmployee as any)?.registrationRadius ||
-            hteLoc.radius;
-          const targetRadius = customRadius ? Math.max(20, Number(customRadius)) : hteLoc.radius;
+            effectiveLoc.radius;
+          const targetRadius = Math.max(20, Number(customRadius));
 
-          const targetLat = (data.registrationLocation as any)?.lat ?? updatedEmployee.registrationLocation?.lat ?? hteLoc.lat;
-          const targetLng = (data.registrationLocation as any)?.lng ?? updatedEmployee.registrationLocation?.lng ?? hteLoc.lng;
-          const targetAddress = (data as any)?.registrationAddress || (data.registrationLocation as any)?.address || updatedEmployee.registrationAddress || hteLoc.address;
+          const targetLat = override?.lat ?? (data.registrationLocation as any)?.lat ?? updatedEmployee.registrationLocation?.lat ?? effectiveLoc.lat;
+          const targetLng = override?.lng ?? (data.registrationLocation as any)?.lng ?? updatedEmployee.registrationLocation?.lng ?? effectiveLoc.lng;
+          const targetAddress = override?.address || (data as any)?.registrationAddress || (data.registrationLocation as any)?.address || updatedEmployee.registrationAddress || effectiveLoc.address;
+          const compName = override ? (updatedEmployee.companyName || 'Assigned Workplace') : (hteLoc?.companyName || updatedEmployee.companyName);
 
           const stationZoneId = `station-${id}`;
           const stationZone: GeofenceZone = {
             id: stationZoneId,
-            name: `${updatedEmployee.name} - Trainee Geofence (${hteLoc.companyName})`,
+            name: `${updatedEmployee.name} - Trainee Geofence (${compName})`,
             address: targetAddress,
             lat: Number(targetLat),
             lng: Number(targetLng),

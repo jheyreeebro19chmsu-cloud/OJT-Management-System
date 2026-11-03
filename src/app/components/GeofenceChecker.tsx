@@ -8,7 +8,7 @@ import { checkGeofence as checkGeofenceApi, isSecurityApiConfigured } from '../s
 import { useApp } from '../store/AppContext';
 import type { GeofenceZone } from '../types';
 import { getCampusLocation } from '../utils/campusLocations';
-import { resolveHteLocation, isInvalidHteCompany } from '../utils/hteLocation';
+import { resolveHteLocation, isInvalidHteCompany, getTraineeGeofenceOverride } from '../utils/hteLocation';
 import {
   calculateDistance,
   formatDistance,
@@ -148,7 +148,9 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           (z as any).employeeId === employee.id ||
           (z as any).employee_id === employee.id
       );
+      const traineeOverride = getTraineeGeofenceOverride(employee);
       const customRadius =
+        traineeOverride?.radius ||
         (employee.registrationLocation as any)?.radius ||
         employee.registrationRadius ||
         (employee as any)?.registration_radius ||
