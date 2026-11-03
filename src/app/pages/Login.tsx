@@ -162,7 +162,7 @@ export function Login() {
                   'Google sign-in timed out because the database server is unresponsive. Please check your Supabase project status or restart the project in the Supabase dashboard.',
               },
             }),
-          14000
+          6000
         )
       );
 
