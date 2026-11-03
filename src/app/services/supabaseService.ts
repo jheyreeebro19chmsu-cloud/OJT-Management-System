@@ -3251,10 +3251,10 @@ export function transformSupabaseTimeRecord(data: any): TimeRecord {
 
   return {
     id: data.id,
-    employeeId: data.employee_id,
-    date: data.date ? String(data.date).split('T')[0] : data.date,
-    timeIn: data.time_in,
-    timeOut: data.time_out,
+    employeeId: data.employee_id || data.employeeId || data.employeeID || data.employee_Id || data.userId || data.user_id || '',
+    date: data.date ? String(data.date).split('T')[0].split(' ')[0].trim() : data.date,
+    timeIn: data.time_in ?? data.timeIn,
+    timeOut: data.time_out ?? data.timeOut,
     amArrival,
     amDeparture,
     pmArrival,

@@ -338,6 +338,38 @@ export default async function handler(req, res) {
         return sendJson(res, 500, { error: error.message });
       }
 
+      // Fast cross-lookup for HTE host supervisors if not found in employees
+      if ((!data || data.length === 0) && email) {
+        try {
+          const { data: hostData } = await supabase
+            .from('host_supervisors')
+            .select('*')
+            .ilike('email', email.trim().toLowerCase())
+            .limit(1);
+          if (hostData && hostData.length > 0) {
+            const h = hostData[0];
+            return sendJson(res, 200, [{
+              id: h.id,
+              employee_id: h.employee_id || h.id,
+              name: h.name,
+              email: h.email,
+              company_name: h.company_name,
+              company_address: h.company_address,
+              contact_person: h.contact_person,
+              phone: h.phone,
+              academic_year: h.academic_year,
+              is_approved: h.is_approved ?? true,
+              active: h.active ?? true,
+              position: 'HTE Representative',
+              role: 'hte',
+              is_host_supervisor: true,
+            }]);
+          }
+        } catch (hErr) {
+          console.warn('host_supervisors cross-lookup notice:', hErr);
+        }
+      }
+
       return sendJson(res, 200, data || []);
     }
 

@@ -130,17 +130,35 @@ export default function OAuthCallback() {
           console.warn('Initial getSession error:', getSessErr);
         }
 
-        // 3. PKCE Authorization Code grant (?code=...) if not already resolved by SDK
+        // 3. Fast PKCE Authorization Code grant (?code=...) with parallel auth state listener race
         const code = searchParams.get('code');
         if (!session && code) {
-          setStatusMessage('Exchanging authorization code...');
+          setStatusMessage('Verifying authorization code...');
           try {
-            const { data: codeData, error: codeErr } = await supabase.auth.exchangeCodeForSession(code);
-            if (!codeErr && codeData?.session) {
-              session = codeData.session;
-            }
+            // Concurrently race explicit exchange with automatic SDK listener so whichever finishes first is used immediately
+            const exchangePromise = supabase.auth.exchangeCodeForSession(code)
+              .then((res) => res.data?.session || null)
+              .catch(() => null);
+
+            const listenerPromise = new Promise<any>((resolve) => {
+              const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+                if (newSession) {
+                  authListener?.subscription?.unsubscribe();
+                  resolve(newSession);
+                }
+              });
+              setTimeout(() => {
+                authListener?.subscription?.unsubscribe();
+                resolve(null);
+              }, 2500);
+            });
+
+            session = await Promise.race([
+              exchangePromise.then(async (s) => s || await listenerPromise),
+              listenerPromise.then(async (s) => s || await exchangePromise),
+            ]);
           } catch (codeEx) {
-            console.warn('exchangeCodeForSession exception:', codeEx);
+            console.warn('Code exchange race notice:', codeEx);
           }
         }
 
@@ -178,28 +196,6 @@ export default function OAuthCallback() {
               } catch {}
             }
           }
-        }
-
-        // 6. Fast listener for onAuthStateChange if background exchange is in-flight
-        if (!session) {
-          session = await new Promise((resolve) => {
-            let done = false;
-            const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-              if (newSession && !done) {
-                done = true;
-                authListener?.subscription?.unsubscribe();
-                resolve(newSession);
-              }
-            });
-
-            setTimeout(() => {
-              if (!done) {
-                done = true;
-                authListener?.subscription?.unsubscribe();
-                resolve(null);
-              }
-            }, 1000);
-          });
         }
 
         if (!session?.user) {
@@ -251,7 +247,7 @@ export default function OAuthCallback() {
               localStorage.removeItem('oauth_photo');
               localStorage.removeItem('oauth_user_id');
               const targetPath = loggedInUser.role === 'admin' ? '/admin' : loggedInUser.role === 'hte' ? '/hte' : '/app';
-              setTimeout(() => navigate(targetPath, { replace: true }), 300);
+              setTimeout(() => navigate(targetPath, { replace: true }), 50);
               return;
             }
           } catch (hookErr) {
@@ -259,11 +255,33 @@ export default function OAuthCallback() {
           }
         }
 
-        // ── 7B. Direct Supabase lookup by email, id, or user_id ──
+        // ── 7B. Fast Server-Side API + Supabase lookup ──
         let dbEmp: any = null;
         let dbHost: any = null;
 
-        if (isSupabaseConfigured() && email) {
+        if (email && typeof window !== 'undefined') {
+          try {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), 2000);
+            const apiRes = await fetch(`/api/employees?email=${encodeURIComponent(email.trim().toLowerCase())}`, {
+              signal: controller.signal,
+            });
+            clearTimeout(timer);
+            if (apiRes && apiRes.ok) {
+              const apiItems = await apiRes.json();
+              if (Array.isArray(apiItems) && apiItems.length > 0) {
+                const item = apiItems[0];
+                if (item.is_host_supervisor) {
+                  dbHost = item;
+                } else {
+                  dbEmp = item;
+                }
+              }
+            }
+          } catch {}
+        }
+
+        if (!dbEmp && !dbHost && isSupabaseConfigured() && email) {
           try {
             const cleanEmail = email.trim().toLowerCase();
             const [empByEmailRes, empByIdRes, hostByEmailRes, hostByIdRes] = await Promise.allSettled([

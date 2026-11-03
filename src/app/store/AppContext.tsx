@@ -1844,33 +1844,107 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
     lastRefreshTimeRef.current = now;
     try {
+      // Tier 1: Core Dashboard Data (Employees, Host Supervisors, Geofence Zones, Settings, Time Records)
+      // Loaded first with Promise.allSettled so the dashboard renders instantly without blocking on heavy background storage
       const [
-        supabaseEmployees,
-        supabaseRecords,
-        supabaseZones,
-        supabaseSettings,
-        supabaseEvaluations,
-        supabaseAnnouncements,
-        supabaseSubmissions,
-        supabaseHostFeedback,
-        supabaseHostSupervisors,
-        supabaseRequiredDocs,
-        supabaseMonitoringReports,
-        supabaseDttrStore,
-      ] = await Promise.all([
+        empSettled,
+        hostsSettled,
+        zonesSettled,
+        settingsSettled,
+        recordsSettled,
+      ] = await Promise.allSettled([
         supabaseService.fetchEmployees(),
-        supabaseService.fetchTimeRecords(),
+        supabaseService.fetchHostSupervisors(),
         supabaseService.fetchGeofenceZones(),
         supabaseService.fetchSettings(),
+        supabaseService.fetchTimeRecords(),
+      ]);
+
+      const supabaseEmployees = empSettled.status === 'fulfilled' ? empSettled.value : null;
+      const supabaseHostSupervisors = hostsSettled.status === 'fulfilled' ? hostsSettled.value : null;
+      const supabaseZones = zonesSettled.status === 'fulfilled' ? zonesSettled.value : null;
+      const supabaseSettings = settingsSettled.status === 'fulfilled' ? settingsSettled.value : null;
+      const supabaseRecords = recordsSettled.status === 'fulfilled' ? recordsSettled.value : null;
+
+      // Immediately commit Core Data
+      if (supabaseEmployees && supabaseEmployees.length > 0) {
+        setEmployees((prev) => {
+          const merged = mergeEmployees(supabaseEmployees, prev);
+          saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
+          return merged;
+        });
+      }
+
+      if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) {
+        setHostSupervisors((prev) => {
+          const merged = mergeHostSupervisors(supabaseHostSupervisors, prev);
+          saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, merged);
+          return merged;
+        });
+      }
+
+      if (supabaseRecords && supabaseRecords.length > 0) {
+        setTimeRecords((prev) => {
+          const merged = mergeTimeRecords(supabaseRecords, prev);
+          saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+          return merged;
+        });
+      }
+
+      const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
+      if (sanitizedZones && sanitizedZones.length > 0) {
+        setGeofenceZones(sanitizedZones);
+        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
+      }
+
+      if (supabaseSettings) {
+        setSettings((prev) => {
+          const mergedYears = Array.from(new Set([
+            ...(prev.academicYears || ['2025-2026', '2026-2027']),
+            ...(supabaseSettings.academicYears || []),
+            '2025-2026',
+            '2026-2027',
+          ]));
+          const activeYear = (supabaseSettings.activeAcademicYear && supabaseSettings.activeAcademicYear !== '2025-2026')
+            ? supabaseSettings.activeAcademicYear
+            : (prev.activeAcademicYear || '2026-2027');
+          const next = {
+            ...prev,
+            ...supabaseSettings,
+            academicYears: mergedYears,
+            activeAcademicYear: activeYear,
+          };
+          saveToStorage(STORAGE_KEYS.SETTINGS, next);
+          return next;
+        });
+      }
+
+      // Tier 2: Background Data (Evaluations, Announcements, Submissions, Feedback, Documents, DTTR Store)
+      const [
+        evalSettled,
+        annSettled,
+        subSettled,
+        feedbackSettled,
+        docsSettled,
+        reportsSettled,
+        dttrStoreSettled,
+      ] = await Promise.allSettled([
         supabaseService.fetchEvaluations(),
         supabaseService.fetchAnnouncements(),
         supabaseService.fetchAnnouncementSubmissions(),
         supabaseService.fetchHostFeedback(),
-        supabaseService.fetchHostSupervisors(),
         supabaseService.fetchRequiredDocumentsFromStorage(),
         supabaseService.fetchMonitoringReportsFromStorage(),
         supabaseService.fetchDttrStoreFromStorage(),
       ]);
+
+      const supabaseEvaluations = evalSettled.status === 'fulfilled' ? evalSettled.value : null;
+      const supabaseAnnouncements = annSettled.status === 'fulfilled' ? annSettled.value : null;
+      const supabaseSubmissions = subSettled.status === 'fulfilled' ? subSettled.value : null;
+      const supabaseHostFeedback = feedbackSettled.status === 'fulfilled' ? feedbackSettled.value : null;
+      const supabaseRequiredDocs = docsSettled.status === 'fulfilled' ? docsSettled.value : null;
+      const supabaseMonitoringReports = reportsSettled.status === 'fulfilled' ? reportsSettled.value : null;
+      const supabaseDttrStore = dttrStoreSettled.status === 'fulfilled' ? dttrStoreSettled.value : null;
 
       if (supabaseDttrStore && Array.isArray(supabaseDttrStore.monthlyDttrs) && supabaseDttrStore.monthlyDttrs.length > 0) {
         setMonthlyDttrs((prev) => {
@@ -1909,46 +1983,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      if (supabaseEmployees && supabaseEmployees.length > 0) {
-        setEmployees((prev) => {
-          const merged = mergeEmployees(supabaseEmployees, prev);
-          saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
-          return merged;
-        });
-      }
-      if (supabaseRecords && supabaseRecords.length > 0) {
-        setTimeRecords((prev) => {
-          const merged = mergeTimeRecords(supabaseRecords, prev);
-          saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-          return merged;
-        });
-      }
-      const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
-      if (sanitizedZones && sanitizedZones.length > 0) {
-        setGeofenceZones(sanitizedZones);
-        saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
-      }
-      if (supabaseSettings) {
-        setSettings((prev) => {
-          const mergedYears = Array.from(new Set([
-            ...(prev.academicYears || ['2025-2026', '2026-2027']),
-            ...(supabaseSettings.academicYears || []),
-            '2025-2026',
-            '2026-2027',
-          ]));
-          const activeYear = (supabaseSettings.activeAcademicYear && supabaseSettings.activeAcademicYear !== '2025-2026')
-            ? supabaseSettings.activeAcademicYear
-            : (prev.activeAcademicYear || '2026-2027');
-          const next = {
-            ...prev,
-            ...supabaseSettings,
-            academicYears: mergedYears,
-            activeAcademicYear: activeYear,
-          };
-          saveToStorage(STORAGE_KEYS.SETTINGS, next);
-          return next;
-        });
-      }
+
       if (supabaseEvaluations && supabaseEvaluations.length > 0) {
         setEvaluations((prev) => {
           const merged = mergeEvaluations(supabaseEvaluations, prev);
@@ -2583,7 +2618,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
     }
 
-    // Step 2: Supabase DB check if not found in memory/storage (parallelized for maximum speed)
+    // Step 2: Fast server-side check with 2.5s timeout (bypasses client RLS cold start on new devices)
+    if (!matchedEmp && !matchedHost && authEmail && typeof window !== 'undefined') {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 2500);
+        const res = await fetch(`/api/employees?email=${encodeURIComponent(authEmail)}`, {
+          signal: controller.signal,
+          headers: { 'Accept': 'application/json' },
+        });
+        clearTimeout(timer);
+        if (res && res.ok) {
+          const apiData = await res.json();
+          if (Array.isArray(apiData) && apiData.length > 0) {
+            const rawItem = apiData[0];
+            if (rawItem.is_host_supervisor) {
+              matchedHost = {
+                id: rawItem.id,
+                employeeId: rawItem.employee_id || rawItem.id,
+                name: rawItem.name,
+                email: rawItem.email,
+                companyName: rawItem.company_name,
+                companyAddress: rawItem.company_address,
+                contactPerson: rawItem.contact_person,
+                phone: rawItem.phone,
+                academicYear: rawItem.academic_year,
+                isApproved: rawItem.is_approved ?? true,
+                active: rawItem.active ?? true,
+              };
+              setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
+              saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, [matchedHost!, ...cachedHosts.filter((h) => h.id !== matchedHost!.id)]);
+            } else {
+              matchedEmp = supabaseService.transformSupabaseEmployee(rawItem);
+              setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
+              saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
+            }
+          }
+        }
+      } catch (fastApiErr) {
+        // Proceed to direct check if server API timed out
+      }
+    }
+
+    // Step 3: Supabase DB direct check if not found above (with fast timeout)
     if (useSupabase && !matchedEmp && !matchedHost) {
       try {
         const promises: Promise<any>[] = [];
