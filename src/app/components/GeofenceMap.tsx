@@ -563,7 +563,10 @@ export function GeofenceMap({
 
       if (existing) {
         existing.zones.push(zone);
-        if (
+        if (selectedZoneId === zone.id || (zone.employeeId && selectedZoneId?.includes(zone.employeeId))) {
+          existing.primaryZone = zone;
+          existing.radius = Number(zone.radius) || existing.radius;
+        } else if (
           zone.userType === 'hte' ||
           zone.userType === 'institutional' ||
           (zone.name &&
@@ -572,7 +575,9 @@ export function GeofenceMap({
               zone.name.toLowerCase().includes('concentrix') ||
               zone.name.toLowerCase().includes('station')))
         ) {
-          existing.primaryZone = zone;
+          if (existing.primaryZone.id !== selectedZoneId) {
+            existing.primaryZone = zone;
+          }
         }
       } else {
         const groupObj = {
@@ -591,7 +596,7 @@ export function GeofenceMap({
     }
 
     return groups;
-  }, [safeZones, draggableZoneId, allZonesDraggable, picking]);
+  }, [safeZones, draggableZoneId, allZonesDraggable, picking, selectedZoneId]);
 
   const safePickedCoords = pickedCoords && isValidCoord(pickedCoords.lat, pickedCoords.lng) ? pickedCoords : undefined;
   const safeLiveUser = liveUser && isValidCoord(liveUser.lat, liveUser.lng) ? liveUser : null;

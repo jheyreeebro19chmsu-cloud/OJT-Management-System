@@ -88,6 +88,7 @@ export function AdminGeofence() {
   // Interactive Drag on Map State
   const [dragZoneId, setDragZoneId] = useState<string | null>(null);
   const [dragCoords, setDragCoords] = useState<{ lat: number; lng: number } | null>(null);
+  const [dragRadius, setDragRadius] = useState<number | null>(null);
   const [copiedCoord, setCopiedCoord] = useState(false);
 
   const normalizeName = (str: string): string => {
@@ -762,6 +763,7 @@ export function AdminGeofence() {
     const isTrainee = Boolean(
       matchedZone?.userType === 'trainee' ||
       zoneId.startsWith('trainee-') ||
+      isTraineeZone(matchedZone) ||
       (matchedZone?.name && (matchedZone.name.toLowerCase().includes('trainee') || matchedZone.name.toLowerCase().includes('student') || matchedZone.name.toLowerCase().includes('intern')))
     );
     const isInst = !isTrainee && isInstructorZone(matchedZone || { id: zoneId });
@@ -778,24 +780,32 @@ export function AdminGeofence() {
         (matchedZone?.name && h.name && matchedZone.name.toLowerCase().includes(h.name.toLowerCase()))
     )) : null;
 
-    const targetRadius = Math.max(20, Number(updatedData.radius ?? matchedZone?.radius ?? GEOFENCE_RADIUS_METERS));
-    const targetLat = Number(updatedData.lat ?? matchedZone?.lat ?? 10.741);
-    const targetLng = Number(updatedData.lng ?? matchedZone?.lng ?? 122.9702);
-    const targetAddress = updatedData.address || matchedZone?.address || 'Official Workplace GPS';
+    const traineeAcc = isTrainee || (account && isTraineeAccount(account))
+      ? (account || employees.find((e) => e.id === rawId || e.employeeId === rawId))
+      : null;
+    const existingOverride = traineeAcc ? getTraineeGeofenceOverride(traineeAcc) : null;
+
+    const targetRadius = Math.max(20, Number(updatedData.radius ?? matchedZone?.radius ?? existingOverride?.radius ?? traineeAcc?.registrationRadius ?? GEOFENCE_RADIUS_METERS));
+    const targetLat = Number(updatedData.lat ?? matchedZone?.lat ?? existingOverride?.lat ?? traineeAcc?.registrationLocation?.lat ?? 10.741);
+    const targetLng = Number(updatedData.lng ?? matchedZone?.lng ?? existingOverride?.lng ?? traineeAcc?.registrationLocation?.lng ?? 122.9702);
+    const targetAddress = updatedData.address || matchedZone?.address || existingOverride?.address || traineeAcc?.registrationAddress || 'Official Workplace GPS';
     const targetName = updatedData.name || matchedZone?.name || (
       isHte && hostAccount
         ? `${hostAccount.name} - ${hostAccount.companyName || 'HTE Workplace'}`
         : isInst && account
         ? `${account.name} - Official Station`
-        : account
-        ? `${account.name} - Trainee Geofence`
+        : traineeAcc
+        ? `${traineeAcc.name} - Trainee Geofence`
         : 'Geofence Zone'
     );
 
+    // If modal is open for this zone, keep its display in sync immediately
+    if (viewModalZone && (viewModalZone.id === zoneId || viewModalZone.id === rawId)) {
+      setViewModalZone((prev) => (prev ? { ...prev, radius: targetRadius, lat: targetLat, lng: targetLng, address: targetAddress, name: targetName } : null));
+    }
+
     // 1. If this is a Trainee zone: Update ONLY this trainee's record and personal zone
-    if (isTrainee || (account && isTraineeAccount(account))) {
-      const traineeAcc = account || employees.find((e) => e.id === rawId || e.employeeId === rawId);
-      if (traineeAcc) {
+    if (traineeAcc) {
         const traineeHteKey = getTraineeHteKey(traineeAcc);
         const override: TraineeGeofenceOverride = {
           lat: targetLat,
@@ -849,7 +859,7 @@ export function AdminGeofence() {
           }
         } else {
           addGeofenceZone({
-            id: traineeAcc.id,
+            id: `station-${traineeAcc.id}`,
             name: targetName,
             address: targetAddress,
             lat: targetLat,
@@ -862,7 +872,6 @@ export function AdminGeofence() {
         }
       }
       return;
-    }
 
     // 2. If this is an HTE Supervisor / Establishment Zone:
     if (isHte && hostAccount) {
@@ -1088,6 +1097,7 @@ export function AdminGeofence() {
   const handleStartDrag = (zone: GeofenceZone) => {
     setDragZoneId(zone.id);
     setDragCoords({ lat: zone.lat, lng: zone.lng });
+    setDragRadius(zone.radius || 40);
     scrollToMapAndFocus(zone);
     toast.info(`📍 Drag mode active for "${zone.name}". Move the marker on the map to relocate perimeter.`);
   };
@@ -1116,11 +1126,12 @@ export function AdminGeofence() {
       lng: safeLng,
       address: resolvedAddress,
       name: matchedZone?.name,
-      radius: matchedZone?.radius,
+      radius: dragRadius ?? matchedZone?.radius,
     });
 
     setDragZoneId(null);
     setDragCoords(null);
+    setDragRadius(null);
     toast.success(`✓ Permanently saved new geofence position for "${zName}"!`);
   };
 
@@ -1133,6 +1144,7 @@ export function AdminGeofence() {
   const handleCancelDrag = () => {
     setDragZoneId(null);
     setDragCoords(null);
+    setDragRadius(null);
     toast.info('Drag mode cancelled.');
   };
 
@@ -1506,6 +1518,7 @@ export function AdminGeofence() {
                     type="button"
                     onClick={() => {
                       if (dragZoneId && draggedZone) {
+                        setDragRadius(r);
                         saveZoneCoordinates(dragZoneId, {
                           lat: dragCoords.lat,
                           lng: dragCoords.lng,
@@ -1517,7 +1530,7 @@ export function AdminGeofence() {
                       }
                     }}
                     className={`px-2 py-0.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                      draggedZone.radius === r
+                      (dragRadius ?? draggedZone.radius) === r
                         ? 'bg-blue-600 text-white shadow-sm'
                         : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
                     }`}
@@ -1561,7 +1574,7 @@ export function AdminGeofence() {
           focusTrigger={focusTrigger}
           picking={Boolean(showAdd || editId || dragZoneId)}
           pickedCoords={showAdd || editId ? { lat: Number(form.lat), lng: Number(form.lng) } : (dragCoords ? { lat: dragCoords.lat, lng: dragCoords.lng } : undefined)}
-          pickedRadius={Number(form.radius) || GEOFENCE_RADIUS_METERS}
+          pickedRadius={dragZoneId ? (dragRadius ?? draggedZone?.radius ?? 40) : (Number(form.radius) || GEOFENCE_RADIUS_METERS)}
           className="h-80"
           allZonesDraggable={false}
           draggableZoneId={dragZoneId}
@@ -1799,9 +1812,82 @@ export function AdminGeofence() {
                             <span className="bg-slate-100 text-slate-700 font-mono px-2 py-0.5 rounded-md font-medium text-[11px] border border-slate-200">
                               📍 {zone.lat.toFixed(5)}, {zone.lng.toFixed(5)}
                             </span>
-                            <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-bold text-[11px] border border-blue-100">
-                              ⭕ {zone.radius}m boundary radius
-                            </span>
+
+                            {/* Interactive Radius Adjuster */}
+                            <div
+                              className="inline-flex items-center gap-1.5 bg-blue-50/90 border border-blue-200 px-2 py-0.5 rounded-xl shadow-2xs"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <span className="text-[11px] font-extrabold text-blue-900 flex items-center gap-1">
+                                ⭕ <span className="font-mono text-blue-700">{zone.radius}m</span>
+                              </span>
+                              <div className="flex items-center gap-0.5 ml-1 border-l border-blue-200 pl-1.5">
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const currentR = zone.radius || 40;
+                                    const newR = Math.max(20, currentR - 10);
+                                    saveZoneCoordinates(zone.id, { radius: newR });
+                                    toast.success(`Updated radius to ${newR}m for "${zone.name}"`);
+                                  }}
+                                  className="w-5 h-5 rounded bg-white hover:bg-blue-100 border border-blue-300 text-blue-800 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                                  title="Decrease radius by 10m"
+                                >
+                                  -
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    const currentR = zone.radius || 40;
+                                    const newR = Math.min(1000, currentR + 10);
+                                    saveZoneCoordinates(zone.id, { radius: newR });
+                                    toast.success(`Updated radius to ${newR}m for "${zone.name}"`);
+                                  }}
+                                  className="w-5 h-5 rounded bg-white hover:bg-blue-100 border border-blue-300 text-blue-800 flex items-center justify-center font-bold text-xs cursor-pointer shadow-2xs"
+                                  title="Increase radius by 10m"
+                                >
+                                  +
+                                </button>
+                                {[30, 50, 100].map((preset) => (
+                                  <button
+                                    key={preset}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      saveZoneCoordinates(zone.id, { radius: preset });
+                                      toast.success(`Updated radius to ${preset}m for "${zone.name}"`);
+                                    }}
+                                    className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer transition-colors ${
+                                      zone.radius === preset
+                                        ? 'bg-blue-700 text-white shadow-2xs'
+                                        : 'bg-white hover:bg-blue-100 border border-blue-200 text-blue-700'
+                                    }`}
+                                    title={`Set radius to ${preset}m`}
+                                  >
+                                    {preset}m
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleStartDrag(zone);
+                              }}
+                              className={`inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-md transition-all cursor-pointer ${
+                                dragZoneId === zone.id
+                                  ? 'bg-purple-600 text-white shadow-sm'
+                                  : 'text-purple-700 hover:text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-200'
+                              }`}
+                              title="Move marker interactively on map"
+                            >
+                              <Move size={11} /> {dragZoneId === zone.id ? 'Dragging...' : 'Move Pin'}
+                            </button>
+
                             <button
                               type="button"
                               onClick={(e) => {
@@ -2223,10 +2309,56 @@ export function AdminGeofence() {
 
                 {/* Status & Boundary Specs */}
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-100">
-                    <p className="text-[10px] uppercase tracking-wider font-extrabold text-blue-700">Perimeter Radius</p>
-                    <p className="text-lg font-black text-blue-900 mt-0.5">{viewModalZone.radius} meters</p>
-                    <p className="text-[10px] text-blue-600 mt-1">Allowed punch perimeter</p>
+                  <div className="p-3.5 rounded-2xl bg-blue-50/60 border border-blue-100 flex flex-col justify-between">
+                    <div>
+                      <p className="text-[10px] uppercase tracking-wider font-extrabold text-blue-700">Perimeter Radius</p>
+                      <p className="text-lg font-black text-blue-900 mt-0.5">{viewModalZone.radius} meters</p>
+                      <p className="text-[10px] text-blue-600 mt-0.5">Allowed punch perimeter</p>
+                    </div>
+                    {/* Quick adjust presets */}
+                    <div className="flex items-center gap-1 mt-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newR = Math.max(20, (viewModalZone.radius || 40) - 10);
+                          saveZoneCoordinates(viewModalZone.id, { radius: newR });
+                          toast.success(`Radius updated to ${newR}m!`);
+                        }}
+                        className="px-2 py-0.5 rounded bg-white hover:bg-blue-100 border border-blue-200 text-blue-800 text-xs font-bold cursor-pointer"
+                        title="Decrease by 10m"
+                      >
+                        -10m
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const newR = Math.min(1000, (viewModalZone.radius || 40) + 10);
+                          saveZoneCoordinates(viewModalZone.id, { radius: newR });
+                          toast.success(`Radius updated to ${newR}m!`);
+                        }}
+                        className="px-2 py-0.5 rounded bg-white hover:bg-blue-100 border border-blue-200 text-blue-800 text-xs font-bold cursor-pointer"
+                        title="Increase by 10m"
+                      >
+                        +10m
+                      </button>
+                      {[30, 50, 100].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => {
+                            saveZoneCoordinates(viewModalZone.id, { radius: preset });
+                            toast.success(`Radius updated to ${preset}m!`);
+                          }}
+                          className={`px-1.5 py-0.5 rounded text-[10px] font-bold cursor-pointer ${
+                            viewModalZone.radius === preset
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-white hover:bg-blue-100 border border-blue-200 text-blue-700'
+                          }`}
+                        >
+                          {preset}m
+                        </button>
+                      ))}
+                    </div>
                   </div>
 
                   <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
