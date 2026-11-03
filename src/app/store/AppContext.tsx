@@ -2017,6 +2017,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Fetch full dashboard data immediately upon sign-in or session restoration
     refreshData({ force: true });
 
+    // Automated background push of any local trainee records to the cloud
+    if (typeof window !== 'undefined' && currentUser) {
+      try {
+        const storedRecs = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
+        if (storedRecs.length > 0) {
+          supabaseService.upsertTimeRecords(storedRecs).catch(() => {});
+        }
+      } catch {}
+    }
+
     const onFocus = () => {
       refreshData();
     };

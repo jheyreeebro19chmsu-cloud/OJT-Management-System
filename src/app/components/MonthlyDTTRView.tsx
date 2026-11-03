@@ -1387,6 +1387,11 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
                                     handleSendSingleTask(r.day);
                                   }
                                 }}
+                                onBlur={() => {
+                                  if (isModified) {
+                                    handleSendSingleTask(r.day);
+                                  }
+                                }}
                                 placeholder={hasData ? "Enter task / assignment..." : "Enter task if any..."}
                                 className={`flex-1 min-w-0 px-2 py-1 text-xs rounded-lg border transition-all duration-150 focus:outline-none ${
                                   isModified
