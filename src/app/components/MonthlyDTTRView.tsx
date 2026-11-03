@@ -61,7 +61,13 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   // Available trainees
   const traineeList = useMemo(() => {
     return employees.filter(
-      (e) => !e.position?.toLowerCase().includes('instructor') && !e.position?.toLowerCase().includes('admin')
+      (e) =>
+        !e.position?.toLowerCase().includes('instructor') &&
+        !e.position?.toLowerCase().includes('admin') &&
+        !e.position?.toLowerCase().includes('representative') &&
+        e.role !== 'admin' &&
+        e.role !== 'instructor' &&
+        e.role !== 'hte'
     );
   }, [employees]);
 
@@ -191,12 +197,12 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     setJustSentDays(new Set());
   }, [selectedEmployeeId, selectedMonth, selectedYear]);
 
-  // Helper: parse "HH:MM AM/PM" or "HH:MM" into total minutes since midnight
+  // Helper: parse "HH:MM AM/PM", "HH:MM:SS AM/PM", "HH:MM", or "HH:MM:SS" into total minutes since midnight
   const parseTimeToMinutes = (t: string): number | null => {
     if (!t) return null;
     t = t.trim();
-    // 12-hour format: "8:00 AM", "1:00 PM"
-    const match12 = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
+    // 12-hour format: "8:00 AM", "8:00:00 AM", "1:00 PM"
+    const match12 = t.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
     if (match12) {
       let h = parseInt(match12[1], 10);
       const m = parseInt(match12[2], 10);
@@ -205,8 +211,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       if (ampm === 'AM' && h === 12) h = 0;
       return h * 60 + m;
     }
-    // 24-hour format: "08:00"
-    const match24 = t.match(/^(\d{1,2}):(\d{2})$/);
+    // 24-hour format: "08:00", "08:00:00"
+    const match24 = t.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
     if (match24) {
       return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
     }
