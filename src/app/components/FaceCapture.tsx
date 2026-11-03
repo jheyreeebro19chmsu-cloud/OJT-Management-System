@@ -16,6 +16,7 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
+  Sparkles,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
@@ -102,10 +103,18 @@ export function FaceCapture({
   const smoothedLandmarksRef = useRef<Array<{ x: number; y: number }> | null>(null);
   const lastLandmarkDetectionTimeRef = useRef<number>(0);
 
-  // Hands-free auto-scan tracking refs
+  // Hands-free auto-scan tracking refs & state
   const faceDetectedSinceRef = useRef<number>(0);
   const [isFaceLocked, setIsFaceLocked] = useState<boolean>(false);
   const isFaceLockedRef = useRef<boolean>(false);
+  const [autoScanEnabled, setAutoScanEnabled] = useState<boolean>(true);
+  const autoScanEnabledRef = useRef<boolean>(true);
+  useEffect(() => {
+    autoScanEnabledRef.current = autoScanEnabled;
+  }, [autoScanEnabled]);
+  const [autoScanProgress, setAutoScanProgress] = useState<number>(0);
+  const autoScanTriggeredRef = useRef<boolean>(false);
+  const autoScanCooldownRef = useRef<number>(0);
 
   const [state, setState] = useState<ScanState>('idle');
   const [progress, setProgress] = useState(0);
@@ -140,6 +149,12 @@ export function FaceCapture({
   const setScanState = useCallback((nextState: ScanState) => {
     stateRef.current = nextState;
     setState(nextState);
+    if (nextState === 'failed') {
+      autoScanCooldownRef.current = Date.now() + 2500;
+      autoScanTriggeredRef.current = false;
+      faceDetectedSinceRef.current = 0;
+      setAutoScanProgress(0);
+    }
   }, []);
   const qualityReportRef = useRef<FaceQualityReport | null>(qualityReport);
   const mismatchErrorRef = useRef<string | null>(mismatchError);
@@ -612,7 +627,33 @@ export function FaceCapture({
                   isFaceLockedRef.current = true;
                   setIsFaceLocked(true);
                 }
-              } else if (Date.now() - lastLandmarkDetectionTimeRef.current > 700) {
+
+                // Hands-free Auto-Scan Stability Timer
+                const now = Date.now();
+                if (
+                  autoScanEnabledRef.current &&
+                  stateRef.current === 'scanning' &&
+                  !autoScanTriggeredRef.current &&
+                  now > autoScanCooldownRef.current
+                ) {
+                  if (faceDetectedSinceRef.current === 0) {
+                    faceDetectedSinceRef.current = now;
+                  }
+                  const elapsed = now - faceDetectedSinceRef.current;
+                  const HOLD_DURATION = 1200; // 1.2 seconds of steady, aligned face tracking
+                  const pct = Math.min(100, Math.round((elapsed / HOLD_DURATION) * 100));
+                  setAutoScanProgress(pct);
+
+                  if (elapsed >= HOLD_DURATION && !autoScanTriggeredRef.current) {
+                    autoScanTriggeredRef.current = true;
+                    handleManualSnap();
+                  }
+                }
+              } else if (Date.now() - lastLandmarkDetectionTimeRef.current > 600) {
+                if (faceDetectedSinceRef.current !== 0) {
+                  faceDetectedSinceRef.current = 0;
+                  setAutoScanProgress(0);
+                }
                 if (isFaceLockedRef.current) {
                   isFaceLockedRef.current = false;
                   setIsFaceLocked(false);
@@ -700,6 +741,9 @@ export function FaceCapture({
   const startScan = useCallback(async () => {
     stopCamera();
     hasFiredSuccessRef.current = false;
+    autoScanTriggeredRef.current = false;
+    faceDetectedSinceRef.current = 0;
+    setAutoScanProgress(0);
     setScanState('requesting');
     setMismatchError(null);
     setQualityReport(null);
@@ -987,6 +1031,9 @@ export function FaceCapture({
     setMismatchError(null);
     hasFiredSuccessRef.current = false; // allow a new scan attempt to fire onSuccess again
     hasStartedRef.current = false;
+    autoScanTriggeredRef.current = false;
+    faceDetectedSinceRef.current = 0;
+    setAutoScanProgress(0);
     startScan();
   };
 
@@ -1081,8 +1128,60 @@ export function FaceCapture({
               </div>
             </div>
 
-            {/* Quick Grid Reset & Move Controls */}
+            {/* Auto-Scan Status & Countdown Banner */}
+            {autoScanEnabled && isScanning && (
+              <div className="absolute top-11 left-1/2 -translate-x-1/2 z-20 pointer-events-none flex flex-col items-center">
+                {isFaceLocked && autoScanProgress > 0 ? (
+                  <div className="flex flex-col items-center animate-pulse">
+                    <div className="px-3 py-1 rounded-full bg-emerald-950/90 border border-emerald-400/90 text-emerald-300 text-[10.5px] font-bold shadow-lg backdrop-blur-md flex items-center gap-1.5">
+                      <Sparkles size={12} className="text-emerald-400 animate-spin" />
+                      <span>Face Locked • Auto-verifying...</span>
+                      <span className="text-[9.5px] font-mono font-extrabold text-white bg-emerald-600 px-1.5 py-0.2 rounded-md">
+                        {autoScanProgress}%
+                      </span>
+                    </div>
+                    <div className="w-32 h-1 bg-black/60 rounded-full mt-1 overflow-hidden border border-emerald-500/30">
+                      <div
+                        className="h-full bg-emerald-400 rounded-full transition-all duration-75"
+                        style={{ width: `${autoScanProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div className="px-2.5 py-0.5 rounded-full bg-black/65 border border-white/10 text-slate-300 text-[9.5px] font-medium backdrop-blur-md flex items-center gap-1.5">
+                    <Sparkles size={10} className="text-cyan-400" />
+                    <span>Auto-Scan Active • Hold still in frame</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Quick Grid Reset, Move Controls & Hands-Free Auto-Scan Toggle */}
             <div className="absolute top-3 right-3 flex items-center gap-1 z-20 pointer-events-auto">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setAutoScanEnabled((prev) => {
+                    const next = !prev;
+                    if (!next) {
+                      setAutoScanProgress(0);
+                      faceDetectedSinceRef.current = 0;
+                    }
+                    return next;
+                  });
+                }}
+                className={`px-2 py-1 rounded-full backdrop-blur-md border text-[9.5px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                  autoScanEnabled
+                    ? 'bg-emerald-600/90 border-emerald-400 text-white shadow-md'
+                    : 'bg-black/60 border border-white/10 text-slate-400 hover:text-white'
+                }`}
+                title="Toggle hands-free automatic scanning"
+              >
+                <Sparkles size={10} className={autoScanEnabled ? 'text-emerald-200' : ''} />
+                <span>Auto: {autoScanEnabled ? 'ON' : 'OFF'}</span>
+              </button>
+
               {(gridOffset.x !== 0 || gridOffset.y !== 0) && (
                 <button
                   type="button"
@@ -1414,12 +1513,23 @@ export function FaceCapture({
                   <RefreshCw size={15} className="animate-spin" />
                   <span>Verifying Face Biometrics...</span>
                 </>
+              ) : autoScanEnabled && isFaceLocked && autoScanProgress > 0 ? (
+                <>
+                  <Sparkles size={15} className="text-emerald-300 animate-spin" />
+                  <span>
+                    Auto-Verifying ({autoScanProgress}%) • Or Tap Now
+                  </span>
+                </>
               ) : (
                 <>
                   <Camera size={15} />
                   <span>
                     {mode === 'register'
-                      ? 'Scan Face Now'
+                      ? autoScanEnabled
+                        ? 'Scan Face (Auto Active)'
+                        : 'Scan Face Now'
+                      : autoScanEnabled
+                      ? 'Scan & Verify (Auto Active)'
                       : 'Scan & Verify Now'}
                   </span>
                 </>
