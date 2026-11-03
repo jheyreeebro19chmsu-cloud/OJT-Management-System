@@ -1140,7 +1140,7 @@ export async function fetchTimeRecords(): Promise<TimeRecord[]> {
         .from('time_records')
         .select('*')
         .order('date', { ascending: false })
-        .limit(1000);
+        .limit(5000);
 
       const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
         setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 5000)
@@ -1191,6 +1191,102 @@ export async function fetchTimeRecords(): Promise<TimeRecord[]> {
       });
     }
   }
+  return Array.from(map.values());
+}
+
+export async function fetchTimeRecordsForEmployee(
+  employeeId: string,
+  altIds: string[] = []
+): Promise<TimeRecord[]> {
+  const allIds = Array.from(
+    new Set([employeeId, ...altIds].map((s) => (s || '').trim()).filter(Boolean))
+  );
+  if (allIds.length === 0) return [];
+
+  const lowerSet = new Set(allIds.map((id) => id.toLowerCase()));
+
+  // 1. Fetch from DTTR store in Supabase Storage
+  const storagePromise = fetchDttrStoreFromStorage()
+    .then((s) => {
+      const records = Array.isArray(s.timeRecords) ? s.timeRecords : [];
+      return records.filter((r) => r?.employeeId && lowerSet.has(r.employeeId.toLowerCase()));
+    })
+    .catch(() => [] as TimeRecord[]);
+
+  // 2. Fetch from /api/time-records or Supabase directly
+  const dbPromise = (async (): Promise<TimeRecord[]> => {
+    if (typeof window !== 'undefined') {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 6000);
+        const url = `/api/time-records?employeeIds=${encodeURIComponent(allIds.join(','))}&limit=2000`;
+        const res = await fetch(url, { signal: controller.signal });
+        clearTimeout(timer);
+        if (res && res.ok) {
+          const apiData = await res.json();
+          if (Array.isArray(apiData) && apiData.length > 0) {
+            return apiData.map(transformSupabaseTimeRecord);
+          }
+        }
+      } catch {}
+    }
+
+    if (!isSupabaseConfigured()) return [];
+
+    try {
+      const queryPromise = supabase
+        .from('time_records')
+        .select('*')
+        .in('employee_id', allIds)
+        .order('date', { ascending: false })
+        .limit(2000);
+
+      const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 6000)
+      );
+
+      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
+      if (!error && data && data.length > 0) {
+        return data.map(transformSupabaseTimeRecord);
+      }
+    } catch {}
+
+    return [];
+  })();
+
+  const [storageRecords, dbRecords] = await Promise.all([storagePromise, dbPromise]);
+  if (storageRecords.length === 0) return dbRecords;
+  if (dbRecords.length === 0) return storageRecords;
+
+  const map = new Map<string, TimeRecord>();
+  for (const r of dbRecords) {
+    if (!r) continue;
+    const dateKey = (r.date || '').split('T')[0].trim();
+    map.set(dateKey, r);
+  }
+  for (const s of storageRecords) {
+    if (!s) continue;
+    const dateKey = (s.date || '').split('T')[0].trim();
+    const existing = map.get(dateKey);
+    if (!existing) {
+      map.set(dateKey, s);
+    } else {
+      map.set(dateKey, {
+        ...existing,
+        ...s,
+        id: existing.id && !existing.id.startsWith('rec-') ? existing.id : s.id || existing.id,
+        timeIn: s.timeIn || existing.timeIn,
+        timeOut: s.timeOut || existing.timeOut,
+        amArrival: s.amArrival || existing.amArrival,
+        amDeparture: s.amDeparture || existing.amDeparture,
+        pmArrival: s.pmArrival || existing.pmArrival,
+        pmDeparture: s.pmDeparture || existing.pmDeparture,
+        totalHours: Math.max(Number(s.totalHours) || 0, Number(existing.totalHours) || 0),
+        notes: s.notes && s.notes.trim() ? s.notes : existing.notes,
+      });
+    }
+  }
+
   return Array.from(map.values());
 }
 

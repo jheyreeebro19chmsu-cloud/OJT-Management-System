@@ -128,8 +128,28 @@ export function Announcements() {
     (employee as any)?.role === 'instructor'
   );
 
-  const authorRole: 'admin' | 'employee' = isInstructor ? 'admin' : 'employee';
-  const authorName = currentUser?.name || employee?.name || (isInstructor ? 'OJT Instructor' : 'Trainee');
+  const isHte = Boolean(
+    currentUser?.role === 'hte' ||
+    currentUser?.role === 'host' ||
+    ((currentUser as any)?.position && String((currentUser as any).position).toLowerCase().includes('hte')) ||
+    ((currentUser as any)?.position && String((currentUser as any).position).toLowerCase().includes('supervisor')) ||
+    (employee?.position && employee.position.toLowerCase().includes('hte')) ||
+    (employee as any)?.role === 'hte' ||
+    (employee as any)?.role === 'host'
+  );
+
+  const canPost = isInstructor || isHte;
+  const authorRole: 'admin' | 'host' | 'employee' = isInstructor ? 'admin' : isHte ? 'host' : 'employee';
+  const companyName =
+    currentUser?.companyName ||
+    employee?.companyName ||
+    (currentUser as any)?.company ||
+    localStorage.getItem('ojt_hte_company') ||
+    'Host Training Establishment';
+
+  const authorName = isHte
+    ? `${currentUser?.name || employee?.name || 'HTE Supervisor'} (${companyName})`
+    : (currentUser?.name || employee?.name || (isInstructor ? 'OJT Instructor' : 'Trainee'));
 
   const [messageDrafts, setMessageDrafts] = useState<Record<string, string>>({});
   const [photoDrafts, setPhotoDrafts] = useState<Record<string, string | undefined>>({});
@@ -227,8 +247,8 @@ export function Announcements() {
   };
 
   const announcements = useMemo(() => {
-    return getActiveAnnouncements(isInstructor ? 'admin' : 'employee');
-  }, [getActiveAnnouncements, isInstructor]);
+    return getActiveAnnouncements(isInstructor ? 'admin' : isHte ? 'hte' : 'employee');
+  }, [getActiveAnnouncements, isInstructor, isHte]);
 
   const instructorAnnouncementsCount = useMemo(
     () => announcements.filter((a) => isInstructorPost(a)).length,
@@ -425,7 +445,7 @@ export function Announcements() {
   };
 
   const handleCreatePost = async () => {
-    if (!isInstructor) {
+    if (!canPost) {
       toast.error('Trainees cannot post announcements. You can comment on announcements below.');
       return;
     }
@@ -468,21 +488,21 @@ export function Announcements() {
           title: newPost.title.trim(),
           description: newPost.content.trim(),
           submittedBy: authorName,
-          submittedByRole: 'admin',
+          submittedByRole: isInstructor ? 'admin' : 'host',
           fileName: primaryFile.name,
           fileType: primaryFile.fileType,
           fileSize: primaryFile.size,
           dataUrl: primaryFile.dataUrl,
           fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
           files: newPost.files,
-          notes: `Synced from Instructor Announcement (${newPost.files.length} file${newPost.files.length > 1 ? 's' : ''})`,
+          notes: `Synced from ${isHte ? 'HTE' : 'Instructor'} Announcement (${newPost.files.length} file${newPost.files.length > 1 ? 's' : ''})`,
         });
       }
 
       toast.success(
-        newPost.files.length > 0
-          ? `Instructor announcement & ${newPost.files.length} file(s) synced to Trainee accounts!`
-          : 'Instructor announcement posted!'
+        isHte
+          ? (newPost.files.length > 0 ? `HTE announcement & ${newPost.files.length} file(s) posted!` : 'HTE announcement posted successfully!')
+          : (newPost.files.length > 0 ? `Instructor announcement & ${newPost.files.length} file(s) synced to Trainee accounts!` : 'Instructor announcement posted!')
       );
       const now = new Date();
       setNewPost({

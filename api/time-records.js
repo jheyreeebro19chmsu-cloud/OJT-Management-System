@@ -43,11 +43,33 @@ export default async function handler(req, res) {
       .select('*')
       .order('date', { ascending: false });
 
+    // Multi-ID support: trainee UUID, employeeId/student ID, or comma-separated list
+    const empIds = [];
     if (queryParams.employeeId) {
-      query = query.eq('employee_id', queryParams.employeeId);
+      empIds.push(...queryParams.employeeId.split(',').map((s) => s.trim()).filter(Boolean));
+    }
+    if (queryParams.employeeIds) {
+      empIds.push(...queryParams.employeeIds.split(',').map((s) => s.trim()).filter(Boolean));
+    }
+    if (queryParams.altIds) {
+      empIds.push(...queryParams.altIds.split(',').map((s) => s.trim()).filter(Boolean));
     }
 
-    const limit = parseInt(queryParams.limit, 10) || 1000;
+    if (empIds.length > 0) {
+      const uniqueEmpIds = Array.from(new Set(empIds));
+      if (uniqueEmpIds.length === 1) {
+        query = query.eq('employee_id', uniqueEmpIds[0]);
+      } else {
+        query = query.in('employee_id', uniqueEmpIds);
+      }
+    }
+
+    if (queryParams.month) {
+      query = query.like('date', `${queryParams.month}%`);
+    }
+
+    const defaultLimit = empIds.length > 0 ? 5000 : 5000;
+    const limit = parseInt(queryParams.limit, 10) || defaultLimit;
     query = query.limit(limit);
 
     const { data, error } = await query;

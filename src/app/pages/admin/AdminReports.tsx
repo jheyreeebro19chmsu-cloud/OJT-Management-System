@@ -896,7 +896,10 @@ export function AdminReports() {
       {/* MONTHLY DTTR MONITORING VIEW                               */}
       {/* ========================================================= */}
       {activeTab === 'monthly_dttr' && (
-        <MonthlyDTTRView viewerRole="admin" />
+        <MonthlyDTTRView
+          viewerRole="admin"
+          defaultEmployeeId={selectedEmpId !== 'all' ? selectedEmpId : undefined}
+        />
       )}
 
       {/* ========================================================= */}

@@ -187,12 +187,11 @@ export function HTEAnnouncements() {
   const hteAnnouncements = useMemo(() => {
     return announcements
       .filter((a) => {
-        // Universal notices or HTE audience
-        const isTargeted = a.targetRole === 'all' || a.targetRole === 'hte' || (a as any).targetRole === 'host';
+        // Universal notices or HTE audience or trainee notices
+        const isTargeted = a.targetRole === 'all' || a.targetRole === 'hte' || (a as any).targetRole === 'host' || a.targetRole === 'employee';
         // Announcements posted by this HTE supervisor/company
         const isAuthor =
-          a.createdBy === authorName ||
-          a.createdBy === companyName ||
+          (a.createdBy && (a.createdBy.includes(authorName) || a.createdBy.includes(companyName))) ||
           (a as any).createdByRole === 'host' ||
           (a as any).createdByRole === 'hte';
         return isTargeted || isAuthor;

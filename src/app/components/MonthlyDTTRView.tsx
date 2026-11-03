@@ -20,6 +20,7 @@ import {
 import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
 import { Employee, TimeRecord, MonthlyDttrRecord, MonthlyDttrDayEntry } from '../types';
+import * as supabaseService from '../services/supabaseService';
 
 interface MonthlyDTTRViewProps {
   /** Optional pre-selected trainee ID. If not supplied, selector is provided. */
@@ -93,6 +94,21 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       null
     );
   }, [employees, selectedEmployeeId, traineeList]);
+
+  // Target-specific time records for the selected trainee intern across all connected databases
+  const [extraEmployeeRecords, setExtraEmployeeRecords] = useState<TimeRecord[]>([]);
+
+  useEffect(() => {
+    if (!selectedEmployee) return;
+    const altIds = [selectedEmployee.employeeId, selectedEmployee.email].filter(Boolean) as string[];
+    supabaseService.fetchTimeRecordsForEmployee(selectedEmployee.id, altIds)
+      .then((records) => {
+        if (Array.isArray(records) && records.length > 0) {
+          setExtraEmployeeRecords(records);
+        }
+      })
+      .catch(() => {});
+  }, [selectedEmployee, selectedYear, selectedMonth]);
 
   const instructorName = useMemo(() => {
     if (selectedEmployee?.instructorId) {
@@ -250,7 +266,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       validIds.add(selectedEmployee.email.toLowerCase());
     }
 
-    const empRecords = timeRecords.filter((r) => {
+    const allCandidateRecords = [...timeRecords, ...extraEmployeeRecords];
+    const empRecords = allCandidateRecords.filter((r) => {
       const rEmp = (r.employeeId || '').trim();
       const isMatch = validIds.has(rEmp) || validIds.has(rEmp.toLowerCase());
       if (!isMatch) return false;
@@ -287,7 +304,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     });
 
     return map;
-  }, [timeRecords, selectedEmployee, selectedYear, selectedMonth]);
+  }, [timeRecords, extraEmployeeRecords, selectedEmployee, selectedYear, selectedMonth]);
 
   // Compute daily rows combining raw attendance + custom DTTR overrides
   const dailyRows = useMemo(() => {
@@ -481,6 +498,67 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     return Math.round(rawSum * 100) / 100;
   }, [dailyRows]);
 
+  // Auto-snapshot trainee attendance punches, computed hours, and tasks into MonthlyDttrRecord
+  // This guarantees that Instructor, Coordinator, and HTE accounts always see identical calculated hours, AM/PM punches, and tasks
+  useEffect(() => {
+    if (viewerRole !== 'employee' || !canEditTasks || !selectedEmployee) return;
+    if (!dailyRows || dailyRows.length === 0) return;
+
+    let hasDiff = false;
+    const currentCustom = savedDttr?.customEntries || {};
+    const nextCustom: Record<number, MonthlyDttrDayEntry> = { ...currentCustom };
+
+    dailyRows.forEach((row) => {
+      if (row.hours > 0 || row.amArrival || row.pmDeparture || row.tasks) {
+        const existing = nextCustom[row.day];
+        const newAmIn = row.amArrival || existing?.amArrival || '';
+        const newAmOut = row.amDeparture || existing?.amDeparture || '';
+        const newPmIn = row.pmArrival || existing?.pmArrival || '';
+        const newPmOut = row.pmDeparture || existing?.pmDeparture || '';
+        const newHours = row.hours || existing?.hours || 0;
+        const newTasks = row.tasks || existing?.tasks || '';
+
+        if (
+          !existing ||
+          existing.amArrival !== newAmIn ||
+          existing.amDeparture !== newAmOut ||
+          existing.pmArrival !== newPmIn ||
+          existing.pmDeparture !== newPmOut ||
+          existing.hours !== newHours ||
+          (row.tasks && existing.tasks !== newTasks)
+        ) {
+          hasDiff = true;
+          nextCustom[row.day] = {
+            day: row.day,
+            amArrival: newAmIn,
+            amDeparture: newAmOut,
+            pmArrival: newPmIn,
+            pmDeparture: newPmOut,
+            hours: newHours,
+            tasks: newTasks,
+          };
+        }
+      }
+    });
+
+    if (hasDiff) {
+      const record: MonthlyDttrRecord = {
+        id: `${selectedEmployee.id}_${selectedYear}_${selectedMonth}`,
+        employeeId: selectedEmployee.id,
+        year: selectedYear,
+        month: selectedMonth,
+        customEntries: nextCustom,
+        hteSupervisorName: savedDttr?.hteSupervisorName,
+        hteSupervisorTitle: savedDttr?.hteSupervisorTitle,
+        hteSignedAt: savedDttr?.hteSignedAt,
+        hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
+        hteSignatureNotes: savedDttr?.hteSignatureNotes,
+        studentSignedAt: savedDttr?.studentSignedAt,
+      };
+      saveMonthlyDttr(record);
+    }
+  }, [dailyRows, viewerRole, canEditTasks, selectedEmployee, selectedYear, selectedMonth, savedDttr, saveMonthlyDttr]);
+
   // Number of active rendered days
   const totalRenderedDays = useMemo(() => {
     return dailyRows.filter((r) => r.hours > 0 || r.amArrival || r.pmDeparture).length;
@@ -556,14 +634,20 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         });
       }
 
-      // 2. Sync to MonthlyDttrRecord (ONLY tasks are updated; arrivals & hours remain unchanged)
+      // 2. Sync to MonthlyDttrRecord with full snapshot of official punches and hours
       const existingCustom: Record<number, MonthlyDttrDayEntry> = {
         ...(savedDttr?.customEntries || {}),
       };
       const existingEntry = existingCustom[day] || {};
+      const targetRow = dailyRows.find((r) => r.day === day);
       existingCustom[day] = {
         ...existingEntry,
         day,
+        amArrival: targetRow?.amArrival || existingEntry.amArrival || '',
+        amDeparture: targetRow?.amDeparture || existingEntry.amDeparture || '',
+        pmArrival: targetRow?.pmArrival || existingEntry.pmArrival || '',
+        pmDeparture: targetRow?.pmDeparture || existingEntry.pmDeparture || '',
+        hours: targetRow?.hours ?? existingEntry.hours ?? 0,
         tasks: taskText,
       };
 
@@ -658,9 +742,15 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         }
 
         const existingEntry = existingCustom[day] || {};
+        const targetRow = dailyRows.find((r) => r.day === day);
         existingCustom[day] = {
           ...existingEntry,
           day,
+          amArrival: targetRow?.amArrival || existingEntry.amArrival || '',
+          amDeparture: targetRow?.amDeparture || existingEntry.amDeparture || '',
+          pmArrival: targetRow?.pmArrival || existingEntry.pmArrival || '',
+          pmDeparture: targetRow?.pmDeparture || existingEntry.pmDeparture || '',
+          hours: targetRow?.hours ?? existingEntry.hours ?? 0,
           tasks: taskText,
         };
       });
@@ -748,9 +838,15 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         }
 
         const existingEntry = existingCustom[day] || {};
+        const targetRow = dailyRows.find((r) => r.day === day);
         existingCustom[day] = {
           ...existingEntry,
           day,
+          amArrival: targetRow?.amArrival || existingEntry.amArrival || '',
+          amDeparture: targetRow?.amDeparture || existingEntry.amDeparture || '',
+          pmArrival: targetRow?.pmArrival || existingEntry.pmArrival || '',
+          pmDeparture: targetRow?.pmDeparture || existingEntry.pmDeparture || '',
+          hours: targetRow?.hours ?? existingEntry.hours ?? 0,
           tasks: taskText,
         };
       });

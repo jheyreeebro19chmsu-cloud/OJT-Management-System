@@ -978,11 +978,6 @@ function mergeTimeRecords(
         return false;
       }
 
-      // Purge past mock/seed records if employee has authoritative records in Supabase
-      if (empsWithRemote.has(rawEmp) && datePart !== todayStr) {
-        return false;
-      }
-
       // Drop demo / mock / seed generated records
       if (
         localR.id.startsWith('demo-') ||
@@ -1881,6 +1876,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setMonthlyDttrs((prev) => {
           const merged = supabaseService.mergeMonthlyDttrsList(supabaseDttrStore.monthlyDttrs, prev);
           saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, merged);
+          return merged;
+        });
+      }
+
+      if (supabaseDttrStore && Array.isArray(supabaseDttrStore.timeRecords) && supabaseDttrStore.timeRecords.length > 0) {
+        setTimeRecords((prev) => {
+          const merged = mergeTimeRecords(supabaseDttrStore.timeRecords, prev);
+          saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
           return merged;
         });
       }
@@ -4798,10 +4801,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const matchesAudience = (announcementRole: Announcement['targetRole'], requestedRole?: typeof role) => {
       if (!requestedRole) return true;
       if (announcementRole === 'all') return true;
-      if (requestedRole === 'admin') return ['admin', 'employee'].includes(announcementRole);
-      if (requestedRole === 'employee') return ['employee', 'admin'].includes(announcementRole);
-      if (requestedRole === 'hte') return ['hte', 'host'].includes(announcementRole);
-      if (requestedRole === 'host') return ['host', 'hte'].includes(announcementRole);
+      if (requestedRole === 'admin') return true; // Admins / Instructors supervise everything and see all notices
+      if (requestedRole === 'employee') return ['employee', 'admin', 'all'].includes(announcementRole);
+      if (requestedRole === 'hte' || requestedRole === 'host') return ['hte', 'host', 'employee', 'all'].includes(announcementRole);
       return false;
     };
 
@@ -5755,7 +5757,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         next = [...prev, updatedRecord];
       }
       saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, next);
-      supabaseService.saveDttrStoreToStorage({ monthlyDttrs: next }).catch(() => {});
+      const storedTimeRecords = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
+      supabaseService.saveDttrStoreToStorage({
+        monthlyDttrs: next,
+        timeRecords: storedTimeRecords.length > 0 ? storedTimeRecords : undefined,
+      }).catch(() => {});
       return next;
     });
   }, [employees]);
@@ -5820,7 +5826,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         next = [...prev, updated];
       }
       saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, next);
-      supabaseService.saveDttrStoreToStorage({ monthlyDttrs: next }).catch(() => {});
+      const storedTimeRecords = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
+      supabaseService.saveDttrStoreToStorage({
+        monthlyDttrs: next,
+        timeRecords: storedTimeRecords.length > 0 ? storedTimeRecords : undefined,
+      }).catch(() => {});
       return next;
     });
   }, [employees]);
