@@ -1872,8 +1872,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!useSupabase && !isSupabaseConfigured()) return;
     if (!currentUser && !options?.force) return;
     const now = Date.now();
-    // Throttle automated refresh calls to at most once every 15 seconds unless explicitly forced
-    if (!options?.force && now - lastRefreshTimeRef.current < 15000) {
+    // Protect database Disk IO & CPU: debounce refresh calls so open clients never flood Postgres
+    const cooldown = options?.force ? 10000 : 30000;
+    if (now - lastRefreshTimeRef.current < cooldown) {
       return;
     }
     lastRefreshTimeRef.current = now;

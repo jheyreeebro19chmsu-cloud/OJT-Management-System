@@ -69,7 +69,7 @@ export function TraineeEvaluation() {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible' && !isDirtyRef.current) {
         refreshData({ force: true }).catch(() => {});
       }
-    }, 8000);
+    }, 25000);
     return () => clearInterval(interval);
   }, [refreshData]);
 

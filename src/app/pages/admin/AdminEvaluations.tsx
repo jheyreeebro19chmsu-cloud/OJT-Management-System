@@ -75,7 +75,7 @@ export function AdminEvaluations() {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refreshData({ force: true }).catch(() => {});
       }
-    }, 6000);
+    }, 25000);
     return () => clearInterval(interval);
   }, [refreshData]);
 

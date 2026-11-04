@@ -126,7 +126,7 @@ export function HTEAnnouncements() {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refreshData?.({ force: true }).catch(() => {});
       }
-    }, 4000);
+    }, 20000);
     return () => {
       window.removeEventListener('storage', onStorage);
       clearInterval(interval);

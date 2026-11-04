@@ -1140,7 +1140,7 @@ export async function fetchTimeRecords(): Promise<TimeRecord[]> {
         .from('time_records')
         .select('id,employee_id,date,time_in,time_out,time_in_lat,time_in_lng,time_out_lat,time_out_lng,time_in_geofenced,time_out_geofenced,time_in_face_verified,time_out_face_verified,total_hours,status,notes')
         .order('date', { ascending: false })
-        .limit(5000);
+        .limit(500);
 
       const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
         setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 5000)

@@ -112,10 +112,9 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        refreshData?.({ force: true }).catch(() => {});
         fetchLatestRecords();
       }
-    }, 5000);
+    }, 20000);
     return () => clearInterval(interval);
   }, [selectedEmployeeId, selectedYear, selectedMonth, refreshData, selectedEmployee]);
 
