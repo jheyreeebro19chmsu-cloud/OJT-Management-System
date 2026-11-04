@@ -69,7 +69,8 @@ export async function fetchEmployees(): Promise<Employee[]> {
     const { data, error } = await supabase
       .from('employees')
       .select(EMPLOYEE_CORE_COLUMNS)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(1000);
 
     if (!error && data && data.length > 0) {
       return data.map(transformSupabaseEmployee);
@@ -80,7 +81,8 @@ export async function fetchEmployees(): Promise<Employee[]> {
       const { data: minimalData, error: minimalError } = await supabase
         .from('employees')
         .select('id, name, employee_id, email, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
-        .order('created_at', { ascending: false });
+        .order('created_at', { ascending: false })
+        .limit(1000);
 
       if (!minimalError && minimalData) {
         return minimalData.map(transformSupabaseEmployee);

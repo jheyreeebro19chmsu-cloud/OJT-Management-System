@@ -322,7 +322,7 @@ export default async function handler(req, res) {
       const id = query?.id;
       const email = query?.email;
 
-      let queryBuilder = supabase.from('employees').select('id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, application_status, created_at');
+      let queryBuilder = supabase.from('employees').select('id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at');
       if (id) {
         if (isUuid(id)) {
           queryBuilder = queryBuilder.eq('id', id).limit(1);
@@ -332,7 +332,7 @@ export default async function handler(req, res) {
       } else if (email) {
         queryBuilder = queryBuilder.eq('email', email.trim().toLowerCase()).limit(1);
       } else {
-        queryBuilder = queryBuilder.order('created_at', { ascending: false }).limit(200);
+        queryBuilder = queryBuilder.order('created_at', { ascending: false }).limit(1000);
       }
 
       const { data, error } = await queryBuilder;
