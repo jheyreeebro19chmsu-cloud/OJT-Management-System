@@ -27,7 +27,7 @@ import {
   FileText,
   Eye,
 } from 'lucide-react';
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';

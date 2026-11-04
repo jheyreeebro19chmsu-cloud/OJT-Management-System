@@ -25,7 +25,7 @@ import {
   RotateCcw,
   ArrowUpDown,
 } from 'lucide-react';
-import React, { useState, useMemo, useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
