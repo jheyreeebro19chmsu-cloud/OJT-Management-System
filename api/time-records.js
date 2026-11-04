@@ -134,11 +134,21 @@ export default async function handler(req, res) {
       }
 
       if (empIds.length > 0) {
-        const uniqueEmpIds = Array.from(new Set(empIds));
+        const resolvedIds = [];
+        for (const raw of empIds) {
+          const resolved = await resolveToUuid(raw);
+          if (resolved && isUuid(resolved)) {
+            resolvedIds.push(resolved);
+          }
+        }
+        const uniqueEmpIds = Array.from(new Set(resolvedIds));
         if (uniqueEmpIds.length === 1) {
           query = query.eq('employee_id', uniqueEmpIds[0]);
-        } else {
+        } else if (uniqueEmpIds.length > 1) {
           query = query.in('employee_id', uniqueEmpIds);
+        } else {
+          // If IDs could not be resolved to any valid UUID, return empty result safely
+          return sendJson(res, 200, []);
         }
       }
 

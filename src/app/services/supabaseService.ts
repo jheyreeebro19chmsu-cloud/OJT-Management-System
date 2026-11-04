@@ -1138,7 +1138,7 @@ export async function fetchTimeRecords(): Promise<TimeRecord[]> {
     try {
       const queryPromise = supabase
         .from('time_records')
-        .select('*')
+        .select('id,employee_id,date,time_in,time_out,time_in_lat,time_in_lng,time_out_lat,time_out_lng,time_in_geofenced,time_out_geofenced,time_in_face_verified,time_out_face_verified,total_hours,status,notes')
         .order('date', { ascending: false })
         .limit(5000);
 
@@ -1234,10 +1234,14 @@ export async function fetchTimeRecordsForEmployee(
     if (!isSupabaseConfigured()) return [];
 
     try {
+      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+      const uuidIds = allIds.filter(isUUID);
+      if (uuidIds.length === 0) return [];
+
       const queryPromise = supabase
         .from('time_records')
-        .select('*')
-        .in('employee_id', allIds)
+        .select('id,employee_id,date,time_in,time_out,time_in_lat,time_in_lng,time_out_lat,time_out_lng,time_in_geofenced,time_out_geofenced,time_in_face_verified,time_out_face_verified,total_hours,status,notes')
+        .in('employee_id', uuidIds)
         .order('date', { ascending: false })
         .limit(2000);
 
@@ -3460,7 +3464,7 @@ export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean>
   // 1. Primary path: Server-side API with service role (bypasses RLS & UUID issues)
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3500);
+    const timer = setTimeout(() => controller.abort(), 8000);
     const res = await fetch('/api/time-records', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3504,7 +3508,7 @@ export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean>
     });
 
     const { error } = await supabase.from('time_records').upsert(payload);
-    if (error) {
+    if (error && (error as any)?.code !== '42501' && (error as any)?.status !== 403) {
       console.warn('Direct upsert time records notice:', error);
     }
     saveDttrStoreToStorage({ timeRecords: records }).catch(() => {});
