@@ -44,9 +44,6 @@ export default function OAuthCallback() {
         provider: 'google',
         options: {
           redirectTo: `${redirectOrigin}/oauth-callback`,
-          queryParams: {
-            prompt: 'select_account',
-          },
         },
       });
 

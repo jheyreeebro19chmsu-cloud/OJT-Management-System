@@ -154,40 +154,18 @@ export function Login() {
           ? window.location.origin
           : 'https://chmsuojtmis.site';
 
-      const oauthPromise = supabase.auth.signInWithOAuth({
+      // Immediate redirect: no intermediate fetch pause, and no prompt='select_account' hang
+      const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
           redirectTo: `${redirectOrigin}/oauth-callback`,
-          skipBrowserRedirect: true,
-          queryParams: {
-            prompt: 'select_account',
-          },
         },
       });
 
-      const timeoutPromise = new Promise<{ error: { message: string } | null }>((resolve) =>
-        setTimeout(
-          () =>
-            resolve({
-              error: {
-                message:
-                  'Google sign-in timed out because the database server is unresponsive. Please check your Supabase project status or restart the project in the Supabase dashboard.',
-              },
-            }),
-          6000
-        )
-      );
-
-      const result: any = await Promise.race([oauthPromise, timeoutPromise]);
-      if (result?.error) {
-        setError(result.error.message || 'Failed to initialize Google sign-in.');
+      if (oauthError) {
+        setError(oauthError.message || 'Failed to initialize Google sign-in.');
         setGoogleLoading(false);
         setLoadingRole(null);
-      } else if (result?.data?.url) {
-        window.location.assign(result.data.url);
-      } else {
-        // Fallback default navigation if url is empty
-        window.location.assign(`https://wooighmdckuoebsuegzz.supabase.co/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(`${redirectOrigin}/oauth-callback`)}&prompt=select_account`);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to initialize Google sign-in.');
