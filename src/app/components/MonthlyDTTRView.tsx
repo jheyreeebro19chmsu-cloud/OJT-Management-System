@@ -77,6 +77,17 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     return traineeList[0]?.id || '';
   });
 
+  const selectedEmployee = useMemo(() => {
+    return (
+      employees.find((e) => e.id === selectedEmployeeId || e.employeeId === selectedEmployeeId) ||
+      traineeList[0] ||
+      null
+    );
+  }, [employees, selectedEmployeeId, traineeList]);
+
+  // Target-specific time records for the selected trainee intern across all connected databases
+  const [extraEmployeeRecords, setExtraEmployeeRecords] = useState<TimeRecord[]>([]);
+
   useEffect(() => {
     if (defaultEmployeeId && defaultEmployeeId !== selectedEmployeeId) {
       setSelectedEmployeeId(defaultEmployeeId);
@@ -107,29 +118,6 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     }, 5000);
     return () => clearInterval(interval);
   }, [selectedEmployeeId, selectedYear, selectedMonth, refreshData, selectedEmployee]);
-
-  const selectedEmployee = useMemo(() => {
-    return (
-      employees.find((e) => e.id === selectedEmployeeId || e.employeeId === selectedEmployeeId) ||
-      traineeList[0] ||
-      null
-    );
-  }, [employees, selectedEmployeeId, traineeList]);
-
-  // Target-specific time records for the selected trainee intern across all connected databases
-  const [extraEmployeeRecords, setExtraEmployeeRecords] = useState<TimeRecord[]>([]);
-
-  useEffect(() => {
-    if (!selectedEmployee) return;
-    const altIds = [selectedEmployee.employeeId, selectedEmployee.email].filter(Boolean) as string[];
-    supabaseService.fetchTimeRecordsForEmployee(selectedEmployee.id, altIds)
-      .then((records) => {
-        if (Array.isArray(records) && records.length > 0) {
-          setExtraEmployeeRecords(records);
-        }
-      })
-      .catch(() => {});
-  }, [selectedEmployee, selectedYear, selectedMonth]);
 
   const instructorName = useMemo(() => {
     if (selectedEmployee?.instructorId) {
