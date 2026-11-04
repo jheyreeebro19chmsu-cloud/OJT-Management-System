@@ -44,7 +44,26 @@ async function parseBody(req) {
   });
 }
 
-const isUuid = (val) => Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+function isUuid(val) {
+  return Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
+}
+
+async function resolveToUuid(empId) {
+  if (!empId) return null;
+  const raw = String(empId).trim();
+  if (isUuid(raw)) return raw;
+  try {
+    let q = supabase.from('employees').select('id').limit(1);
+    if (raw.includes('@')) {
+      q = q.eq('email', raw.toLowerCase());
+    } else {
+      q = q.eq('employee_id', raw);
+    }
+    const { data } = await q.maybeSingle();
+    if (data?.id && isUuid(data.id)) return data.id;
+  } catch {}
+  return raw;
+}
 
 function transformToDbPayload(r) {
   const cleanDate = r.date ? String(r.date).split('T')[0].split(' ')[0].trim() : new Date().toISOString().split('T')[0];
@@ -93,9 +112,14 @@ export default async function handler(req, res) {
     // ─── GET: Fetch Time Records ──────────────────────────────────────────────
     if (req.method === 'GET') {
       const queryParams = parseQuery(req);
+      const includePhotos = queryParams.photos === 'true' || queryParams.includePhotos === 'true';
+      const selectFields = includePhotos
+        ? '*'
+        : 'id, employee_id, date, time_in, time_out, total_hours, status, notes, academic_year, time_in_geofenced, time_out_geofenced, time_in_face_verified, time_out_face_verified, time_in_lat, time_in_lng, time_out_lat, time_out_lng, approval_status, approved_by, approved_at, approval_note, created_at';
+
       let query = supabase
         .from('time_records')
-        .select('*')
+        .select(selectFields)
         .order('date', { ascending: false });
 
       const empIds = [];
@@ -119,7 +143,17 @@ export default async function handler(req, res) {
       }
 
       if (queryParams.month) {
-        query = query.like('date', `${queryParams.month}%`);
+        const parts = String(queryParams.month).trim().split('-');
+        if (parts.length === 2) {
+          const y = parseInt(parts[0], 10);
+          const m = parseInt(parts[1], 10);
+          if (!isNaN(y) && !isNaN(m)) {
+            const start = `${parts[0]}-${parts[1].padStart(2, '0')}-01`;
+            const lastDay = new Date(y, m, 0).getDate();
+            const end = `${parts[0]}-${parts[1].padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+            query = query.gte('date', start).lte('date', end);
+          }
+        }
       }
 
       const defaultLimit = empIds.length > 0 ? 5000 : 5000;
@@ -156,15 +190,32 @@ export default async function handler(req, res) {
 
       for (const payload of payloads) {
         try {
-          // Check if record exists for this employee and date
-          let query = supabase
-            .from('time_records')
-            .select('id, time_in, time_out, total_hours, notes')
-            .eq('employee_id', payload.employee_id)
-            .eq('date', payload.date);
+          payload.employee_id = await resolveToUuid(payload.employee_id);
+          if (!payload.employee_id || !isUuid(payload.employee_id)) {
+            console.warn('Skipping payload with unresolvable employee_id:', payload);
+            continue;
+          }
 
-          const { data: existingList } = await query;
-          const existing = existingList && existingList.length > 0 ? existingList[0] : null;
+          let existing = null;
+          if (payload.id && isUuid(payload.id)) {
+            const { data: byId } = await supabase
+              .from('time_records')
+              .select('id, time_in, time_out, total_hours, notes')
+              .eq('id', payload.id)
+              .maybeSingle();
+            if (byId?.id) existing = byId;
+          }
+
+          if (!existing) {
+            let query = supabase
+              .from('time_records')
+              .select('id, time_in, time_out, total_hours, notes')
+              .eq('employee_id', payload.employee_id)
+              .eq('date', payload.date);
+
+            const { data: existingList } = await query;
+            existing = existingList && existingList.length > 0 ? existingList[0] : null;
+          }
 
           if (existing?.id) {
             // Merge & Update existing record
@@ -173,7 +224,7 @@ export default async function handler(req, res) {
               time_in: payload.time_in || existing.time_in,
               time_out: payload.time_out || existing.time_out,
               total_hours: Math.max(Number(payload.total_hours) || 0, Number(existing.total_hours) || 0),
-              notes: payload.notes || existing.notes,
+              notes: payload.notes !== undefined && payload.notes !== null ? payload.notes : existing.notes,
             };
             delete mergedPayload.id;
 

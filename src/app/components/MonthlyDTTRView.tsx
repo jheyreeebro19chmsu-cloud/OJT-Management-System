@@ -457,7 +457,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           hours: 0,
         });
       }
-      const finalTasks = (custom?.tasks !== undefined && custom.tasks !== null ? custom.tasks : autoTasks) || '';
+      const finalTasks = (custom?.tasks && String(custom.tasks).trim()) || autoTasks || '';
 
       if (hasAutoPunch || (autoRec && (autoRec.timeIn || autoRec.timeOut || autoRec.amArrival || autoRec.pmDeparture))) {
         rows.push({
@@ -671,6 +671,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         studentSignedAt: savedDttr?.studentSignedAt,
       };
       saveMonthlyDttr(record);
+      supabaseService.saveDttrStoreToStorage({ monthlyDttrs: [record] }).catch(() => {});
 
       // 3. Clear draft for this day
       setTaskEdits((prev) => {

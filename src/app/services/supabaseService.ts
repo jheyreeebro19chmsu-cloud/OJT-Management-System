@@ -1573,6 +1573,30 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
     return true;
   }
 
+  // 1. Primary path: Route via Service Role API endpoint /api/time-records to guarantee write permissions
+  if (typeof window !== 'undefined') {
+    try {
+      const endpointPayload: any = {
+        id: isUuid ? id : undefined,
+        employee_id: updates.employeeId,
+        date: updates.date,
+        time_in: updates.timeIn || updates.amArrival || updates.pmArrival,
+        time_out: updates.timeOut || updates.pmDeparture || updates.amDeparture,
+        total_hours: updates.totalHours,
+        status: updates.status,
+        notes: supabaseUpdates.notes ?? updates.notes,
+      };
+      const apiRes = await fetch('/api/time-records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(endpointPayload),
+      });
+      if (apiRes.ok) return true;
+    } catch (e) {
+      console.warn('Endpoint /api/time-records update notice:', e);
+    }
+  }
+
   if (isUuid) {
     let res = await supabase.from('time_records').update(supabaseUpdates).eq('id', id).select();
     if (res.error) {
@@ -4232,12 +4256,32 @@ export function mergeMonthlyDttrsList(
 ): MonthlyDttrRecord[] {
   const map = new Map<string, MonthlyDttrRecord>();
 
+  // Build employee alias map to reconcile student code (e.g. 20231331) and UUID
+  const aliasMap = new Map<string, string>();
+  if (typeof window !== 'undefined') {
+    try {
+      const storedEmployees = JSON.parse(localStorage.getItem('ojt_employees') || '[]');
+      if (Array.isArray(storedEmployees)) {
+        storedEmployees.forEach((emp: any) => {
+          if (emp && emp.id) {
+            const canonical = String(emp.id).toLowerCase();
+            aliasMap.set(canonical, canonical);
+            if (emp.employeeId) aliasMap.set(String(emp.employeeId).toLowerCase(), canonical);
+            if (emp.email) aliasMap.set(String(emp.email).toLowerCase(), canonical);
+          }
+        });
+      }
+    } catch {}
+  }
+
   const addRecord = (rec: MonthlyDttrRecord) => {
     if (!rec || !rec.employeeId) return;
-    const key = `${rec.employeeId.toLowerCase()}_${Number(rec.year)}_${Number(rec.month)}`;
+    const rawEmp = String(rec.employeeId).toLowerCase();
+    const canonicalEmp = aliasMap.get(rawEmp) || rawEmp;
+    const key = `${canonicalEmp}_${Number(rec.year)}_${Number(rec.month)}`;
     const existing = map.get(key);
     if (!existing) {
-      map.set(key, rec);
+      map.set(key, { ...rec, employeeId: canonicalEmp });
       return;
     }
 
@@ -4251,24 +4295,39 @@ export function mergeMonthlyDttrsList(
       ...(newer.customEntries || {}),
     };
 
-    for (const dayStr of Object.keys(older.customEntries || {})) {
+    const allDays = new Set([
+      ...Object.keys(older.customEntries || {}),
+      ...Object.keys(newer.customEntries || {}),
+    ]);
+
+    for (const dayStr of allDays) {
       const d = Number(dayStr);
       const oldEntry = (older.customEntries || {})[d];
       const newEntry = (newer.customEntries || {})[d];
       if (oldEntry && newEntry) {
+        const oldTasks = oldEntry.tasks && String(oldEntry.tasks).trim();
+        const newTasks = newEntry.tasks && String(newEntry.tasks).trim();
         mergedCustom[d] = {
           ...oldEntry,
           ...newEntry,
-          tasks: (newEntry.tasks && String(newEntry.tasks).trim())
-            ? newEntry.tasks
-            : oldEntry.tasks,
+          amArrival: newEntry.amArrival || oldEntry.amArrival || '',
+          amDeparture: newEntry.amDeparture || oldEntry.amDeparture || '',
+          pmArrival: newEntry.pmArrival || oldEntry.pmArrival || '',
+          pmDeparture: newEntry.pmDeparture || oldEntry.pmDeparture || '',
+          hours: newEntry.hours || oldEntry.hours || 0,
+          tasks: newTasks || oldTasks || '',
         };
+      } else if (newEntry) {
+        mergedCustom[d] = newEntry;
+      } else if (oldEntry) {
+        mergedCustom[d] = oldEntry;
       }
     }
 
     map.set(key, {
       ...older,
       ...newer,
+      employeeId: canonicalEmp,
       customEntries: mergedCustom,
       hteSignatureStatus:
         older.hteSignatureStatus === 'signed' || newer.hteSignatureStatus === 'signed'

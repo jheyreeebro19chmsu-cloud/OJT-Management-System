@@ -147,6 +147,7 @@ export function Login() {
         provider: 'google',
         options: {
           redirectTo: `${redirectOrigin}/oauth-callback`,
+          skipBrowserRedirect: true,
           queryParams: {
             prompt: 'select_account',
           },
@@ -166,11 +167,16 @@ export function Login() {
         )
       );
 
-      const { error: oauthError } = await Promise.race([oauthPromise, timeoutPromise]);
-      if (oauthError) {
-        setError(oauthError.message || 'Failed to initialize Google sign-in.');
+      const result: any = await Promise.race([oauthPromise, timeoutPromise]);
+      if (result?.error) {
+        setError(result.error.message || 'Failed to initialize Google sign-in.');
         setGoogleLoading(false);
         setLoadingRole(null);
+      } else if (result?.data?.url) {
+        window.location.assign(result.data.url);
+      } else {
+        // Fallback default navigation if url is empty
+        window.location.assign(`https://wooighmdckuoebsuegzz.supabase.co/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(`${redirectOrigin}/oauth-callback`)}&prompt=select_account`);
       }
     } catch (err: any) {
       setError(err?.message || 'Failed to initialize Google sign-in.');
