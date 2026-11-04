@@ -84,14 +84,29 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   }, [defaultEmployeeId, selectedEmployeeId]);
 
   useEffect(() => {
+    const fetchLatestRecords = () => {
+      if (!selectedEmployee) return;
+      const altIds = [selectedEmployee.employeeId, selectedEmployee.email].filter(Boolean) as string[];
+      supabaseService.fetchTimeRecordsForEmployee(selectedEmployee.id, altIds)
+        .then((records) => {
+          if (Array.isArray(records) && records.length > 0) {
+            setExtraEmployeeRecords(records);
+          }
+        })
+        .catch(() => {});
+    };
+
     refreshData?.({ force: true }).catch(() => {});
+    fetchLatestRecords();
+
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refreshData?.({ force: true }).catch(() => {});
+        fetchLatestRecords();
       }
-    }, 6000);
+    }, 5000);
     return () => clearInterval(interval);
-  }, [selectedEmployeeId, selectedYear, selectedMonth, refreshData]);
+  }, [selectedEmployeeId, selectedYear, selectedMonth, refreshData, selectedEmployee]);
 
   const selectedEmployee = useMemo(() => {
     return (
@@ -657,6 +672,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         tasks: taskText,
       };
 
+      const nowIso = new Date().toISOString();
       const record: MonthlyDttrRecord = {
         id: `${selectedEmployee.id}_${selectedYear}_${selectedMonth}`,
         employeeId: selectedEmployee.id,
@@ -669,9 +685,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
         hteSignatureNotes: savedDttr?.hteSignatureNotes,
         studentSignedAt: savedDttr?.studentSignedAt,
+        updatedAt: nowIso,
       };
       saveMonthlyDttr(record);
-      supabaseService.saveDttrStoreToStorage({ monthlyDttrs: [record] }).catch(() => {});
+      await supabaseService.saveDttrStoreToStorage({ monthlyDttrs: [record] }).catch(() => {});
 
       // 3. Clear draft for this day
       setTaskEdits((prev) => {
@@ -762,6 +779,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         };
       });
 
+      const nowIso = new Date().toISOString();
       const record: MonthlyDttrRecord = {
         id: `${selectedEmployee.id}_${selectedYear}_${selectedMonth}`,
         employeeId: selectedEmployee.id,
@@ -774,9 +792,11 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
         hteSignatureNotes: savedDttr?.hteSignatureNotes,
         studentSignedAt: savedDttr?.studentSignedAt,
+        updatedAt: nowIso,
       };
 
       saveMonthlyDttr(record);
+      await supabaseService.saveDttrStoreToStorage({ monthlyDttrs: [record] }).catch(() => {});
       setTaskEdits({});
       setJustSentDays(new Set(modifiedDays));
       setTimeout(() => setJustSentDays(new Set()), 3000);
@@ -811,7 +831,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   };
 
   // Save tasks from the batch modal (ONLY tasks are updated)
-  const handleSaveTasks = () => {
+  const handleSaveTasks = async () => {
     if (!selectedEmployee) return;
     if (!canEditTasks) {
       toast.error('Only the trainee intern can enter or edit their Daily Tasks.');
@@ -858,6 +878,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         };
       });
 
+      const nowIso = new Date().toISOString();
       const record: MonthlyDttrRecord = {
         id: `${selectedEmployee.id}_${selectedYear}_${selectedMonth}`,
         employeeId: selectedEmployee.id,
@@ -870,8 +891,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         hteSignatureStatus: savedDttr?.hteSignatureStatus || 'pending',
         hteSignatureNotes: savedDttr?.hteSignatureNotes,
         studentSignedAt: savedDttr?.studentSignedAt,
+        updatedAt: nowIso,
       };
       saveMonthlyDttr(record);
+      await supabaseService.saveDttrStoreToStorage({ monthlyDttrs: [record] }).catch(() => {});
       setTaskEdits({});
       setIsEditingTasks(false);
       toast.success('Tasks updated and sent successfully!');
