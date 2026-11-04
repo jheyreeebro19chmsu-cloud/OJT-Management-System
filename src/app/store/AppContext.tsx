@@ -1009,6 +1009,33 @@ function mergeEvaluations(remoteEvaluations: Evaluation[], currentLocalEvaluatio
   return supabaseService.mergeEvaluationsList(remoteEvaluations, currentLocalEvaluations);
 }
 
+function mergeHostSupervisors(
+  remoteHosts: HostSupervisor[],
+  localHosts: HostSupervisor[]
+): HostSupervisor[] {
+  if (!remoteHosts || remoteHosts.length === 0) {
+    return localHosts || [];
+  }
+  if (!localHosts || localHosts.length === 0) {
+    return remoteHosts;
+  }
+  const map = new Map<string, HostSupervisor>();
+  for (const h of localHosts || []) {
+    if (!h) continue;
+    if (h.id) map.set(h.id, h);
+    if (h.employeeId) map.set(h.employeeId, h);
+    if (h.email) map.set(h.email.toLowerCase(), h);
+  }
+  for (const h of remoteHosts || []) {
+    if (!h) continue;
+    const key = h.id || h.employeeId || h.email;
+    if (!key) continue;
+    const existing = (h.id && map.get(h.id)) || (h.employeeId && map.get(h.employeeId)) || (h.email && map.get(h.email.toLowerCase()));
+    map.set(key, existing ? { ...existing, ...h } : h);
+  }
+  return Array.from(map.values());
+}
+
 function mergeEmployees(
   remoteEmployees: Employee[],
   localEmployees: Employee[]

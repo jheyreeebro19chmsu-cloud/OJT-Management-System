@@ -3368,11 +3368,15 @@ export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean>
 
   // 1. Primary path: Server-side API with service role (bypasses RLS & UUID issues)
   try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3500);
     const res = await fetch('/api/time-records', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ records }),
+      signal: controller.signal,
     });
+    clearTimeout(timer);
     if (res.ok) {
       // Also ensure backed up to DTTR store
       saveDttrStoreToStorage({ timeRecords: records }).catch(() => {});
