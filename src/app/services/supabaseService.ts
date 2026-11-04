@@ -2536,31 +2536,78 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
     return [];
   }
 
-  return (data || []).map((ann: any) => ({
-    id: ann.id,
-    title: ann.title,
-    content: ann.content,
-    type: ann.type,
-    targetRole: ann.target_role,
-    isPinned: ann.is_pinned,
-    createdAt: ann.created_at,
-    expiresAt: ann.expires_at,
-    createdBy: ann.created_by,
-    createdByRole: ann.created_by_role,
-    academicYear: ann.academic_year,
-    photo: ann.photo,
-    reminder: ann.reminder,
-    deadlineAt: ann.deadline_at,
-    comments: ann.comments,
-    requiresSubmission: ann.requires_submission,
-  }));
+  return (data || []).map((ann: any) => {
+    let files = ann.files || undefined;
+    let photo = ann.photo || undefined;
+    if (photo && typeof photo === 'string' && photo.startsWith('{') && photo.includes('"url"')) {
+      try {
+        const parsed = JSON.parse(photo);
+        if (Array.isArray(parsed.files) && parsed.files.length > 0) {
+          files = parsed.files;
+        } else if (parsed.url) {
+          files = [{
+            id: `file-${ann.id}-0`,
+            name: parsed.name || 'Attachment',
+            fileType: parsed.type === 'image' ? 'image/jpeg' : parsed.type === 'pdf' ? 'application/pdf' : 'application/octet-stream',
+            size: parsed.size || '',
+            dataUrl: parsed.url,
+            fileUrl: parsed.url,
+            uploadedAt: ann.created_at,
+          }];
+        }
+      } catch {}
+    } else if (photo && typeof photo === 'string' && (photo.startsWith('http') || photo.startsWith('data:image'))) {
+      files = [{
+        id: `file-${ann.id}-0`,
+        name: 'Photo.jpg',
+        fileType: 'image/jpeg',
+        dataUrl: photo,
+        fileUrl: photo,
+        uploadedAt: ann.created_at,
+      }];
+    }
+
+    return {
+      id: ann.id,
+      title: ann.title,
+      content: ann.content,
+      type: ann.type,
+      targetRole: ann.target_role || 'all',
+      isPinned: ann.is_pinned,
+      createdAt: ann.created_at,
+      expiresAt: ann.expires_at,
+      createdBy: ann.created_by,
+      createdByRole: ann.created_by_role,
+      academicYear: ann.academic_year,
+      photo,
+      files,
+      reminder: ann.reminder,
+      deadlineAt: ann.deadline_at,
+      comments: ann.comments,
+      requiresSubmission: ann.requires_submission,
+    };
+  });
 }
 
 export async function createAnnouncement(announcement: Omit<Announcement, 'id'>): Promise<Announcement | null> {
   if (!isSupabaseConfigured()) return null;
 
   let annPhoto = announcement.photo;
-  if (annPhoto && typeof annPhoto === 'string' && annPhoto.startsWith('data:image')) {
+  if (announcement.files && announcement.files.length > 0) {
+    const first = announcement.files[0];
+    const url = first.fileUrl || first.dataUrl || (typeof annPhoto === 'string' ? annPhoto : '');
+    annPhoto = JSON.stringify({
+      url,
+      name: first.name || 'Attachment',
+      type: (first.fileType || '').startsWith('image/')
+        ? 'image'
+        : (first.fileType || '').includes('pdf') || (first.name || '').toLowerCase().endsWith('.pdf')
+        ? 'pdf'
+        : 'doc',
+      size: first.size ? formatFileSize(Number(first.size)) : '',
+      files: announcement.files,
+    });
+  } else if (annPhoto && typeof annPhoto === 'string' && annPhoto.startsWith('data:image')) {
     try {
       annPhoto = await compressBase64Image(annPhoto, 800, 0.82);
     } catch (cErr) {
@@ -2568,21 +2615,22 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     }
   }
 
-  const supabaseAnn = {
+  const supabaseAnn: any = {
     title: announcement.title,
     content: announcement.content,
     type: announcement.type,
-    target_role: announcement.targetRole,
-    is_pinned: announcement.isPinned,
-    expires_at: announcement.expiresAt,
-    created_by: announcement.createdBy,
-    created_by_role: announcement.createdByRole,
+    target_role: announcement.targetRole || 'all',
+    is_pinned: announcement.isPinned || false,
+    expires_at: announcement.expiresAt || null,
+    created_by: announcement.createdBy || 'OJT Instructor',
+    created_by_role: announcement.createdByRole || 'admin',
     academic_year: (announcement as any).academicYear,
     photo: annPhoto,
-    reminder: announcement.reminder,
-    deadline_at: announcement.deadlineAt,
-    comments: announcement.comments,
-    requires_submission: announcement.requiresSubmission,
+    files: announcement.files,
+    reminder: announcement.reminder || null,
+    deadline_at: announcement.deadlineAt || null,
+    comments: announcement.comments || null,
+    requires_submission: announcement.requiresSubmission || false,
     created_at: announcement.createdAt || new Date().toISOString(),
   };
 
@@ -2596,20 +2644,22 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     if (res.ok) {
       const data = await res.json();
       if (data && data.id) {
-        return data as Announcement;
+        return {
+          ...data,
+          files: announcement.files || data.files,
+        } as Announcement;
       }
     }
   } catch (apiErr) {
     console.warn('API endpoint /api/announcements POST error, falling back to direct Supabase:', apiErr);
   }
 
-  // 2. Direct Supabase client fallback
-  const { data, error } = await supabase.from('announcements').insert([supabaseAnn]).select().single();
+  // 2. Direct Supabase client fallback (strip files since table has no files column)
+  const { files: _f, ...insertPayload } = supabaseAnn;
+  const { data, error } = await supabase.from('announcements').insert([insertPayload]).select().single();
 
   if (error) {
     console.error('Error creating announcement:', error);
-    // Throw instead of returning null, so AppContext.addAnnouncement's .catch()
-    // actually finds out the save failed instead of silently treating it as done.
     throw new Error(error.message || JSON.stringify(error));
   }
 
@@ -2626,6 +2676,7 @@ export async function createAnnouncement(announcement: Omit<Announcement, 'id'>)
     createdByRole: data.created_by_role,
     academicYear: data.academic_year,
     photo: data.photo,
+    files: announcement.files,
     reminder: data.reminder,
     deadlineAt: data.deadline_at,
     comments: data.comments,
@@ -2645,6 +2696,22 @@ export async function updateAnnouncement(id: string, updates: Partial<Announceme
   if (updates.expiresAt !== undefined) supabaseUpdates.expires_at = updates.expiresAt;
   if ((updates as any).academicYear !== undefined) supabaseUpdates.academic_year = (updates as any).academicYear;
   if (updates.photo !== undefined) supabaseUpdates.photo = updates.photo;
+  if (updates.files !== undefined && updates.files.length > 0) {
+    const first = updates.files[0];
+    const url = first.fileUrl || first.dataUrl || (typeof supabaseUpdates.photo === 'string' ? supabaseUpdates.photo : '');
+    supabaseUpdates.photo = JSON.stringify({
+      url,
+      name: first.name || 'Attachment',
+      type: (first.fileType || '').startsWith('image/')
+        ? 'image'
+        : (first.fileType || '').includes('pdf') || (first.name || '').toLowerCase().endsWith('.pdf')
+        ? 'pdf'
+        : 'doc',
+      size: first.size ? formatFileSize(Number(first.size)) : '',
+      files: updates.files,
+    });
+    supabaseUpdates.files = updates.files;
+  }
   if (updates.reminder !== undefined) supabaseUpdates.reminder = updates.reminder;
   if (updates.deadlineAt !== undefined) supabaseUpdates.deadline_at = updates.deadlineAt;
   if (updates.comments !== undefined) supabaseUpdates.comments = updates.comments;

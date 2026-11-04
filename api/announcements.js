@@ -9,12 +9,41 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 
 function formatAnnouncement(ann) {
   if (!ann) return null;
+  let files = ann.files || undefined;
+  if (ann.photo && typeof ann.photo === 'string' && ann.photo.startsWith('{') && ann.photo.includes('"url"')) {
+    try {
+      const parsed = JSON.parse(ann.photo);
+      if (Array.isArray(parsed.files) && parsed.files.length > 0) {
+        files = parsed.files;
+      } else if (parsed.url) {
+        files = [{
+          id: `file-${ann.id}-0`,
+          name: parsed.name || 'Attachment',
+          fileType: parsed.type === 'image' ? 'image/jpeg' : parsed.type === 'pdf' ? 'application/pdf' : 'application/octet-stream',
+          size: parsed.size || '',
+          dataUrl: parsed.url,
+          fileUrl: parsed.url,
+          uploadedAt: ann.created_at,
+        }];
+      }
+    } catch {}
+  } else if (ann.photo && typeof ann.photo === 'string' && (ann.photo.startsWith('http') || ann.photo.startsWith('data:image'))) {
+    files = [{
+      id: `file-${ann.id}-0`,
+      name: 'Photo.jpg',
+      fileType: 'image/jpeg',
+      dataUrl: ann.photo,
+      fileUrl: ann.photo,
+      uploadedAt: ann.created_at,
+    }];
+  }
+
   return {
     id: ann.id,
     title: ann.title,
     content: ann.content,
     type: ann.type,
-    targetRole: ann.target_role,
+    targetRole: ann.target_role || 'all',
     isPinned: ann.is_pinned,
     createdAt: ann.created_at,
     expiresAt: ann.expires_at,
@@ -22,6 +51,7 @@ function formatAnnouncement(ann) {
     createdByRole: ann.created_by_role,
     academicYear: ann.academic_year,
     photo: ann.photo,
+    files,
     reminder: ann.reminder,
     deadlineAt: ann.deadline_at,
     comments: ann.comments,
@@ -209,7 +239,31 @@ export default async function handler(req, res) {
         requires_submission,
         createdAt,
         created_at,
+        files,
       } = body;
+
+      let finalPhoto = photo ?? null;
+      const attachedFiles = (files && Array.isArray(files) && files.length > 0)
+        ? files
+        : (body.files && Array.isArray(body.files) && body.files.length > 0)
+        ? body.files
+        : null;
+
+      if (attachedFiles && attachedFiles.length > 0) {
+        const first = attachedFiles[0];
+        const url = first.fileUrl || first.dataUrl || (typeof finalPhoto === 'string' ? finalPhoto : '');
+        finalPhoto = JSON.stringify({
+          url,
+          name: first.name || 'Attachment',
+          type: (first.fileType || '').startsWith('image/')
+            ? 'image'
+            : (first.fileType || '').includes('pdf') || (first.name || '').toLowerCase().endsWith('.pdf')
+            ? 'pdf'
+            : 'doc',
+          size: first.size || '',
+          files: attachedFiles,
+        });
+      }
 
       const payload = {
         title: title || 'Untitled Announcement',
@@ -221,7 +275,7 @@ export default async function handler(req, res) {
         created_by: createdBy ?? created_by ?? 'Instructor',
         created_by_role: createdByRole ?? created_by_role ?? 'admin',
         academic_year: academicYear ?? academic_year ?? null,
-        photo: photo ?? null,
+        photo: finalPhoto,
         reminder: reminder ?? null,
         deadline_at: deadlineAt ?? deadline_at ?? null,
         comments: comments ?? null,
@@ -268,6 +322,21 @@ export default async function handler(req, res) {
         updates.academic_year = body.academicYear ?? body.academic_year;
       }
       if (body.photo !== undefined) updates.photo = body.photo;
+      if (body.files !== undefined && Array.isArray(body.files) && body.files.length > 0) {
+        const first = body.files[0];
+        const url = first.fileUrl || first.dataUrl || (typeof updates.photo === 'string' ? updates.photo : '');
+        updates.photo = JSON.stringify({
+          url,
+          name: first.name || 'Attachment',
+          type: (first.fileType || '').startsWith('image/')
+            ? 'image'
+            : (first.fileType || '').includes('pdf') || (first.name || '').toLowerCase().endsWith('.pdf')
+            ? 'pdf'
+            : 'doc',
+          size: first.size || '',
+          files: body.files,
+        });
+      }
       if (body.reminder !== undefined) updates.reminder = body.reminder;
       if (body.deadlineAt !== undefined || body.deadline_at !== undefined) {
         updates.deadline_at = body.deadlineAt ?? body.deadline_at;

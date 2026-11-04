@@ -111,7 +111,19 @@ export function HTEAnnouncements() {
     addAnnouncementComment,
     deleteAnnouncementComment,
     settings,
+    refreshData,
   } = useApp();
+
+  // Active polling to immediately display announcements posted by Instructor or HTE
+  useEffect(() => {
+    refreshData?.({ force: true }).catch(() => {});
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshData?.({ force: true }).catch(() => {});
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [refreshData]);
 
   const employee = getCurrentEmployee();
 
@@ -830,9 +842,9 @@ export function HTEAnnouncements() {
               </div>
 
               {/* Attachment Display (Pictures, PDF, Docs) */}
-              {ann.photo && (
+              {(ann.photo || (ann.files && ann.files.length > 0)) && (
                 <div className="mb-4">
-                  <AnnouncementAttachmentView photo={ann.photo} allowDownload={true} />
+                  <AnnouncementAttachmentView photo={ann.photo} files={ann.files} allowDownload={true} />
                 </div>
               )}
 

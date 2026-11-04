@@ -2066,15 +2066,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // Periodic live background sync every 45 seconds (when tab is active) so Supabase is not flooded with requests
+    // Supabase Realtime: Immediately synchronize announcements across ALL devices & accounts
+    const annChannel = supabase
+      .channel('public:announcements_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
+        refreshData({ force: true });
+      })
+      .subscribe();
+
+    // Periodic live background sync every 15 seconds (when tab is active)
     const syncInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       refreshData();
-    }, 45000);
+    }, 15000);
 
     return () => {
       window.removeEventListener('focus', onFocus);
       clearInterval(syncInterval);
+      annChannel.unsubscribe();
       authListener?.subscription?.unsubscribe();
     };
   }, [refreshData, useSupabase, currentUser]);
@@ -4914,7 +4923,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const now = new Date();
     const matchesAudience = (announcementRole: Announcement['targetRole'], requestedRole?: typeof role) => {
       if (!requestedRole) return true;
-      if (announcementRole === 'all') return true;
+      if (!announcementRole || announcementRole === 'all') return true;
       if (requestedRole === 'admin') return true; // Admins / Instructors supervise everything and see all notices
       if (requestedRole === 'employee') return ['employee', 'admin', 'all'].includes(announcementRole);
       if (requestedRole === 'hte' || requestedRole === 'host') return ['hte', 'host', 'employee', 'all'].includes(announcementRole);
@@ -4929,6 +4938,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .map((a) => {
         if (!a.files || a.files.length === 0) {
+          if (a.photo && typeof a.photo === 'string' && a.photo.startsWith('{') && a.photo.includes('"url"')) {
+            try {
+              const parsed = JSON.parse(a.photo);
+              if (Array.isArray(parsed.files) && parsed.files.length > 0) {
+                return { ...a, files: parsed };
+              } else if (parsed.url) {
+                return {
+                  ...a,
+                  files: [{
+                    id: `file-${a.id}-0`,
+                    name: parsed.name || 'Attachment',
+                    fileType: parsed.type === 'image' ? 'image/jpeg' : parsed.type === 'pdf' ? 'application/pdf' : 'application/octet-stream',
+                    size: parsed.size || '',
+                    dataUrl: parsed.url,
+                    fileUrl: parsed.url,
+                    uploadedAt: a.createdAt,
+                  }],
+                };
+              }
+            } catch {}
+          }
           try {
             const cached = localStorage.getItem(`ojt_announcement_files_${a.id}`);
             if (cached) {

@@ -136,7 +136,19 @@ export function AdminAnnouncements() {
     deleteAnnouncementComment,
     addRequiredDocument,
     settings,
+    refreshData,
   } = useApp();
+
+  // Active polling to synchronize announcements live across accounts
+  useEffect(() => {
+    refreshData?.({ force: true }).catch(() => {});
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshData?.({ force: true }).catch(() => {});
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [refreshData]);
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [showForm, setShowForm] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
@@ -1058,6 +1070,7 @@ export function AdminAnnouncements() {
                         onChange={async (e) => {
                           const selected = Array.from(e.target.files || []);
                           if (selected.length === 0) return;
+                          toast.loading(`Processing ${selected.length} file(s)...`, { id: 'attach-upload' });
                           const processed: TraineeDocumentFile[] = [];
                           for (const f of selected) {
                             const dataUrl = await new Promise<string>((resolve) => {
@@ -1067,33 +1080,49 @@ export function AdminAnnouncements() {
                               reader.readAsDataURL(f);
                             });
                             if (!dataUrl) continue;
+                            let finalUrl = dataUrl;
+                            try {
+                              const remoteUrl = await supabaseService.uploadDocumentToStorage(
+                                currentUser?.id || 'admin',
+                                `ann_${Date.now()}_${processed.length}`,
+                                f,
+                                f.name
+                              );
+                              if (remoteUrl && remoteUrl.startsWith('http')) {
+                                finalUrl = remoteUrl;
+                              }
+                            } catch {}
+
                             processed.push({
                               id: `file-${Date.now()}-${processed.length}`,
                               name: f.name,
                               fileType: f.type || 'application/octet-stream',
                               size: f.size,
                               uploadedAt: new Date().toISOString(),
-                              dataUrl,
-                              fileUrl: dataUrl,
+                              dataUrl: finalUrl,
+                              fileUrl: finalUrl,
                             });
                           }
+                          toast.dismiss('attach-upload');
                           if (processed.length > 0) {
                             setForm((p) => {
                               const combined = [...(p.files || []), ...processed];
                               const first = combined[0];
                               let serialized = '';
                               if (first) {
-                                if (first.fileType.startsWith('image/')) {
-                                  serialized = first.dataUrl || '';
+                                if (combined.length === 1 && first.fileType.startsWith('image/')) {
+                                  serialized = first.dataUrl || first.fileUrl || '';
                                 } else {
                                   let type: 'pdf' | 'doc' | 'file' = 'file';
                                   if (first.fileType === 'application/pdf' || first.name.toLowerCase().endsWith('.pdf')) type = 'pdf';
                                   else if (first.name.match(/\.(doc|docx|txt|rtf|csv|xlsx|xls)$/i)) type = 'doc';
+                                  else if (first.fileType.startsWith('image/')) type = 'image' as any;
                                   serialized = JSON.stringify({
                                     url: first.dataUrl || first.fileUrl,
                                     name: first.name,
                                     type,
                                     size: formatFileSize(Number(first.size)),
+                                    files: combined,
                                   });
                                 }
                               }
@@ -1130,16 +1159,20 @@ export function AdminAnnouncements() {
                                 setForm((p) => {
                                   const next = (p.files || []).filter((_, i) => i !== idx);
                                   const first = next[0];
-                                  const nextPhoto = first
-                                    ? first.fileType.startsWith('image/')
-                                      ? first.dataUrl || ''
-                                      : JSON.stringify({
-                                          url: first.dataUrl || first.fileUrl,
-                                          name: first.name,
-                                          type: first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'doc',
-                                          size: formatFileSize(Number(first.size)),
-                                        })
-                                    : '';
+                                  let nextPhoto = '';
+                                  if (first) {
+                                    if (next.length === 1 && first.fileType.startsWith('image/')) {
+                                      nextPhoto = first.dataUrl || first.fileUrl || '';
+                                    } else {
+                                      nextPhoto = JSON.stringify({
+                                        url: first.dataUrl || first.fileUrl,
+                                        name: first.name,
+                                        type: first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : first.fileType.startsWith('image/') ? 'image' : 'doc',
+                                        size: formatFileSize(Number(first.size)),
+                                        files: next,
+                                      });
+                                    }
+                                  }
                                   return { ...p, files: next, photo: nextPhoto };
                                 })
                               }

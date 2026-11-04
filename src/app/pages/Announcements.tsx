@@ -115,7 +115,19 @@ export function Announcements() {
     deleteAnnouncementComment,
     addRequiredDocument,
     settings,
+    refreshData,
   } = useApp();
+
+  // Active polling to immediately display announcements posted by Instructor or HTE
+  useEffect(() => {
+    refreshData?.({ force: true }).catch(() => {});
+    const interval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        refreshData?.({ force: true }).catch(() => {});
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [refreshData]);
 
   const employee = getCurrentEmployee();
   const activeUser = employee || currentUser;
