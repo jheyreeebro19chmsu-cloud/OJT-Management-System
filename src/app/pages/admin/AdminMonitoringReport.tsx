@@ -21,6 +21,7 @@ import {
   Trash2,
   CheckCircle2,
   Clock,
+  Calendar,
   X,
   FileImage,
   FileCheck,
@@ -31,6 +32,29 @@ import {
   FolderOpen,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+export const REPORT_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export const REPORT_WEEKS = [
+  { value: 'Week 1', label: 'Week 1 (Days 1 - 7)' },
+  { value: 'Week 2', label: 'Week 2 (Days 8 - 14)' },
+  { value: 'Week 3', label: 'Week 3 (Days 15 - 21)' },
+  { value: 'Week 4', label: 'Week 4 (Days 22 - 28)' },
+  { value: 'Week 5', label: 'Week 5 (Days 29 - End of Month)' },
+];
 
 const CATEGORY_META: Record<
   MonitoringReportCategory,
@@ -54,11 +78,20 @@ const CATEGORY_META: Record<
     activeTabClass: 'bg-purple-600 text-white shadow-sm',
     defaultTitle: 'Monthly Monitoring Report',
   },
+  weekly: {
+    label: 'Weekly',
+    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+    activeTabClass: 'bg-amber-600 text-white shadow-sm',
+    defaultTitle: 'Weekly Monitoring Report',
+  },
 };
 
 function getReportCategory(r: MonitoringReport): MonitoringReportCategory {
-  if (r.category === 'midterm' || r.category === 'endterm' || r.category === 'monthly') {
+  if (r.category === 'midterm' || r.category === 'endterm' || r.category === 'monthly' || r.category === 'weekly') {
     return r.category;
+  }
+  if (r.reportType === 'weekly' || r.frequency === 'weekly' || (r.title || '').toLowerCase().includes('weekly')) {
+    return 'weekly';
   }
   if (r.reportType === 'endterm' || r.term === 'endterm') return 'endterm';
   if (r.reportType === 'monthly' || r.frequency === 'monthly') return 'monthly';
@@ -142,10 +175,16 @@ export function AdminMonitoringReport() {
   // Filters
   const [selectedCategory, setSelectedCategory] = useState<'all' | MonitoringReportCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const currentMonthName = REPORT_MONTHS[new Date().getMonth()];
+  const currentYear = new Date().getFullYear();
+  const [selectedWeeklyMonth, setSelectedWeeklyMonth] = useState<string>('all');
+  const [selectedWeeklyWeek, setSelectedWeeklyWeek] = useState<string>('all');
 
   // Add Monitoring Report File Modal state
   const [showAddModal, setShowAddModal] = useState(false);
   const [formCategory, setFormCategory] = useState<MonitoringReportCategory>('midterm');
+  const [formMonth, setFormMonth] = useState<string>(`${currentMonthName} ${currentYear}`);
+  const [formWeek, setFormWeek] = useState<string>('Week 1');
   const [formTitle, setFormTitle] = useState('Mid-Term Monitoring Report');
   const [formDescription, setFormDescription] = useState('');
   const [formTargetTrainee, setFormTargetTrainee] = useState<string>('all');
@@ -171,6 +210,7 @@ export function AdminMonitoringReport() {
     let midterm = 0;
     let endterm = 0;
     let monthly = 0;
+    let weekly = 0;
     let totalTraineeSubmissions = 0;
 
     monitoringReports.forEach((r) => {
@@ -178,6 +218,7 @@ export function AdminMonitoringReport() {
       if (cat === 'midterm') midterm++;
       else if (cat === 'endterm') endterm++;
       else if (cat === 'monthly') monthly++;
+      else if (cat === 'weekly') weekly++;
 
       if (Array.isArray(r.submissions)) {
         totalTraineeSubmissions += r.submissions.length;
@@ -191,6 +232,7 @@ export function AdminMonitoringReport() {
       midterm,
       endterm,
       monthly,
+      weekly,
       totalTraineeSubmissions,
     };
   }, [monitoringReports]);
@@ -199,6 +241,17 @@ export function AdminMonitoringReport() {
     return monitoringReports.filter((r) => {
       const cat = getReportCategory(r);
       if (selectedCategory !== 'all' && cat !== selectedCategory) return false;
+
+      if (selectedCategory === 'weekly') {
+        if (selectedWeeklyMonth !== 'all') {
+          const rMonth = (r.month || r.title || r.periodCovered || '').toLowerCase();
+          if (!rMonth.includes(selectedWeeklyMonth.toLowerCase())) return false;
+        }
+        if (selectedWeeklyWeek !== 'all') {
+          const rWeek = (r.week || r.title || r.periodCovered || '').toLowerCase();
+          if (!rWeek.includes(selectedWeeklyWeek.toLowerCase())) return false;
+        }
+      }
 
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
@@ -210,6 +263,8 @@ export function AdminMonitoringReport() {
           (s) =>
             s.traineeName.toLowerCase().includes(q) ||
             (s.studentId || '').toLowerCase().includes(q) ||
+            (s.week || '').toLowerCase().includes(q) ||
+            (s.month || '').toLowerCase().includes(q) ||
             s.files.some((f) => f.name.toLowerCase().includes(q))
         );
         return matchTitle || matchDesc || matchTrainee || matchInstructorFiles || matchSub;
@@ -217,12 +272,18 @@ export function AdminMonitoringReport() {
 
       return true;
     });
-  }, [monitoringReports, selectedCategory, searchQuery]);
+  }, [monitoringReports, selectedCategory, searchQuery, selectedWeeklyMonth, selectedWeeklyWeek]);
 
   const handleOpenAddModal = (defaultCat?: MonitoringReportCategory) => {
     const cat = defaultCat || (selectedCategory !== 'all' ? selectedCategory : 'midterm');
     setFormCategory(cat);
-    setFormTitle(CATEGORY_META[cat].defaultTitle);
+    if (cat === 'weekly') {
+      setFormTitle(`Weekly Monitoring Report - ${formMonth} (${formWeek})`);
+    } else if (cat === 'monthly') {
+      setFormTitle(`Monthly Monitoring Report - ${formMonth}`);
+    } else {
+      setFormTitle(CATEGORY_META[cat].defaultTitle);
+    }
     setFormDescription('');
     setFormTargetTrainee('all');
     setPendingFiles([]);
@@ -230,10 +291,29 @@ export function AdminMonitoringReport() {
   };
 
   const handleCategorySelectInModal = (cat: MonitoringReportCategory) => {
-    const prevDefault = CATEGORY_META[formCategory].defaultTitle;
     setFormCategory(cat);
-    if (!formTitle.trim() || formTitle === prevDefault) {
+    if (cat === 'weekly') {
+      setFormTitle(`Weekly Monitoring Report - ${formMonth} (${formWeek})`);
+    } else if (cat === 'monthly') {
+      setFormTitle(`Monthly Monitoring Report - ${formMonth}`);
+    } else {
       setFormTitle(CATEGORY_META[cat].defaultTitle);
+    }
+  };
+
+  const handleFormMonthChange = (monthVal: string) => {
+    setFormMonth(monthVal);
+    if (formCategory === 'weekly') {
+      setFormTitle(`Weekly Monitoring Report - ${monthVal} (${formWeek})`);
+    } else if (formCategory === 'monthly') {
+      setFormTitle(`Monthly Monitoring Report - ${monthVal}`);
+    }
+  };
+
+  const handleFormWeekChange = (weekVal: string) => {
+    setFormWeek(weekVal);
+    if (formCategory === 'weekly') {
+      setFormTitle(`Weekly Monitoring Report - ${formMonth} (${weekVal})`);
     }
   };
 
@@ -287,7 +367,7 @@ export function AdminMonitoringReport() {
         reportType: formCategory,
         category: formCategory,
         term: formCategory === 'endterm' ? 'endterm' : 'midterm',
-        frequency: formCategory === 'monthly' ? 'monthly' : 'evaluation',
+        frequency: formCategory === 'monthly' ? 'monthly' : formCategory === 'weekly' ? 'weekly' : 'evaluation',
         createdByRole: 'instructor',
         targetTraineeId: formTargetTrainee,
         traineeId: targetTraineeObj ? targetTraineeObj.id : 'all',
@@ -300,7 +380,9 @@ export function AdminMonitoringReport() {
         instructorName: currentUser?.name || 'OJT Instructor',
         title,
         description: formDescription.trim(),
-        periodCovered: title,
+        periodCovered: formCategory === 'weekly' ? `${formMonth} (${formWeek})` : formCategory === 'monthly' ? formMonth : title,
+        month: formCategory === 'weekly' || formCategory === 'monthly' ? formMonth : undefined,
+        week: formCategory === 'weekly' ? formWeek : undefined,
         dateSubmitted: new Date().toISOString().split('T')[0],
         hoursRenderedThisPeriod: 0,
         tasksAccomplished: formDescription.trim() || `${CATEGORY_META[formCategory].label} Monitoring Report`,
@@ -426,9 +508,9 @@ export function AdminMonitoringReport() {
             <h1 className="text-2xl font-bold text-gray-900">Monitoring Reports</h1>
             <p className="text-sm text-gray-600 mt-1">
               Add Monitoring Report files for <span className="font-semibold text-gray-800">Mid-Term</span>,{' '}
-              <span className="font-semibold text-gray-800">End-Term</span>, and{' '}
-              <span className="font-semibold text-gray-800">Monthly</span> periods. Files automatically appear in
-              Trainees&apos; accounts where they can submit/attach their files and both accounts can view &amp; preview.
+              <span className="font-semibold text-gray-800">End-Term</span>,{' '}
+              <span className="font-semibold text-gray-800">Monthly</span>, and{' '}
+              <span className="font-semibold text-gray-800">Weekly</span> periods. Trainees can choose what week in that specific month to pass their files, and both accounts can view &amp; preview submissions.
             </p>
           </div>
           <button
@@ -442,7 +524,7 @@ export function AdminMonitoringReport() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-6">
           <button
             type="button"
             onClick={() => setSelectedCategory('all')}
@@ -496,64 +578,141 @@ export function AdminMonitoringReport() {
             <div className="text-2xl font-bold mt-1">{counts.monthly}</div>
             <div className="text-[11px] opacity-80 mt-0.5">Monthly Report Files</div>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('weekly')}
+            className={`text-left p-4 rounded-xl border transition-all ${selectedCategory === 'weekly'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                : 'bg-amber-50/60 hover:bg-amber-50 text-amber-900 border-amber-200'
+              }`}
+          >
+            <div className="text-xs font-semibold uppercase tracking-wider opacity-85">Weekly</div>
+            <div className="text-2xl font-bold mt-1">{counts.weekly}</div>
+            <div className="text-[11px] opacity-80 mt-0.5">Weekly Report Files</div>
+          </button>
         </div>
       </div>
 
       {/* Category Filter Tabs & Search Bar */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'all'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-              }`}
-          >
-            All ({counts.all})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('midterm')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'midterm'
-                ? CATEGORY_META.midterm.activeTabClass
-                : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-              }`}
-          >
-            Mid-Term ({counts.midterm})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('endterm')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'endterm'
-                ? CATEGORY_META.endterm.activeTabClass
-                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-              }`}
-          >
-            End-Term ({counts.endterm})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('monthly')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'monthly'
-                ? CATEGORY_META.monthly.activeTabClass
-                : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
-              }`}
-          >
-            Monthly ({counts.monthly})
-          </button>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'all'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+            >
+              All ({counts.all})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('midterm')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'midterm'
+                  ? CATEGORY_META.midterm.activeTabClass
+                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+                }`}
+            >
+              Mid-Term ({counts.midterm})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('endterm')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'endterm'
+                  ? CATEGORY_META.endterm.activeTabClass
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+                }`}
+            >
+              End-Term ({counts.endterm})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('monthly')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'monthly'
+                  ? CATEGORY_META.monthly.activeTabClass
+                  : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+                }`}
+            >
+              Monthly ({counts.monthly})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('weekly')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${selectedCategory === 'weekly'
+                  ? CATEGORY_META.weekly.activeTabClass
+                  : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+                }`}
+            >
+              Weekly ({counts.weekly})
+            </button>
+          </div>
+
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search file, title, or trainee..."
+              className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search file, title, or trainee..."
-            className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
+        {/* Weekly Specific Filters: Month and Week selection */}
+        {selectedCategory === 'weekly' && (
+          <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center gap-3 text-xs">
+            <span className="font-semibold text-gray-600 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
+              Filter by Month &amp; Week:
+            </span>
+            <div className="flex items-center gap-2">
+              <label className="text-gray-500">Month:</label>
+              <select
+                value={selectedWeeklyMonth}
+                onChange={(e) => setSelectedWeeklyMonth(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-800 font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              >
+                <option value="all">All Months</option>
+                {REPORT_MONTHS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-gray-500">Week:</label>
+              <select
+                value={selectedWeeklyWeek}
+                onChange={(e) => setSelectedWeeklyWeek(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-800 font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              >
+                <option value="all">All Weeks</option>
+                {REPORT_WEEKS.map((w) => (
+                  <option key={w.value} value={w.value}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {(selectedWeeklyMonth !== 'all' || selectedWeeklyWeek !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedWeeklyMonth('all');
+                  setSelectedWeeklyWeek('all');
+                }}
+                className="text-amber-700 hover:text-amber-900 underline font-semibold ml-auto"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Monitoring Reports List */}
@@ -570,8 +729,9 @@ export function AdminMonitoringReport() {
           <p className="text-sm text-gray-500 max-w-md mx-auto mt-1 mb-6">
             Click the button below to upload a Monitoring Report file under{' '}
             <span className="font-semibold text-gray-700">Mid-Term</span>,{' '}
-            <span className="font-semibold text-gray-700">End-Term</span>, or{' '}
-            <span className="font-semibold text-gray-700">Monthly</span>. It will automatically appear in the
+            <span className="font-semibold text-gray-700">End-Term</span>,{' '}
+            <span className="font-semibold text-gray-700">Monthly</span>, or{' '}
+            <span className="font-semibold text-gray-700">Weekly</span>. It will automatically appear in the
             Trainees&apos; accounts for them to view, preview, and attach their submission.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-2">
@@ -598,6 +758,14 @@ export function AdminMonitoringReport() {
             >
               <Plus className="w-4 h-4" />
               Add Monthly File
+            </button>
+            <button
+              type="button"
+              onClick={() => handleOpenAddModal('weekly')}
+              className="inline-flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-semibold shadow-sm"
+            >
+              <Plus className="w-4 h-4" />
+              Add Weekly File
             </button>
           </div>
         </div>
@@ -645,6 +813,14 @@ export function AdminMonitoringReport() {
                       >
                         {meta.label}
                       </span>
+                      {(report.month || report.week) && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                          <Calendar className="w-3 h-3 text-amber-600" />
+                          {report.month ? report.month : ''}
+                          {report.month && report.week ? ' • ' : ''}
+                          {report.week ? report.week : ''}
+                        </span>
+                      )}
                       <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-700">
                         <Users className="w-3 h-3" />
                         {report.targetTraineeId === 'all' || report.traineeId === 'all'
@@ -798,6 +974,14 @@ export function AdminMonitoringReport() {
                                     {sub.studentId && (
                                       <span className="text-xs px-2 py-0.5 rounded bg-white border border-gray-200 text-gray-600 font-mono">
                                         {sub.studentId}
+                                      </span>
+                                    )}
+                                    {(sub.month || sub.week) && (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-900 border border-amber-300">
+                                        <Calendar className="w-3 h-3 text-amber-700" />
+                                        {sub.month ? sub.month : ''}
+                                        {sub.month && sub.week ? ' • ' : ''}
+                                        {sub.week ? sub.week : ''}
                                       </span>
                                     )}
                                     <span
@@ -976,20 +1160,20 @@ export function AdminMonitoringReport() {
             </div>
 
             <form onSubmit={handleCreateMonitoringReportFile} className="p-6 space-y-4">
-              {/* Period / Category Selector: Mid-Term, End-Term, Monthly */}
+              {/* Period / Category Selector: Mid-Term, End-Term, Monthly, Weekly */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-2">
                   Select Monitoring Period *
                 </label>
-                <div className="grid grid-cols-3 gap-2.5">
-                  {(['midterm', 'endterm', 'monthly'] as MonitoringReportCategory[]).map((cat) => {
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {(['midterm', 'endterm', 'monthly', 'weekly'] as MonitoringReportCategory[]).map((cat) => {
                     const active = formCategory === cat;
                     return (
                       <button
                         key={cat}
                         type="button"
                         onClick={() => handleCategorySelectInModal(cat)}
-                        className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all ${active
+                        className={`py-2 px-2.5 rounded-xl text-xs font-bold border transition-all text-center ${active
                             ? CATEGORY_META[cat].activeTabClass
                             : 'bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100'
                           }`}
@@ -1000,6 +1184,50 @@ export function AdminMonitoringReport() {
                   })}
                 </div>
               </div>
+
+              {/* If Weekly or Monthly: Select Month & Week */}
+              {(formCategory === 'weekly' || formCategory === 'monthly') && (
+                <div className={`grid ${formCategory === 'weekly' ? 'grid-cols-1 sm:grid-cols-2' : 'grid-cols-1'} gap-3 p-3.5 bg-amber-50/60 border border-amber-200 rounded-xl`}>
+                  <div>
+                    <label className="block text-xs font-bold text-amber-900 mb-1">
+                      Select Month *
+                    </label>
+                    <select
+                      value={formMonth}
+                      onChange={(e) => handleFormMonthChange(e.target.value)}
+                      className="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-amber-300 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {REPORT_MONTHS.map((m) => {
+                        const val = `${m} ${currentYear}`;
+                        return (
+                          <option key={val} value={val}>
+                            {val}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+
+                  {formCategory === 'weekly' && (
+                    <div>
+                      <label className="block text-xs font-bold text-amber-900 mb-1">
+                        Select Week *
+                      </label>
+                      <select
+                        value={formWeek}
+                        onChange={(e) => handleFormWeekChange(e.target.value)}
+                        className="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-amber-300 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                      >
+                        {REPORT_WEEKS.map((w) => (
+                          <option key={w.value} value={w.value}>
+                            {w.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Title */}
               <div>

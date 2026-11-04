@@ -5912,9 +5912,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const year = new Date().getFullYear();
       const count = monitoringReports.length + 1;
       const reportNumber = `CHMSU-MR-${year}-${String(count).padStart(3, '0')}`;
-      const category = data.category || (data.reportType === 'endterm' ? 'endterm' : data.reportType === 'monthly' ? 'monthly' : 'midterm');
+      const category = data.category || (data.reportType === 'endterm' ? 'endterm' : data.reportType === 'monthly' ? 'monthly' : data.reportType === 'weekly' ? 'weekly' : 'midterm');
       const term = data.term || (category === 'endterm' ? 'endterm' : 'midterm');
-      const frequency = data.frequency || (category === 'monthly' ? 'monthly' : 'evaluation');
+      const frequency = data.frequency || (category === 'monthly' ? 'monthly' : category === 'weekly' ? 'weekly' : 'evaluation');
       const newReport: MonitoringReport = {
         ...data,
         category,

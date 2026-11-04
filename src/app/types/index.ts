@@ -636,18 +636,20 @@ export interface MonitoringReport {
   traineeFeedback?: string;
   renderedHours?: number;
 
-  // File-based Monitoring Report fields (Mid-Term, End-Term, Monthly)
-  category?: 'midterm' | 'endterm' | 'monthly';
+  // File-based Monitoring Report fields (Mid-Term, End-Term, Monthly, Weekly)
+  category?: 'midterm' | 'endterm' | 'monthly' | 'weekly';
   title?: string;
   description?: string;
   createdByRole?: 'instructor' | 'trainee';
   targetTraineeId?: string; // 'all' or specific traineeId
+  month?: string; // e.g. "November 2026"
+  week?: string;  // e.g. "Week 1", "Week 2", "Week 3", "Week 4", "Week 5"
   instructorFiles?: TraineeDocumentFile[];
   traineeFiles?: TraineeDocumentFile[];
   submissions?: MonitoringReportSubmission[];
 }
 
-export type MonitoringReportCategory = 'midterm' | 'endterm' | 'monthly';
+export type MonitoringReportCategory = 'midterm' | 'endterm' | 'monthly' | 'weekly';
 
 export interface MonitoringReportSubmission {
   id: string;
@@ -658,6 +660,8 @@ export interface MonitoringReportSubmission {
   course?: string;
   hteCompanyName?: string;
   category: MonitoringReportCategory;
+  month?: string;
+  week?: string;
   files: TraineeDocumentFile[];
   notes?: string;
   submittedAt: string;

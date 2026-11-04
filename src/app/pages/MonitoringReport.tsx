@@ -18,6 +18,7 @@ import {
   Download,
   CheckCircle2,
   Clock,
+  Calendar,
   X,
   FileImage,
   FileCheck,
@@ -28,6 +29,29 @@ import {
   Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+export const REPORT_MONTHS = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+];
+
+export const REPORT_WEEKS = [
+  { value: 'Week 1', label: 'Week 1 (Days 1 - 7)' },
+  { value: 'Week 2', label: 'Week 2 (Days 8 - 14)' },
+  { value: 'Week 3', label: 'Week 3 (Days 15 - 21)' },
+  { value: 'Week 4', label: 'Week 4 (Days 22 - 28)' },
+  { value: 'Week 5', label: 'Week 5 (Days 29 - End of Month)' },
+];
 
 const CATEGORY_META: Record<
   MonitoringReportCategory,
@@ -51,14 +75,22 @@ const CATEGORY_META: Record<
     activeTabClass: 'bg-purple-600 text-white shadow-sm',
     defaultTitle: 'Monthly Monitoring Report',
   },
+  weekly: {
+    label: 'Weekly',
+    badgeClass: 'bg-amber-50 text-amber-700 border-amber-200',
+    activeTabClass: 'bg-amber-600 text-white shadow-sm',
+    defaultTitle: 'Weekly Monitoring Report',
+  },
 };
 
 function getReportCategory(r: MonitoringReportType): MonitoringReportCategory {
-  if (r.category === 'midterm' || r.category === 'endterm' || r.category === 'monthly') {
+  if (r.category === 'midterm' || r.category === 'endterm' || r.category === 'monthly' || r.category === 'weekly') {
     return r.category;
   }
-  if (r.reportType === 'endterm' || r.term === 'endterm') return 'endterm';
-  if (r.reportType === 'monthly' || r.frequency === 'monthly') return 'monthly';
+  const typeOrFreq = `${r.reportType || ''} ${r.frequency || ''} ${r.term || ''} ${r.title || ''}`.toLowerCase();
+  if (typeOrFreq.includes('week')) return 'weekly';
+  if (typeOrFreq.includes('end')) return 'endterm';
+  if (typeOrFreq.includes('month')) return 'monthly';
   return 'midterm';
 }
 
@@ -139,11 +171,17 @@ export function MonitoringReport() {
 
   const [selectedCategory, setSelectedCategory] = useState<'all' | MonitoringReportCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const currentMonthName = REPORT_MONTHS[new Date().getMonth()];
+  const currentYear = new Date().getFullYear();
+  const [selectedWeeklyMonth, setSelectedWeeklyMonth] = useState<string>('all');
+  const [selectedWeeklyWeek, setSelectedWeeklyWeek] = useState<string>('all');
 
   // Submit / Attach File Modal state (ONLY for an Instructor-created report)
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   const [targetReportForSubmit, setTargetReportForSubmit] = useState<MonitoringReportType | null>(null);
   const [submitNotes, setSubmitNotes] = useState('');
+  const [submitMonth, setSubmitMonth] = useState<string>(`${currentMonthName} ${currentYear}`);
+  const [submitWeek, setSubmitWeek] = useState<string>('Week 1');
   const [pendingFiles, setPendingFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -173,11 +211,11 @@ export function MonitoringReport() {
     });
   }, [monitoringReports, traineeId, studentId]);
 
-  const getMySubmissionForReport = (report: MonitoringReportType): MonitoringReportSubmission | null => {
+  const getMySubmissionsForReport = (report: MonitoringReportType): MonitoringReportSubmission[] => {
     const cleanId = traineeId.toLowerCase();
     const cleanStudentId = studentId.toLowerCase();
 
-    const matchedSub = (report.submissions || []).find((s) => {
+    return (report.submissions || []).filter((s) => {
       const sTrainee = (s.traineeId || '').toLowerCase();
       const sStudent = (s.studentId || '').toLowerCase();
       return (
@@ -186,14 +224,18 @@ export function MonitoringReport() {
         s.traineeName.toLowerCase() === traineeName.toLowerCase()
       );
     });
+  };
 
-    return matchedSub || null;
+  const getMySubmissionForReport = (report: MonitoringReportType): MonitoringReportSubmission | null => {
+    const subs = getMySubmissionsForReport(report);
+    return subs.length > 0 ? subs[0] : null;
   };
 
   const counts = useMemo(() => {
     let midterm = 0;
     let endterm = 0;
     let monthly = 0;
+    let weekly = 0;
     let mySubmittedCount = 0;
 
     visibleReports.forEach((r) => {
@@ -201,9 +243,10 @@ export function MonitoringReport() {
       if (cat === 'midterm') midterm++;
       else if (cat === 'endterm') endterm++;
       else if (cat === 'monthly') monthly++;
+      else if (cat === 'weekly') weekly++;
 
-      const mySub = getMySubmissionForReport(r);
-      if (mySub && mySub.files.length > 0) {
+      const mySubs = getMySubmissionsForReport(r);
+      if (mySubs.some((s) => s.files.length > 0)) {
         mySubmittedCount++;
       }
     });
@@ -213,6 +256,7 @@ export function MonitoringReport() {
       midterm,
       endterm,
       monthly,
+      weekly,
       mySubmittedCount,
     };
   }, [visibleReports, traineeId, studentId]);
@@ -222,23 +266,50 @@ export function MonitoringReport() {
       const cat = getReportCategory(r);
       if (selectedCategory !== 'all' && cat !== selectedCategory) return false;
 
+      if (selectedCategory === 'weekly') {
+        if (selectedWeeklyMonth !== 'all') {
+          const rMonth = (r.month || r.title || r.periodCovered || '').toLowerCase();
+          const hasMatchingSub = (r.submissions || []).some((s) =>
+            (s.month || '').toLowerCase().includes(selectedWeeklyMonth.toLowerCase())
+          );
+          if (!rMonth.includes(selectedWeeklyMonth.toLowerCase()) && !hasMatchingSub) return false;
+        }
+        if (selectedWeeklyWeek !== 'all') {
+          const rWeek = (r.week || r.title || r.periodCovered || '').toLowerCase();
+          const hasMatchingSub = (r.submissions || []).some((s) =>
+            (s.week || '').toLowerCase().includes(selectedWeeklyWeek.toLowerCase())
+          );
+          if (!rWeek.includes(selectedWeeklyWeek.toLowerCase()) && !hasMatchingSub) return false;
+        }
+      }
+
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase();
         const matchTitle = (r.title || r.periodCovered || '').toLowerCase().includes(q);
         const matchDesc = (r.description || r.tasksAccomplished || '').toLowerCase().includes(q);
         const matchInstFiles = (r.instructorFiles || []).some((f) => f.name.toLowerCase().includes(q));
-        const mySub = getMySubmissionForReport(r);
-        const matchMyFiles = (mySub?.files || []).some((f) => f.name.toLowerCase().includes(q));
+        const mySubs = getMySubmissionsForReport(r);
+        const matchMyFiles = mySubs.some((s) =>
+          (s.files || []).some((f) => f.name.toLowerCase().includes(q)) ||
+          (s.week || '').toLowerCase().includes(q) ||
+          (s.month || '').toLowerCase().includes(q)
+        );
         return matchTitle || matchDesc || matchInstFiles || matchMyFiles;
       }
 
       return true;
     });
-  }, [visibleReports, selectedCategory, searchQuery]);
+  }, [visibleReports, selectedCategory, searchQuery, selectedWeeklyMonth, selectedWeeklyWeek]);
 
   const openSubmitModal = (report: MonitoringReportType) => {
-    const existingSub = getMySubmissionForReport(report);
     setTargetReportForSubmit(report);
+    const defaultMonth = report.month || `${currentMonthName} ${currentYear}`;
+    const defaultWeek = report.week || 'Week 1';
+    setSubmitMonth(defaultMonth);
+    setSubmitWeek(defaultWeek);
+    const existingSub = getMySubmissionsForReport(report).find(
+      (s) => (!s.week || s.week === defaultWeek) && (!s.month || s.month === defaultMonth)
+    );
     setSubmitNotes(existingSub?.notes || '');
     setPendingFiles([]);
     setShowSubmitModal(true);
@@ -277,20 +348,37 @@ export function MonitoringReport() {
   const attachFilesToReport = async (
     report: MonitoringReportType,
     newFiles: TraineeDocumentFile[],
-    notes?: string
+    notes?: string,
+    passedMonth?: string,
+    passedWeek?: string
   ) => {
     const cat = getReportCategory(report);
-    const existingSub = getMySubmissionForReport(report);
     const currentSubs = report.submissions || [];
+    const isWeekly = cat === 'weekly' || Boolean(passedWeek);
+
+    // Look for existing submission for this trainee and specific week/month if weekly
+    const existingSub = currentSubs.find((s) => {
+      const matchTrainee =
+        (traineeId && s.traineeId?.toLowerCase() === traineeId.toLowerCase()) ||
+        (studentId && s.studentId?.toLowerCase() === studentId.toLowerCase()) ||
+        s.traineeName.toLowerCase() === traineeName.toLowerCase();
+      if (!matchTrainee) return false;
+      if (isWeekly && passedWeek) {
+        return s.week === passedWeek && (!passedMonth || s.month === passedMonth);
+      }
+      return true;
+    });
 
     let updatedSubs: MonitoringReportSubmission[];
-    if (existingSub && currentSubs.some((s) => s.id === existingSub.id)) {
+    if (existingSub) {
       updatedSubs = currentSubs.map((s) =>
         s.id === existingSub.id
           ? {
               ...s,
               files: [...(s.files || []), ...newFiles],
               notes: notes !== undefined && notes.trim() ? notes.trim() : s.notes,
+              month: passedMonth || s.month || report.month,
+              week: passedWeek || s.week || report.week,
               submittedAt: new Date().toISOString(),
             }
           : s
@@ -305,8 +393,10 @@ export function MonitoringReport() {
         course: employee?.course || 'BSIT',
         hteCompanyName: employee?.companyName || 'Host Training Establishment',
         category: cat,
-        files: [...(existingSub?.files || []), ...newFiles],
+        files: newFiles,
         notes: notes?.trim() || undefined,
+        month: passedMonth || report.month,
+        week: passedWeek || report.week,
         submittedAt: new Date().toISOString(),
         status: 'submitted',
       };
@@ -325,14 +415,23 @@ export function MonitoringReport() {
     setIsSubmitting(true);
     try {
       const cat = getReportCategory(targetReportForSubmit);
+      const isWeekly = cat === 'weekly';
       const uploadedFiles =
         pendingFiles.length > 0
           ? await uploadFilesList(pendingFiles, `trainee_mr_${cat}_${Date.now()}`)
           : [];
-      await attachFilesToReport(targetReportForSubmit, uploadedFiles, submitNotes);
+      await attachFilesToReport(
+        targetReportForSubmit,
+        uploadedFiles,
+        submitNotes,
+        isWeekly ? submitMonth : targetReportForSubmit.month,
+        isWeekly ? submitWeek : targetReportForSubmit.week
+      );
 
       toast.success(
-        `Your ${CATEGORY_META[cat].label} submission has been saved and synced to the Instructor account!`
+        isWeekly
+          ? `Your Weekly submission for ${submitMonth} (${submitWeek}) has been saved and synced to the Instructor!`
+          : `Your ${CATEGORY_META[cat].label} submission has been saved and synced to the Instructor account!`
       );
       setShowSubmitModal(false);
       setPendingFiles([]);
@@ -369,17 +468,23 @@ export function MonitoringReport() {
   const handleRemoveMySubmittedFile = async (
     report: MonitoringReportType,
     fileId?: string,
-    fileName?: string
+    fileName?: string,
+    submissionId?: string
   ) => {
-    const mySub = getMySubmissionForReport(report);
-    if (!mySub) return;
-
-    const remainingFiles = (mySub.files || []).filter((f) =>
-      fileId ? f.id !== fileId : f.name !== fileName
-    );
-
     const updatedSubs = (report.submissions || [])
-      .map((s) => (s.id === mySub.id ? { ...s, files: remainingFiles } : s))
+      .map((s) => {
+        if (submissionId && s.id !== submissionId) return s;
+        const matchTrainee =
+          (traineeId && s.traineeId?.toLowerCase() === traineeId.toLowerCase()) ||
+          (studentId && s.studentId?.toLowerCase() === studentId.toLowerCase()) ||
+          s.traineeName.toLowerCase() === traineeName.toLowerCase();
+        if (!matchTrainee) return s;
+
+        const remainingFiles = (s.files || []).filter((f) =>
+          fileId ? f.id !== fileId : f.name !== fileName
+        );
+        return { ...s, files: remainingFiles };
+      })
       .filter((s) => s.files.length > 0);
 
     await updateMonitoringReport(report.id, {
@@ -417,9 +522,10 @@ export function MonitoringReport() {
             <h1 className="text-2xl font-bold text-gray-900">Monitoring Report</h1>
             <p className="text-sm text-gray-600 mt-1">
               Wait for your Instructor to post <span className="font-semibold text-gray-800">Mid-Term</span>,{' '}
-              <span className="font-semibold text-gray-800">End-Term</span>, or{' '}
-              <span className="font-semibold text-gray-800">Monthly</span> Monitoring Report files. Once posted by
-              the Instructor, you can view, preview, and attach your completed file on the report item below.
+              <span className="font-semibold text-gray-800">End-Term</span>,{' '}
+              <span className="font-semibold text-gray-800">Monthly</span>, or{' '}
+              <span className="font-semibold text-gray-800">Weekly</span> Monitoring Report files. Once posted by
+              the Instructor, you can choose what week in that specific month to pass your completed file, view, preview, and attach your submission.
             </p>
           </div>
           <div className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold shrink-0">
@@ -429,7 +535,7 @@ export function MonitoringReport() {
         </div>
 
         {/* Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mt-6">
           <button
             type="button"
             onClick={() => setSelectedCategory('all')}
@@ -487,68 +593,147 @@ export function MonitoringReport() {
             <div className="text-2xl font-bold mt-1">{counts.monthly}</div>
             <div className="text-[11px] opacity-80 mt-0.5">Monthly Files</div>
           </button>
+
+          <button
+            type="button"
+            onClick={() => setSelectedCategory('weekly')}
+            className={`text-left p-4 rounded-xl border transition-all ${
+              selectedCategory === 'weekly'
+                ? 'bg-amber-600 text-white border-amber-600 shadow-sm'
+                : 'bg-amber-50/60 hover:bg-amber-50 text-amber-900 border-amber-200'
+            }`}
+          >
+            <div className="text-xs font-semibold uppercase tracking-wider opacity-85">Weekly</div>
+            <div className="text-2xl font-bold mt-1">{counts.weekly}</div>
+            <div className="text-[11px] opacity-80 mt-0.5">Weekly Files</div>
+          </button>
         </div>
       </div>
 
       {/* Category Filter Tabs & Search */}
-      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('all')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              selectedCategory === 'all'
-                ? 'bg-slate-900 text-white shadow-sm'
-                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-            }`}
-          >
-            All ({counts.all})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('midterm')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              selectedCategory === 'midterm'
-                ? CATEGORY_META.midterm.activeTabClass
-                : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
-            }`}
-          >
-            Mid-Term ({counts.midterm})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('endterm')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              selectedCategory === 'endterm'
-                ? CATEGORY_META.endterm.activeTabClass
-                : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
-            }`}
-          >
-            End-Term ({counts.endterm})
-          </button>
-          <button
-            type="button"
-            onClick={() => setSelectedCategory('monthly')}
-            className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
-              selectedCategory === 'monthly'
-                ? CATEGORY_META.monthly.activeTabClass
-                : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
-            }`}
-          >
-            Monthly ({counts.monthly})
-          </button>
+      <div className="bg-white rounded-2xl border border-gray-200 shadow-sm p-4 space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('all')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                selectedCategory === 'all'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+              }`}
+            >
+              All ({counts.all})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('midterm')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                selectedCategory === 'midterm'
+                  ? CATEGORY_META.midterm.activeTabClass
+                  : 'bg-blue-50 text-blue-700 hover:bg-blue-100'
+              }`}
+            >
+              Mid-Term ({counts.midterm})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('endterm')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                selectedCategory === 'endterm'
+                  ? CATEGORY_META.endterm.activeTabClass
+                  : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+              }`}
+            >
+              End-Term ({counts.endterm})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('monthly')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                selectedCategory === 'monthly'
+                  ? CATEGORY_META.monthly.activeTabClass
+                  : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+              }`}
+            >
+              Monthly ({counts.monthly})
+            </button>
+            <button
+              type="button"
+              onClick={() => setSelectedCategory('weekly')}
+              className={`px-4 py-2 rounded-xl text-xs font-semibold transition-all ${
+                selectedCategory === 'weekly'
+                  ? CATEGORY_META.weekly.activeTabClass
+                  : 'bg-amber-50 text-amber-700 hover:bg-amber-100'
+              }`}
+            >
+              Weekly ({counts.weekly})
+            </button>
+          </div>
+
+          <div className="relative w-full sm:w-72">
+            <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Search monitoring report files..."
+              className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
         </div>
 
-        <div className="relative w-full sm:w-72">
-          <Search className="w-4 h-4 text-gray-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search monitoring report files..."
-            className="w-full pl-9 pr-4 py-2 text-sm rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-          />
-        </div>
+        {/* Weekly Specific Filters: Month and Week selection */}
+        {selectedCategory === 'weekly' && (
+          <div className="pt-3 border-t border-gray-100 flex flex-wrap items-center gap-3 text-xs">
+            <span className="font-semibold text-gray-600 flex items-center gap-1.5">
+              <Calendar className="w-3.5 h-3.5 text-amber-600" />
+              Filter by Month &amp; Week:
+            </span>
+            <div className="flex items-center gap-2">
+              <label className="text-gray-500">Month:</label>
+              <select
+                value={selectedWeeklyMonth}
+                onChange={(e) => setSelectedWeeklyMonth(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-800 font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              >
+                <option value="all">All Months</option>
+                {REPORT_MONTHS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2">
+              <label className="text-gray-500">Week:</label>
+              <select
+                value={selectedWeeklyWeek}
+                onChange={(e) => setSelectedWeeklyWeek(e.target.value)}
+                className="px-2.5 py-1.5 rounded-lg border border-gray-200 bg-gray-50 text-gray-800 font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
+              >
+                <option value="all">All Weeks</option>
+                {REPORT_WEEKS.map((w) => (
+                  <option key={w.value} value={w.value}>
+                    {w.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {(selectedWeeklyMonth !== 'all' || selectedWeeklyWeek !== 'all') && (
+              <button
+                type="button"
+                onClick={() => {
+                  setSelectedWeeklyMonth('all');
+                  setSelectedWeeklyWeek('all');
+                }}
+                className="text-amber-700 hover:text-amber-900 underline font-semibold ml-auto"
+              >
+                Reset Filters
+              </button>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Monitoring Report Cards */}
@@ -576,8 +761,9 @@ export function MonitoringReport() {
             const cat = getReportCategory(report);
             const meta = CATEGORY_META[cat];
             const instructorFiles = report.instructorFiles || [];
-            const mySubmission = getMySubmissionForReport(report);
-            const myFiles = mySubmission?.files || [];
+            const mySubmissions = getMySubmissionsForReport(report);
+            const allMyFilesCount = mySubmissions.reduce((acc, s) => acc + (s.files?.length || 0), 0);
+            const isWeekly = cat === 'weekly';
 
             return (
               <div
@@ -593,17 +779,19 @@ export function MonitoringReport() {
                       >
                         {meta.label}
                       </span>
-                      {mySubmission ? (
-                        <span
-                          className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                            mySubmission.status === 'reviewed' || Boolean(mySubmission.instructorRemarks?.trim())
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}
-                        >
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          {mySubmission.status === 'reviewed' || Boolean(mySubmission.instructorRemarks?.trim())
-                            ? 'Reviewed by Instructor'
+                      {(report.month || report.week) && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+                          <Calendar className="w-3 h-3 text-amber-600" />
+                          {report.month ? report.month : ''}
+                          {report.month && report.week ? ' • ' : ''}
+                          {report.week ? report.week : ''}
+                        </span>
+                      )}
+                      {mySubmissions.length > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          {isWeekly
+                            ? `${mySubmissions.length} Week${mySubmissions.length > 1 ? 's' : ''} Submitted`
                             : 'File Submitted'}
                         </span>
                       ) : (
@@ -631,22 +819,18 @@ export function MonitoringReport() {
 
                   {/* Action button to attach/submit file directly onto this Instructor-created Monitoring Report */}
                   <div className="flex items-center gap-2 shrink-0">
-                    <label className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold cursor-pointer shadow-sm transition-colors">
+                    <button
+                      type="button"
+                      onClick={() => openSubmitModal(report)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm transition-colors"
+                    >
                       <Upload className="w-3.5 h-3.5" />
-                      {attachingReportId === report.id
-                        ? 'Uploading...'
-                        : myFiles.length > 0
+                      {isWeekly
+                        ? 'Pass Weekly Report'
+                        : mySubmissions.length > 0
                         ? 'Attach More Files'
                         : 'Submit / Attach File'}
-                      <input
-                        type="file"
-                        multiple
-                        accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
-                        onChange={(e) => handleQuickAttachOnCard(report, e)}
-                        className="hidden"
-                        disabled={attachingReportId === report.id}
-                      />
-                    </label>
+                    </button>
                   </div>
                 </div>
 
@@ -721,7 +905,7 @@ export function MonitoringReport() {
                     <div className="flex items-center justify-between">
                       <h4 className="text-xs font-bold uppercase tracking-wider text-gray-500 flex items-center gap-1.5">
                         <FileCheck className="w-3.5 h-3.5 text-blue-600" />
-                        Your Submitted / Attached File(s) ({myFiles.length})
+                        Your Submitted File(s) ({allMyFilesCount})
                       </h4>
                       <button
                         type="button"
@@ -729,118 +913,168 @@ export function MonitoringReport() {
                         className="text-xs font-semibold text-blue-600 hover:text-blue-700 inline-flex items-center gap-1"
                       >
                         <Plus className="w-3.5 h-3.5" />
-                        Add with Notes
+                        {isWeekly ? 'Pass for Another Week' : 'Add with Notes'}
                       </button>
                     </div>
 
-                    {myFiles.length === 0 ? (
-                      <label className="flex flex-col items-center justify-center p-5 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/30 hover:bg-blue-50/60 cursor-pointer transition-colors text-center">
+                    {mySubmissions.length === 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => openSubmitModal(report)}
+                        className="w-full flex flex-col items-center justify-center p-5 rounded-xl border-2 border-dashed border-blue-200 bg-blue-50/30 hover:bg-blue-50/60 cursor-pointer transition-colors text-center"
+                      >
                         <Upload className="w-5 h-5 text-blue-600 mb-1" />
                         <span className="text-xs font-semibold text-blue-900">
-                          Click here to attach or submit your {meta.label} file(s)
+                          {isWeekly
+                            ? 'Click here to choose week and pass your Weekly report file(s)'
+                            : `Click here to attach or submit your ${meta.label} file(s)`}
                         </span>
                         <span className="text-[11px] text-gray-500 mt-0.5">
                           PDF, Word (.doc, .docx), or Image (seen in both accounts)
                         </span>
-                        <input
-                          type="file"
-                          multiple
-                          accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
-                          onChange={(e) => handleQuickAttachOnCard(report, e)}
-                          className="hidden"
-                        />
-                      </label>
+                      </button>
                     ) : (
-                      <div className="space-y-2">
-                        {myFiles.map((file, idx) => (
+                      <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
+                        {mySubmissions.map((sub) => (
                           <div
-                            key={file.id || `${file.name}-${idx}`}
-                            className="flex items-center justify-between gap-3 p-3 rounded-xl border border-blue-200 bg-blue-50/40 hover:bg-blue-50/70 transition-colors"
+                            key={sub.id}
+                            className="p-3.5 rounded-xl border border-blue-100 bg-blue-50/30 space-y-2.5"
                           >
-                            <div className="flex items-center gap-3 min-w-0">
-                              <div className="w-9 h-9 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
-                                {isImageFile(file) ? (
-                                  <FileImage className="w-4 h-4" />
-                                ) : (
-                                  <FileText className="w-4 h-4" />
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  {(sub.month || sub.week) && (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                      <Calendar className="w-3 h-3 text-amber-700" />
+                                      {sub.month ? `${sub.month}` : ''}
+                                      {sub.month && sub.week ? ' • ' : ''}
+                                      {sub.week ? sub.week : ''}
+                                    </span>
+                                  )}
+                                  <span
+                                    className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                                      sub.status === 'reviewed' || Boolean(sub.instructorRemarks?.trim())
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-blue-100 text-blue-800'
+                                    }`}
+                                  >
+                                    {sub.status === 'reviewed' || Boolean(sub.instructorRemarks?.trim()) ? (
+                                      <>
+                                        <CheckCircle2 className="w-3 h-3" />
+                                        Reviewed by Instructor
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Clock className="w-3 h-3" />
+                                        Submitted
+                                      </>
+                                    )}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-gray-500 mt-1">
+                                  Passed{' '}
+                                  {new Date(sub.submittedAt).toLocaleString('en-US', {
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric',
+                                    hour: 'numeric',
+                                    minute: '2-digit',
+                                  })}
+                                </p>
+                                {sub.notes && (
+                                  <p className="text-xs text-gray-600 italic mt-0.5">
+                                    Note: &ldquo;{sub.notes}&rdquo;
+                                  </p>
                                 )}
                               </div>
-                              <div className="min-w-0">
-                                <p className="text-sm font-semibold text-gray-900 truncate">{file.name}</p>
-                                <p className="text-[11px] text-gray-500">
-                                  {formatFileSize(file.size)} • Your Attached File
+                            </div>
+
+                            {/* Files attached in this submission */}
+                            <div className="space-y-1.5">
+                              {(sub.files || []).map((file, fIdx) => (
+                                <div
+                                  key={file.id || `${file.name}-${fIdx}`}
+                                  className="flex items-center justify-between gap-2 p-2.5 rounded-lg bg-white border border-gray-200"
+                                >
+                                  <div className="flex items-center gap-2.5 min-w-0">
+                                    <div className="w-8 h-8 rounded-lg bg-blue-100 text-blue-700 flex items-center justify-center shrink-0">
+                                      {isImageFile(file) ? (
+                                        <FileImage className="w-4 h-4" />
+                                      ) : (
+                                        <FileText className="w-4 h-4" />
+                                      )}
+                                    </div>
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-semibold text-gray-900 truncate">{file.name}</p>
+                                      <p className="text-[10px] text-gray-500">
+                                        {formatFileSize(file.size)} • Your File
+                                      </p>
+                                    </div>
+                                  </div>
+
+                                  <div className="flex items-center gap-1.5 shrink-0">
+                                    <button
+                                      type="button"
+                                      onClick={() =>
+                                        setPreviewState({
+                                          file,
+                                          ownerLabel: `Your File (${sub.week || sub.month || traineeName})`,
+                                          categoryLabel: meta.label,
+                                        })
+                                      }
+                                      className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold"
+                                    >
+                                      <Eye className="w-3.5 h-3.5" />
+                                      Preview
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDownloadFile(file)}
+                                      className="p-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700"
+                                      title="Download File"
+                                    >
+                                      <Download className="w-3.5 h-3.5" />
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleRemoveMySubmittedFile(report, file.id, file.name, sub.id)}
+                                      className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-red-50 text-red-500"
+                                      title="Remove File"
+                                    >
+                                      <X className="w-3.5 h-3.5" />
+                                    </button>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+
+                            {/* Instructor Remarks for this submission */}
+                            {(Boolean(sub.instructorRemarks?.trim()) || sub.status === 'reviewed') && (
+                              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="inline-flex items-center gap-1.5 font-bold text-emerald-800">
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                    Instructor Remarks
+                                  </span>
+                                  {sub.reviewedAt && (
+                                    <span className="text-[10px] text-emerald-700 font-medium">
+                                      {new Date(sub.reviewedAt).toLocaleDateString('en-US', {
+                                        month: 'short',
+                                        day: 'numeric',
+                                        year: 'numeric',
+                                      })}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs font-medium text-emerald-900 pl-4">
+                                  {sub.instructorRemarks?.trim()
+                                    ? `“${sub.instructorRemarks}”`
+                                    : 'Approved / Reviewed by Instructor'}
                                 </p>
                               </div>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setPreviewState({
-                                    file,
-                                    ownerLabel: `Your Submitted File (${traineeName})`,
-                                    categoryLabel: meta.label,
-                                  })
-                                }
-                                className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                                Preview
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDownloadFile(file)}
-                                className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-gray-100 text-gray-700"
-                                title="Download Your File"
-                              >
-                                <Download className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveMySubmittedFile(report, file.id, file.name)}
-                                className="p-1.5 rounded-lg bg-white border border-gray-200 hover:bg-red-50 text-red-500"
-                                title="Remove File"
-                              >
-                                <X className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
+                            )}
                           </div>
                         ))}
-                      </div>
-                    )}
-
-                    {mySubmission?.notes && (
-                      <p className="text-xs text-gray-600 italic px-1">
-                        Your note: &ldquo;{mySubmission.notes}&rdquo;
-                      </p>
-                    )}
-
-                    {(Boolean(mySubmission?.instructorRemarks?.trim()) || mySubmission?.status === 'reviewed') && (
-                      <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 space-y-1 shadow-xs">
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="inline-flex items-center gap-1.5 font-bold text-emerald-800">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                            Instructor Remarks
-                          </span>
-                          {mySubmission?.reviewedAt && (
-                            <span className="text-[11px] text-emerald-700 font-medium">
-                              Reviewed{' '}
-                              {new Date(mySubmission.reviewedAt).toLocaleString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric',
-                                hour: 'numeric',
-                                minute: '2-digit',
-                              })}
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm font-medium text-emerald-900 pl-5">
-                          {mySubmission?.instructorRemarks?.trim()
-                            ? `“${mySubmission.instructorRemarks}”`
-                            : 'Approved / Reviewed by Instructor'}
-                        </p>
                       </div>
                     )}
                   </div>
@@ -872,6 +1106,70 @@ export function MonitoringReport() {
             </div>
 
             <form onSubmit={handleSubmitModalForm} className="p-6 space-y-4">
+              {/* If Weekly: Select Month and Week to pass */}
+              {getReportCategory(targetReportForSubmit) === 'weekly' && (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-3.5 bg-amber-50/70 border border-amber-200 rounded-xl">
+                  <div>
+                    <label className="block text-xs font-bold text-amber-900 mb-1">
+                      Select Month *
+                    </label>
+                    <select
+                      value={submitMonth}
+                      onChange={(e) => setSubmitMonth(e.target.value)}
+                      className="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-amber-300 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {REPORT_MONTHS.map((m) => {
+                        const val = `${m} ${currentYear}`;
+                        return (
+                          <option key={val} value={val}>
+                            {val}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-amber-900 mb-1">
+                      Choose Week to Pass *
+                    </label>
+                    <select
+                      value={submitWeek}
+                      onChange={(e) => setSubmitWeek(e.target.value)}
+                      className="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-amber-300 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    >
+                      {REPORT_WEEKS.map((w) => (
+                        <option key={w.value} value={w.value}>
+                          {w.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+
+              {/* If Monthly: Select Month */}
+              {getReportCategory(targetReportForSubmit) === 'monthly' && (
+                <div className="p-3.5 bg-purple-50/70 border border-purple-200 rounded-xl">
+                  <label className="block text-xs font-bold text-purple-900 mb-1">
+                    Select Month to Pass *
+                  </label>
+                  <select
+                    value={submitMonth}
+                    onChange={(e) => setSubmitMonth(e.target.value)}
+                    className="w-full px-3 py-2 text-xs font-semibold rounded-lg border border-purple-300 bg-white text-gray-800 focus:outline-none focus:ring-2 focus:ring-purple-500"
+                  >
+                    {REPORT_MONTHS.map((m) => {
+                      const val = `${m} ${currentYear}`;
+                      return (
+                        <option key={val} value={val}>
+                          {val}
+                        </option>
+                      );
+                    })}
+                  </select>
+                </div>
+              )}
+
               {/* Optional Note */}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-gray-700 mb-1">
