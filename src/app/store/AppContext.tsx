@@ -2724,20 +2724,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (useSupabase && !matchedEmp && !matchedHost) {
       try {
         const promises: Promise<any>[] = [];
+        const empCols = 'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, application_status, created_at';
         if (authEmail) {
-          promises.push(supabase.from('employees').select('*').ilike('email', authEmail).limit(1));
+          promises.push(supabase.from('employees').select(empCols).ilike('email', authEmail).limit(1));
         } else {
           promises.push(Promise.resolve({ data: null, error: null }));
         }
 
         if (authId) {
-          promises.push(supabase.from('employees').select('*').eq('id', authId).limit(1));
+          promises.push(supabase.from('employees').select(empCols).eq('id', authId).limit(1));
         } else {
           promises.push(Promise.resolve({ data: null, error: null }));
         }
 
         if (authEmail) {
-          promises.push(supabase.from('host_supervisors').select('*').ilike('email', authEmail).limit(1));
+          promises.push(supabase.from('host_supervisors').select('id, employee_id, email, name, company_name, contact_person, phone, academic_year, is_approved, active').ilike('email', authEmail).limit(1));
         } else {
           promises.push(Promise.resolve({ data: null, error: null }));
         }
@@ -2805,14 +2806,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         matchedEmp.role = 'admin';
         matchedEmp.position = 'OJT Instructor';
         if (useSupabase) {
-          try {
-            await supabase.from('employees').update({
-              position: 'OJT Instructor',
-              application_status: 'approved',
-            }).eq('id', matchedEmp.id);
-          } catch (syncErr) {
-            console.warn('Failed syncing instructor role to DB:', syncErr);
-          }
+          supabase.from('employees').update({
+            position: 'OJT Instructor',
+            application_status: 'approved',
+          }).eq('id', matchedEmp.id).catch((syncErr) => console.warn('Failed syncing instructor role to DB:', syncErr));
         }
       }
 
@@ -2821,14 +2818,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         matchedEmp.role = 'hte';
         matchedEmp.position = 'HTE Representative';
         if (useSupabase) {
-          try {
-            await supabase.from('employees').update({
-              position: 'HTE Representative',
-              application_status: 'approved',
-            }).eq('id', matchedEmp.id);
-          } catch (syncErr) {
-            console.warn('Failed syncing HTE role to DB:', syncErr);
-          }
+          supabase.from('employees').update({
+            position: 'HTE Representative',
+            application_status: 'approved',
+          }).eq('id', matchedEmp.id).catch((syncErr) => console.warn('Failed syncing HTE role to DB:', syncErr));
         }
       }
 
