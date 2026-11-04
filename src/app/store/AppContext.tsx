@@ -1,3 +1,4 @@
+import { sortAnnouncements } from '../utils/announcementHelper';
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { toast } from 'sonner';
 import { authAPI } from '../services/authApi';
@@ -95,7 +96,7 @@ const DEFAULT_ANNOUNCEMENTS: Announcement[] = [
       'Welcome to the Carlos Hilado Memorial State University On-the-Job Training Management System. Please make sure to clock in and out every working day using facial recognition and location verification.',
     type: 'success',
     targetRole: 'all',
-    isPinned: true,
+    isPinned: false,
     createdAt: '2026-09-07T08:30:00+08:00',
     createdBy: 'OJT Instructor',
   },
@@ -1801,7 +1802,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
             });
           }
           if (supabaseAnnouncements.length > 0) {
-            setAnnouncements(supabaseAnnouncements);
+            setAnnouncements((prev) => {
+              const merged = [...supabaseAnnouncements];
+              for (const p of prev) { if (!merged.some(m => m.id === p.id)) merged.push(p); }
+              const sorted = sortAnnouncements(merged);
+              saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, sorted);
+              return sorted;
+            });
             const fromAnn = extractCommentsFromAnnouncements(supabaseAnnouncements);
             if (fromAnn.length > 0) {
               setAnnouncementComments((prev) => {
@@ -2019,7 +2026,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
       if (supabaseAnnouncements && supabaseAnnouncements.length > 0) {
-        setAnnouncements(supabaseAnnouncements);
+        setAnnouncements((prev) => {
+          const merged = [...supabaseAnnouncements];
+          for (const p of prev) { if (!merged.some(m => m.id === p.id)) merged.push(p); }
+          const sorted = sortAnnouncements(merged);
+          saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, sorted);
+          return sorted;
+        });
         const fromAnn = extractCommentsFromAnnouncements(supabaseAnnouncements);
         if (fromAnn.length > 0) {
           setAnnouncementComments((prev) => {
@@ -4798,7 +4811,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Optimistically show it right away and persist to localStorage so Trainees see it immediately
     setAnnouncements((prev) => {
-      const updated = [newAnn, ...prev];
+      const updated = sortAnnouncements([newAnn, ...prev.filter((a) => a.id !== newAnn.id)]);
       saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
       try {
         window.dispatchEvent(new Event('storage'));
@@ -4822,7 +4835,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             }
             // Swap the optimistic local copy for the real DB row (preserving multi-file attachments)
             setAnnouncements((prev) => {
-              const updated = prev.map((a) => (a.id === newAnn.id ? enrichedCreated : a));
+              const updated = sortAnnouncements(prev.map((a) => (a.id === newAnn.id ? enrichedCreated : a)));
               saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
               try {
                 window.dispatchEvent(new Event('storage'));
@@ -4930,7 +4943,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return false;
     };
 
-    return announcements
+    const processed = announcements
       .filter((a) => {
         if (a.expiresAt && new Date(a.expiresAt) < now) return false;
         if (!matchesAudience(a.targetRole, role)) return false;
@@ -4970,12 +4983,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           } catch {}
         }
         return a;
-      })
-      .sort((a, b) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
+
+    return sortAnnouncements(processed);
   };
 
   const submitAnnouncementResponse = (

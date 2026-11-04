@@ -24,7 +24,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 
 import { authAPI } from '../../services/authApi';
@@ -33,6 +33,7 @@ import { API_BASE } from '../../services/config';
 import { Announcement, TraineeDocumentFile } from '../../types';
 import { AnnouncementAttachmentView } from '../../components/AnnouncementAttachmentView';
 import { formatFileSize } from '../../utils/attachmentHelper';
+import { sortAnnouncements } from '../../utils/announcementHelper';
 
 function toLocalDateStr(isoStr?: string): string {
   if (!isoStr) return '';
@@ -262,10 +263,15 @@ export function AdminAnnouncements() {
 
     let postCreatedAt = new Date().toISOString();
     if (form.customDate) {
-      const timePart = form.customTime || toLocalTimeStr(new Date().toISOString()) || '08:00';
-      const parsed = new Date(`${form.customDate}T${timePart}`);
-      if (!isNaN(parsed.getTime())) {
-        postCreatedAt = parsed.toISOString();
+      const todayStr = toLocalDateStr(new Date().toISOString());
+      const nowTimeStr = toLocalTimeStr(new Date().toISOString());
+      // If the user selected a custom date or non-default time, respect that date
+      if (form.customDate !== todayStr || (form.customTime && form.customTime !== nowTimeStr)) {
+        const timePart = form.customTime || nowTimeStr || '08:00';
+        const parsed = new Date(`${form.customDate}T${timePart}`);
+        if (!isNaN(parsed.getTime())) {
+          postCreatedAt = parsed.toISOString();
+        }
       }
     }
 
@@ -460,13 +466,9 @@ export function AdminAnnouncements() {
     return true;
   });
 
-  const sorted = [...filteredAnnouncements].sort((a, b) => {
-    if (a.isPinned && !b.isPinned) return -1;
-    if (!a.isPinned && b.isPinned) return 1;
-    const tA = new Date(a.createdAt).getTime();
-    const tB = new Date(b.createdAt).getTime();
-    return sortOrder === 'newest' ? tB - tA : tA - tB;
-  });
+  const sorted = useMemo(() => {
+    return sortAnnouncements(filteredAnnouncements, sortOrder);
+  }, [filteredAnnouncements, sortOrder]);
 
   const isExpired = (ann: Announcement) => {
     if (!ann.expiresAt) return false;

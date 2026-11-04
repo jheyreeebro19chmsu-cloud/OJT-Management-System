@@ -140,13 +140,22 @@ export default async function handler(req, res) {
       const { data, error } = await supabase
         .from('announcements')
         .select('*')
+        .order('is_pinned', { ascending: false, nullsFirst: false })
         .order('created_at', { ascending: false });
 
       if (error) {
         return sendJson(res, 500, { error: error.message });
       }
 
-      const formatted = (data || []).map(formatAnnouncement);
+      const formatted = (data || []).map(formatAnnouncement).sort((a, b) => {
+        if (a.isPinned && !b.isPinned) return -1;
+        if (!a.isPinned && b.isPinned) return 1;
+        const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+        const tB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+        const diff = (isNaN(tB) ? 0 : tB) - (isNaN(tA) ? 0 : tA);
+        if (diff !== 0) return diff;
+        return String(b.id || '').localeCompare(String(a.id || ''), undefined, { numeric: true });
+      });
       return sendJson(res, 200, formatted);
     }
 

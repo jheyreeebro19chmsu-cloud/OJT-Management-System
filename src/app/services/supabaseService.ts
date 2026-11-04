@@ -2501,7 +2501,7 @@ export async function deleteEvaluation(id: string): Promise<boolean> {
 }
 
 // ─── Announcements ───────────────────────────────────────────────────────────
-// FIXED: fetchAnnouncements now maps ALL columns (previously silently dropped photo,
+import { sortAnnouncements } from '../utils/announcementHelper';
 // reminder, deadline_at, comments, requires_submission, created_by_role).
 // FIXED: createAnnouncement now sends ALL fields to Supabase, and THROWS on error
 // instead of silently returning null (which is what let failed saves hide from you).
@@ -2525,7 +2525,7 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
     if (res && res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
-        return data as Announcement[];
+        return sortAnnouncements(data as Announcement[]);
       }
     }
   } catch (apiErr) {
@@ -2540,7 +2540,7 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
     return [];
   }
 
-  return (data || []).map((ann: any) => {
+  const mapped = (data || []).map((ann: any) => {
     let files = ann.files || undefined;
     let photo = ann.photo || undefined;
     if (photo && typeof photo === 'string' && photo.startsWith('{') && photo.includes('"url"')) {
@@ -2591,6 +2591,7 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
       requiresSubmission: ann.requires_submission,
     };
   });
+  return sortAnnouncements(mapped);
 }
 
 export async function createAnnouncement(announcement: Omit<Announcement, 'id'>): Promise<Announcement | null> {

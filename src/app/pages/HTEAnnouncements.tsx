@@ -32,6 +32,7 @@ import { useApp } from '../store/AppContext';
 import { Announcement } from '../types';
 import { AnnouncementAttachmentView } from '../components/AnnouncementAttachmentView';
 import { formatFileSize, parseAnnouncementAttachment } from '../utils/attachmentHelper';
+import { sortAnnouncements } from '../utils/announcementHelper';
 
 function toLocalDateStr(isoStr?: string): string {
   if (!isoStr) return '';
@@ -207,12 +208,8 @@ export function HTEAnnouncements() {
           (a as any).createdByRole === 'host' ||
           (a as any).createdByRole === 'hte';
         return isTargeted || isAuthor;
-      })
-      .sort((a, b) => {
-        if (a.isPinned && !b.isPinned) return -1;
-        if (!a.isPinned && b.isPinned) return 1;
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
       });
+    return sortAnnouncements(filtered);
   }, [announcements, authorName, companyName]);
 
   const filtered = useMemo(() => {
@@ -289,13 +286,7 @@ export function HTEAnnouncements() {
       return true;
     });
 
-    return [...list].sort((a, b) => {
-      if (a.isPinned && !b.isPinned) return -1;
-      if (!a.isPinned && b.isPinned) return 1;
-      const tA = new Date(a.createdAt).getTime();
-      const tB = new Date(b.createdAt).getTime();
-      return sortOrder === 'newest' ? tB - tA : tA - tB;
-    });
+    return sortAnnouncements(list, sortOrder);
   }, [
     hteAnnouncements,
     searchTerm,
