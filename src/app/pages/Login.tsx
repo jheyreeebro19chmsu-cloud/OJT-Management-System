@@ -90,12 +90,23 @@ export function Login() {
   const { login, setPasswordForEmail, currentUser, employees } = useApp();
   const navigate = useNavigate();
 
-  // Instant redirect if user is already logged in
+  // Instant redirect if user is already logged in, restoring their last active page on refresh
   useEffect(() => {
     if (currentUser) {
-      if (currentUser.role === 'admin') {
+      const lastRoute = typeof window !== 'undefined' ? sessionStorage.getItem('last_active_route') : null;
+      const role = (currentUser.role || (currentUser as any).position || '').toLowerCase();
+      const isInstructorOrAdmin = role === 'admin' || role.includes('instructor') || role.includes('coordinator');
+      const isHte = role === 'hte' || role === 'host';
+      const allowedPrefix = isInstructorOrAdmin ? '/admin' : isHte ? '/hte' : '/app';
+
+      if (lastRoute && lastRoute.startsWith(allowedPrefix) && !lastRoute.startsWith('/login')) {
+        navigate(lastRoute, { replace: true });
+        return;
+      }
+
+      if (isInstructorOrAdmin) {
         navigate('/admin', { replace: true });
-      } else if (currentUser.role === 'hte' || currentUser.role === 'host') {
+      } else if (isHte) {
         navigate('/hte', { replace: true });
       } else {
         navigate('/app', { replace: true });

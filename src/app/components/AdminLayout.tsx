@@ -19,7 +19,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useCallback } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl, getAbsoluteUrl } from '../services/config';
@@ -50,6 +50,15 @@ const navItems = [
 export function AdminLayout() {
   const { logout, announcements, currentUser, getCurrentEmployee, employees, settings } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && location.pathname.startsWith('/admin')) {
+      try {
+        sessionStorage.setItem('last_active_route', location.pathname + location.search);
+      } catch {}
+    }
+  }, [location.pathname, location.search]);
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [pendingCount, setPendingCount] = useState<number>(0);

@@ -14,6 +14,7 @@ import {
   AlertTriangle,
 } from 'lucide-react';
 import React, { useState, useMemo } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
@@ -45,7 +46,25 @@ function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
 export function HTERecords() {
   const { timeRecords, employees, approveTimeRecord, disapproveTimeRecord, currentUser, getCurrentEmployee } = useApp();
   const currentEmp = getCurrentEmployee();
-  const [viewMode, setViewMode] = useState<'daily' | 'monthly_dttr'>('daily');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [viewMode, setViewModeState] = useState<'daily' | 'monthly_dttr'>(() => {
+    const fromUrl = searchParams.get('view');
+    if (fromUrl === 'monthly_dttr' || fromUrl === 'dttr') return 'monthly_dttr';
+    if (fromUrl === 'daily') return 'daily';
+    const saved = typeof window !== 'undefined' ? sessionStorage.getItem('hte_records_view') : null;
+    if (saved === 'monthly_dttr' || saved === 'daily') return saved;
+    return 'daily';
+  });
+
+  const setViewMode = (mode: 'daily' | 'monthly_dttr') => {
+    setViewModeState(mode);
+    try {
+      sessionStorage.setItem('hte_records_view', mode);
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.set('view', mode);
+      setSearchParams(nextParams, { replace: true });
+    } catch {}
+  };
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDate, setSelectedDate] = useState('');
 

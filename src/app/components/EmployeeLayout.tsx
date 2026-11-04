@@ -1,7 +1,7 @@
 import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check, Award, AlertTriangle, CheckCircle, ChevronRight, Sparkles, Settings, ClipboardCheck } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
-import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
@@ -28,6 +28,15 @@ const navItems = [
 export function EmployeeLayout() {
   const { currentUser, logout, getCurrentEmployee, settings, evaluations, getActiveAnnouncements, announcements, timeRecords } = useApp();
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && location.pathname.startsWith('/app')) {
+      try {
+        sessionStorage.setItem('last_active_route', location.pathname + location.search);
+      } catch {}
+    }
+  }, [location.pathname, location.search]);
   const employee = getCurrentEmployee();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);

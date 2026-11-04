@@ -304,6 +304,15 @@ export const router = createBrowserRouter([
   },
   {
     path: '*',
-    element: React.createElement(Navigate, { to: '/app', replace: true }),
+    element: React.createElement(() => {
+      const lastRoute = typeof window !== 'undefined' ? sessionStorage.getItem('last_active_route') : null;
+      const storedUser = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('ojt_current_user') || 'null') : null;
+      const role = (storedUser?.role || storedUser?.position || '').toLowerCase();
+      const isInstructorOrAdmin = role === 'admin' || role.includes('instructor') || role.includes('coordinator');
+      const isHte = role === 'hte' || role === 'host';
+      const fallback = isInstructorOrAdmin ? '/admin' : isHte ? '/hte' : '/app';
+      const target = (lastRoute && lastRoute.startsWith('/') && !lastRoute.startsWith('/login')) ? lastRoute : fallback;
+      return React.createElement(Navigate, { to: target, replace: true });
+    }),
   },
 ]);

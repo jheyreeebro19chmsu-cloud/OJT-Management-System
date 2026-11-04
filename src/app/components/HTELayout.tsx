@@ -41,6 +41,14 @@ export function HTELayout({ children, hteCompany }: HTELayoutProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { currentUser, logout, getCurrentEmployee, settings, announcements, getActiveAnnouncements } = useApp();
+
+  useEffect(() => {
+    if (typeof window !== 'undefined' && location.pathname.startsWith('/hte')) {
+      try {
+        sessionStorage.setItem('last_active_route', location.pathname + location.search);
+      } catch {}
+    }
+  }, [location.pathname, location.search]);
   const employee = getCurrentEmployee();
 
   const [sidebarOpen, setSidebarOpen] = useState(false);

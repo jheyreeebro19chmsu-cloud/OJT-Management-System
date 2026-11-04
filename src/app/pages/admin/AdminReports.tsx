@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   BarChart,
   Bar,
@@ -198,16 +199,73 @@ function TraineeAvatar({
 export function AdminReports() {
   const { employees, timeRecords, evaluations, approveTimeRecord, disapproveTimeRecord, addTimeRecord, settings, currentUser } = useApp();
 
-  // Active Top Tab: 'attendance', 'analytics', 'monthly_dttr', or 'evaluation'
-  const [activeTab, setActiveTab] = useState<'attendance' | 'analytics' | 'monthly_dttr' | 'evaluation'>('attendance');
+  const [searchParams, setSearchParams] = useSearchParams();
 
-  // Attendance Filters
+  // Active Top Tab: persist across page refreshes via URL searchParams and sessionStorage
+  const [activeTab, setActiveTabState] = useState<'attendance' | 'analytics' | 'monthly_dttr' | 'evaluation'>(() => {
+    const fromUrl = searchParams.get('tab');
+    if (fromUrl === 'monthly_dttr' || fromUrl === 'dttr') return 'monthly_dttr';
+    if (fromUrl === 'analytics') return 'analytics';
+    if (fromUrl === 'evaluation') return 'evaluation';
+    if (fromUrl === 'attendance') return 'attendance';
+    const saved = typeof window !== 'undefined' ? sessionStorage.getItem('admin_reports_tab') : null;
+    if (saved === 'monthly_dttr' || saved === 'analytics' || saved === 'evaluation' || saved === 'attendance') {
+      return saved as any;
+    }
+    return 'attendance';
+  });
+
+  const setActiveTab = (tab: 'attendance' | 'analytics' | 'monthly_dttr' | 'evaluation') => {
+    setActiveTabState(tab);
+    try {
+      sessionStorage.setItem('admin_reports_tab', tab);
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.set('tab', tab);
+      setSearchParams(nextParams, { replace: true });
+    } catch {}
+  };
+
+  // Attendance Filters: persist across page refresh
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
-  const [selectedMonth, setSelectedMonth] = useState(() => {
+  const [selectedMonth, setSelectedMonthState] = useState<string>(() => {
+    const fromUrl = searchParams.get('month');
+    if (fromUrl) return fromUrl;
+    const saved = typeof window !== 'undefined' ? sessionStorage.getItem('admin_reports_month') : null;
+    if (saved) return saved;
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
-  const [selectedEmpId, setSelectedEmpId] = useState('all');
+
+  const setSelectedMonth = (m: string) => {
+    setSelectedMonthState(m);
+    try {
+      sessionStorage.setItem('admin_reports_month', m);
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.set('month', m);
+      setSearchParams(nextParams, { replace: true });
+    } catch {}
+  };
+
+  const [selectedEmpId, setSelectedEmpIdState] = useState<string>(() => {
+    const fromUrl = searchParams.get('studentId') || searchParams.get('empId');
+    if (fromUrl) return fromUrl;
+    const saved = typeof window !== 'undefined' ? sessionStorage.getItem('admin_reports_empId') : null;
+    return saved || 'all';
+  });
+
+  const setSelectedEmpId = (empId: string) => {
+    setSelectedEmpIdState(empId);
+    try {
+      sessionStorage.setItem('admin_reports_empId', empId);
+      const nextParams = new URLSearchParams(window.location.search);
+      if (empId && empId !== 'all') {
+        nextParams.set('studentId', empId);
+      } else {
+        nextParams.delete('studentId');
+      }
+      setSearchParams(nextParams, { replace: true });
+    } catch {}
+  };
   const [selectedApprovalStatus, setSelectedApprovalStatus] = useState<'all' | 'pending' | 'approved' | 'disapproved'>('all');
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
 

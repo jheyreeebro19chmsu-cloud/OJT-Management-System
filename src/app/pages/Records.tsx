@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
@@ -94,7 +95,25 @@ export function Records() {
   const currentEmp = employee || getCurrentEmployee();
   const empLookupId = currentEmp?.id || currentEmp?.employeeId || '';
   const allRecords = empLookupId ? getEmployeeRecords(empLookupId) : [];
-  const [viewMode, setViewMode] = useState<'timeline' | 'monthly_dttr'>('timeline');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [viewMode, setViewModeState] = useState<'timeline' | 'monthly_dttr'>(() => {
+    const fromUrl = searchParams.get('view');
+    if (fromUrl === 'monthly_dttr' || fromUrl === 'dttr') return 'monthly_dttr';
+    if (fromUrl === 'timeline') return 'timeline';
+    const saved = typeof window !== 'undefined' ? sessionStorage.getItem('app_records_view') : null;
+    if (saved === 'monthly_dttr' || saved === 'timeline') return saved;
+    return 'timeline';
+  });
+
+  const setViewMode = (mode: 'timeline' | 'monthly_dttr') => {
+    setViewModeState(mode);
+    try {
+      sessionStorage.setItem('app_records_view', mode);
+      const nextParams = new URLSearchParams(window.location.search);
+      nextParams.set('view', mode);
+      setSearchParams(nextParams, { replace: true });
+    } catch {}
+  };
   const [filterMonth, setFilterMonth] = useState('all');
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [photoModal, setPhotoModal] = useState<{ src: string; label: string } | null>(null);
