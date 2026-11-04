@@ -55,11 +55,13 @@ function toLocalTimeStr(isoStr?: string): string {
 }
 
 function isInstructorPost(ann: Announcement): boolean {
+  if (!ann) return false;
   const role = (ann.createdByRole || '').toLowerCase();
   const by = (ann.createdBy || '').toLowerCase();
-  if (role === 'admin') return true;
-  if (role === 'host' || role === 'hte' || role === 'employee') return false;
-  return by.includes('instructor') || by.includes('admin') || by.includes('coordinator') || by.includes('prof');
+  if (role === 'admin' || role === 'instructor' || role === 'faculty' || role === 'coordinator') return true;
+  if (role === 'host' || role === 'hte' || role === 'supervisor' || role === 'employee') return false;
+  if (by.includes('hte') || by.includes('host') || by.includes('supervisor') || by.includes('company')) return false;
+  return true;
 }
 
 
@@ -140,15 +142,22 @@ export function AdminAnnouncements() {
     refreshData,
   } = useApp();
 
-  // Active polling to synchronize announcements live across accounts
+  // Active polling & storage listener to synchronize announcements live across accounts
   useEffect(() => {
     refreshData?.({ force: true }).catch(() => {});
+    const onStorage = () => {
+      refreshData?.({ force: true }).catch(() => {});
+    };
+    window.addEventListener('storage', onStorage);
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refreshData?.({ force: true }).catch(() => {});
       }
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 4000);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      clearInterval(interval);
+    };
   }, [refreshData]);
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [showForm, setShowForm] = useState(false);

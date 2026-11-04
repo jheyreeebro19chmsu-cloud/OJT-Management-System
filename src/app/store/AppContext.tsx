@@ -4819,6 +4819,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return updated;
     });
 
+    supabaseService.saveAnnouncementsToStorage([newAnn]).catch(() => {});
+
     if (useSupabase) {
       supabaseService
         .createAnnouncement(dataWithAY)
@@ -4938,8 +4940,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (!requestedRole) return true;
       if (!announcementRole || announcementRole === 'all') return true;
       if (requestedRole === 'admin') return true; // Admins / Instructors supervise everything and see all notices
-      if (requestedRole === 'employee') return ['employee', 'admin', 'all'].includes(announcementRole);
-      if (requestedRole === 'hte' || requestedRole === 'host') return ['hte', 'host', 'employee', 'all'].includes(announcementRole);
+      const target = String(announcementRole).toLowerCase();
+      if (requestedRole === 'employee') {
+        return ['employee', 'trainee', 'trainees', 'student', 'students', 'admin', 'all', ''].includes(target);
+      }
+      if (requestedRole === 'hte' || requestedRole === 'host') {
+        return ['hte', 'host', 'employee', 'all', ''].includes(target);
+      }
       return false;
     };
 

@@ -220,6 +220,34 @@ export default async function handler(req, res) {
         return sendJson(res, 200, { monthlyDttrs: [], timeRecords: [] });
       }
 
+      // Action: Retrieve Announcements Store
+      if (action === 'get-announcements') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        try {
+          const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/announcements_store.json', 60);
+          if (signed?.signedUrl) {
+            const freshRes = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
+            if (freshRes.ok) {
+              const parsed = await freshRes.json();
+              if (Array.isArray(parsed)) {
+                return sendJson(res, 200, parsed);
+              }
+            }
+          }
+          const { data, error } = await supabase.storage.from('face-photos').download('settings/announcements_store.json');
+          if (!error && data) {
+            const text = await data.text();
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) {
+              return sendJson(res, 200, parsed);
+            }
+          }
+        } catch (err) {
+          console.warn('API get-announcements notice:', err);
+        }
+        return sendJson(res, 200, []);
+      }
+
       if (action === 'get-upload-url') {
         const storagePath = query.path;
         if (!storagePath) {
@@ -545,6 +573,48 @@ export default async function handler(req, res) {
           });
         } catch (err) {
           return sendJson(res, 500, { error: err.message || 'Failed to save DTTR store' });
+        }
+      }
+
+      // Support server-side save of Announcements Store
+      if (body.action === 'save-announcements') {
+        try {
+          let existingList = [];
+          try {
+            const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/announcements_store.json', 60);
+            if (signed?.signedUrl) {
+              const r = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
+              if (r.ok) {
+                const parsed = await r.json();
+                if (Array.isArray(parsed)) existingList = parsed;
+              }
+            }
+          } catch {}
+
+          const incoming = Array.isArray(body.announcements) ? body.announcements : (body.announcement ? [body.announcement] : []);
+          const merged = [...incoming];
+          for (const item of existingList) {
+            if (!merged.some((m) => m.id === item.id)) {
+              merged.push(item);
+            }
+          }
+
+          const jsonStr = JSON.stringify(merged);
+          const buffer = Buffer.from(jsonStr, 'utf8');
+          const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/announcements_store.json', buffer, {
+            contentType: 'application/json',
+            cacheControl: '0',
+            upsert: true,
+          });
+          if (upErr) {
+            return sendJson(res, 500, { error: upErr.message });
+          }
+          return sendJson(res, 200, {
+            success: true,
+            announcementsCount: merged.length,
+          });
+        } catch (err) {
+          return sendJson(res, 500, { error: err.message || 'Failed to save announcements store' });
         }
       }
 

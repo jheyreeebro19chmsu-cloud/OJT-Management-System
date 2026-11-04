@@ -137,17 +137,43 @@ export default async function handler(req, res) {
         }
       }
 
-      const { data, error } = await supabase
-        .from('announcements')
-        .select('*')
-        .order('is_pinned', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false });
+      let dbRecords = [];
+      try {
+        const { data, error } = await supabase
+          .from('announcements')
+          .select('*')
+          .order('is_pinned', { ascending: false, nullsFirst: false })
+          .order('created_at', { ascending: false });
 
-      if (error) {
-        return sendJson(res, 500, { error: error.message });
+        if (!error && Array.isArray(data)) {
+          dbRecords = data;
+        }
+      } catch (dbErr) {
+        console.warn('api/announcements GET DB note:', dbErr);
       }
 
-      const formatted = (data || []).map(formatAnnouncement).sort((a, b) => {
+      // Storage fallback or merger
+      let storageRecords = [];
+      try {
+        const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/announcements_store.json', 60);
+        if (signed?.signedUrl) {
+          const freshRes = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
+          if (freshRes.ok) {
+            const parsed = await freshRes.json();
+            if (Array.isArray(parsed)) storageRecords = parsed;
+          }
+        }
+      } catch {}
+
+      const formattedDb = (dbRecords || []).map(formatAnnouncement);
+      const combined = [...formattedDb];
+      for (const s of storageRecords) {
+        if (!combined.some((c) => c.id === s.id)) {
+          combined.push(s);
+        }
+      }
+
+      const formatted = combined.sort((a, b) => {
         if (a.isPinned && !b.isPinned) return -1;
         if (!a.isPinned && b.isPinned) return 1;
         const tA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
@@ -292,17 +318,59 @@ export default async function handler(req, res) {
         created_at: createdAt ?? created_at ?? new Date().toISOString(),
       };
 
-      const { data, error } = await supabase
-        .from('announcements')
-        .insert([payload])
-        .select()
-        .single();
+      let savedData = null;
+      try {
+        const { data, error } = await supabase
+          .from('announcements')
+          .insert([payload])
+          .select()
+          .single();
 
-      if (error) {
-        return sendJson(res, 500, { error: error.message });
+        if (!error && data) {
+          savedData = data;
+        } else if (error) {
+          console.warn('api/announcements POST DB error, falling back to storage:', error.message);
+        }
+      } catch (insertErr) {
+        console.warn('api/announcements POST DB exception:', insertErr);
       }
 
-      return sendJson(res, 200, formatAnnouncement(data));
+      if (!savedData) {
+        savedData = {
+          id: `ann-${Date.now()}`,
+          ...payload,
+        };
+      }
+
+      const formatted = formatAnnouncement(savedData);
+
+      // Save to cloud storage announcements_store.json
+      try {
+        let existingList = [];
+        try {
+          const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/announcements_store.json', 60);
+          if (signed?.signedUrl) {
+            const r = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
+            if (r.ok) {
+              const parsed = await r.json();
+              if (Array.isArray(parsed)) existingList = parsed;
+            }
+          }
+        } catch {}
+
+        const merged = [formatted, ...existingList.filter((a) => a.id !== formatted.id)];
+        const jsonStr = JSON.stringify(merged);
+        const buffer = Buffer.from(jsonStr, 'utf8');
+        await supabase.storage.from('face-photos').upload('settings/announcements_store.json', buffer, {
+          contentType: 'application/json',
+          cacheControl: '0',
+          upsert: true,
+        });
+      } catch (storageErr) {
+        console.warn('api/announcements POST storage mirror error:', storageErr);
+      }
+
+      return sendJson(res, 200, formatted);
     }
 
     // PUT / PATCH: Update announcement

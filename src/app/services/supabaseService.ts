@@ -2506,6 +2506,52 @@ import { sortAnnouncements } from '../utils/announcementHelper';
 // FIXED: createAnnouncement now sends ALL fields to Supabase, and THROWS on error
 // instead of silently returning null (which is what let failed saves hide from you).
 
+
+export async function fetchAnnouncementsFromStorage(): Promise<Announcement[]> {
+  try {
+    const apiRes = await fetch(`/api/documents?action=get-announcements&t=${Date.now()}`, { cache: 'no-store' });
+    if (apiRes.ok) {
+      const data = await apiRes.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return sortAnnouncements(data as Announcement[]);
+      }
+    }
+  } catch {}
+
+  try {
+    const pubRes = await fetch(
+      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/announcements_store.json?t=${Date.now()}`,
+      { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(4000) : undefined }
+    );
+    if (pubRes.ok) {
+      const data = await pubRes.json();
+      if (Array.isArray(data) && data.length > 0) {
+        return sortAnnouncements(data as Announcement[]);
+      }
+    }
+  } catch {}
+
+  return [];
+}
+
+export async function saveAnnouncementsToStorage(announcements: Announcement[]): Promise<boolean> {
+  if (!announcements || announcements.length === 0) return false;
+  try {
+    const apiRes = await fetch('/api/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save-announcements',
+        announcements,
+      }),
+    });
+    if (apiRes.ok) return true;
+  } catch (err) {
+    console.warn('saveAnnouncementsToStorage notice:', err);
+  }
+  return false;
+}
+
 export async function fetchAnnouncements(): Promise<Announcement[]> {
   if (!isSupabaseConfigured()) return [];
 

@@ -115,15 +115,22 @@ export function HTEAnnouncements() {
     refreshData,
   } = useApp();
 
-  // Active polling to immediately display announcements posted by Instructor or HTE
+  // Active polling & storage listener to immediately display announcements posted by Instructor or HTE
   useEffect(() => {
     refreshData?.({ force: true }).catch(() => {});
+    const onStorage = () => {
+      refreshData?.({ force: true }).catch(() => {});
+    };
+    window.addEventListener('storage', onStorage);
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         refreshData?.({ force: true }).catch(() => {});
       }
-    }, 5000);
-    return () => clearInterval(interval);
+    }, 4000);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      clearInterval(interval);
+    };
   }, [refreshData]);
 
   const employee = getCurrentEmployee();
