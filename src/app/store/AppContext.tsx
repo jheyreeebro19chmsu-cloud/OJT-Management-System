@@ -1706,6 +1706,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
             setGeofenceZones(sanitizedZones);
             saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
           }
+
+          // If current logged-in user was deleted in Supabase, force immediate logout
+          if (currentUser && currentUser.id !== 'admin') {
+            const stillExists = supabaseEmployees.some(
+              (e) => (e.id === currentUser.id || normalizeEmail(e.email) === normalizeEmail(currentUser.email || '')) && e.active !== false
+            );
+            if (!stillExists) {
+              console.warn('Current user account deleted in database. Forcing logout.');
+              clearAuthStorage();
+              setCurrentUser(null);
+              supabase.auth.signOut().catch(() => {});
+            }
+          }
         } catch (err) {
           console.error('Real-time employees/geofence sync error:', err);
         }
@@ -1750,103 +1763,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         } catch (err) {
           console.error('Real-time evaluations sync error:', err);
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public' }, async () => {
-        try {
-          const [
-            supabaseEmployees,
-            supabaseRecords,
-            supabaseZones,
-            supabaseSettings,
-            supabaseEvaluations,
-            supabaseAnnouncements,
-            supabaseSubmissions,
-            supabaseHostFeedback,
-            supabaseHostSupervisors,
-          ] = await Promise.all([
-            supabaseService.fetchEmployees(),
-            supabaseService.fetchTimeRecords(),
-            supabaseService.fetchGeofenceZones(),
-            supabaseService.fetchSettings(),
-            supabaseService.fetchEvaluations(),
-            supabaseService.fetchAnnouncements(),
-            supabaseService.fetchAnnouncementSubmissions(),
-            supabaseService.fetchHostFeedback(),
-            supabaseService.fetchHostSupervisors(),
-          ]);
-
-          setEmployees((prev) => {
-            const merged = mergeEmployees(supabaseEmployees, prev);
-            saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
-            return merged;
-          });
-          if (supabaseRecords.length > 0) {
-            setTimeRecords((prev) => {
-              const merged = mergeTimeRecords(supabaseRecords, prev);
-              saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-              return merged;
-            });
-          }
-          const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
-          if (sanitizedZones.length > 0) {
-            setGeofenceZones(sanitizedZones);
-            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
-          }
-          if (supabaseSettings) setSettings(supabaseSettings);
-          if (supabaseEvaluations && supabaseEvaluations.length > 0) {
-            setEvaluations((prev) => {
-              const merged = mergeEvaluations(supabaseEvaluations, prev);
-              saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
-              return merged;
-            });
-          }
-          if (supabaseAnnouncements.length > 0) {
-            setAnnouncements((prev) => {
-              const merged = [...supabaseAnnouncements];
-              for (const p of prev) { if (!merged.some(m => m.id === p.id)) merged.push(p); }
-              const sorted = sortAnnouncements(merged);
-              saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, sorted);
-              return sorted;
-            });
-            const fromAnn = extractCommentsFromAnnouncements(supabaseAnnouncements);
-            if (fromAnn.length > 0) {
-              setAnnouncementComments((prev) => {
-                const merged = deduplicateComments([...fromAnn, ...prev]);
-                saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
-                return merged;
-              });
-            }
-          }
-          if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
-          if (supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
-          if (supabaseHostSupervisors) setHostSupervisors(supabaseHostSupervisors);
-
-          // If current logged-in user was deleted in Supabase, force immediate logout & clear credentials
-          if (currentUser && currentUser.id !== 'admin') {
-            const stillExists =
-              supabaseEmployees.some((e) => (e.id === currentUser.id || normalizeEmail(e.email) === normalizeEmail(currentUser.email || '')) && e.active !== false) ||
-              (supabaseHostSupervisors && supabaseHostSupervisors.some((h) => (h.id === currentUser.id || normalizeEmail(h.email) === normalizeEmail(currentUser.email || '')) && h.active !== false));
-
-            if (!stillExists) {
-              console.warn('Current user account deleted in database. Forcing logout.');
-              clearAuthStorage();
-              setCurrentUser(null);
-              supabase.auth.signOut().catch(() => {});
-              if (currentUser.email) {
-                const norm = normalizeEmail(currentUser.email);
-                setPasswords((prev) => {
-                  const next = { ...prev };
-                  delete next[norm];
-                  delete next[currentUser.email!.toLowerCase()];
-                  saveToStorage(STORAGE_KEYS.PASSWORDS, next);
-                  return next;
-                });
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Supabase real-time sync error:', err);
         }
       })
       .subscribe();
