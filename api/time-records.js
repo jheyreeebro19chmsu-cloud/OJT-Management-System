@@ -113,14 +113,6 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const queryParams = parseQuery(req);
       const includePhotos = queryParams.photos === 'true' || queryParams.includePhotos === 'true';
-      const selectFields = includePhotos
-        ? '*'
-        : 'id, employee_id, date, time_in, time_out, total_hours, status, notes, academic_year, time_in_geofenced, time_out_geofenced, time_in_face_verified, time_out_face_verified, time_in_lat, time_in_lng, time_out_lat, time_out_lng, approval_status, approved_by, approved_at, approval_note, created_at';
-
-      let query = supabase
-        .from('time_records')
-        .select(selectFields)
-        .order('date', { ascending: false });
 
       const empIds = [];
       if (queryParams.employeeId) {
@@ -133,6 +125,7 @@ export default async function handler(req, res) {
         empIds.push(...queryParams.altIds.split(',').map((s) => s.trim()).filter(Boolean));
       }
 
+      let uniqueEmpIds = [];
       if (empIds.length > 0) {
         const resolvedIds = [];
         for (const raw of empIds) {
@@ -141,36 +134,57 @@ export default async function handler(req, res) {
             resolvedIds.push(resolved);
           }
         }
-        const uniqueEmpIds = Array.from(new Set(resolvedIds));
-        if (uniqueEmpIds.length === 1) {
-          query = query.eq('employee_id', uniqueEmpIds[0]);
-        } else if (uniqueEmpIds.length > 1) {
-          query = query.in('employee_id', uniqueEmpIds);
-        } else {
+        uniqueEmpIds = Array.from(new Set(resolvedIds));
+        if (uniqueEmpIds.length === 0) {
           // If IDs could not be resolved to any valid UUID, return empty result safely
           return sendJson(res, 200, []);
         }
       }
 
-      if (queryParams.month) {
-        const parts = String(queryParams.month).trim().split('-');
-        if (parts.length === 2) {
-          const y = parseInt(parts[0], 10);
-          const m = parseInt(parts[1], 10);
-          if (!isNaN(y) && !isNaN(m)) {
-            const start = `${parts[0]}-${parts[1].padStart(2, '0')}-01`;
-            const lastDay = new Date(y, m, 0).getDate();
-            const end = `${parts[0]}-${parts[1].padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
-            query = query.gte('date', start).lte('date', end);
+      const defaultLimit = empIds.length > 0 ? 5000 : 5000;
+      const limit = parseInt(queryParams.limit, 10) || defaultLimit;
+
+      const executeQuery = async (fields) => {
+        let q = supabase
+          .from('time_records')
+          .select(fields)
+          .order('date', { ascending: false });
+
+        if (uniqueEmpIds.length === 1) {
+          q = q.eq('employee_id', uniqueEmpIds[0]);
+        } else if (uniqueEmpIds.length > 1) {
+          q = q.in('employee_id', uniqueEmpIds);
+        }
+
+        if (queryParams.month) {
+          const parts = String(queryParams.month).trim().split('-');
+          if (parts.length === 2) {
+            const y = parseInt(parts[0], 10);
+            const m = parseInt(parts[1], 10);
+            if (!isNaN(y) && !isNaN(m)) {
+              const start = `${parts[0]}-${parts[1].padStart(2, '0')}-01`;
+              const lastDay = new Date(y, m, 0).getDate();
+              const end = `${parts[0]}-${parts[1].padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+              q = q.gte('date', start).lte('date', end);
+            }
           }
+        }
+
+        return q.limit(limit);
+      };
+
+      const coreFields = 'id, employee_id, date, time_in, time_out, total_hours, status, notes, academic_year, time_in_geofenced, time_out_geofenced, time_in_face_verified, time_out_face_verified, time_in_lat, time_in_lng, time_out_lat, time_out_lng, created_at';
+      const extendedFields = `${coreFields}, approval_status, approved_by, approved_at, approval_note`;
+      const selectFields = includePhotos ? '*' : extendedFields;
+
+      let { data, error } = await executeQuery(selectFields);
+      if (error && (error.message?.includes('does not exist') || error.code === '42703')) {
+        const fallback = await executeQuery(coreFields);
+        if (!fallback.error) {
+          return sendJson(res, 200, fallback.data || []);
         }
       }
 
-      const defaultLimit = empIds.length > 0 ? 5000 : 5000;
-      const limit = parseInt(queryParams.limit, 10) || defaultLimit;
-      query = query.limit(limit);
-
-      const { data, error } = await query;
       if (error) {
         return sendJson(res, 500, { error: error.message });
       }

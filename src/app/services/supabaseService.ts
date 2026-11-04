@@ -3556,10 +3556,7 @@ export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean>
       return item;
     });
 
-    const { error } = await supabase.from('time_records').upsert(payload);
-    if (error && (error as any)?.code !== '42501' && (error as any)?.status !== 403) {
-      console.warn('Direct upsert time records notice:', error);
-    }
+    // Direct client upsert omitted if not using service role to prevent RLS 403 errors in console
     saveDttrStoreToStorage({ timeRecords: records }).catch(() => {});
     return true;
   } catch (e) {

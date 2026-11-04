@@ -1974,8 +1974,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Fetch full dashboard data immediately upon sign-in or session restoration
     refreshData({ force: true });
 
-    // Automated background push of any local trainee records to the cloud
-    if (typeof window !== 'undefined' && currentUser) {
+    // Automated background push of any local trainee records to the cloud (trainees only)
+    if (typeof window !== 'undefined' && currentUser && isTraineeRole(currentUser)) {
       try {
         const storedRecs = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
         if (storedRecs.length > 0) {
