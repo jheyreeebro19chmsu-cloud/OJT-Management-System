@@ -870,29 +870,74 @@ export function AdminGeofence() {
             employeeId: traineeAcc.id,
           } as any);
         }
+
+        try {
+          window.dispatchEvent(
+            new CustomEvent('ojt_geofence_updated', {
+              detail: { zoneId, employeeId: traineeAcc.id, lat: targetLat, lng: targetLng, radius: targetRadius },
+            })
+          );
+        } catch {}
+        return;
       }
-      return;
 
     // 2. If this is an HTE Supervisor / Establishment Zone:
-    if (isHte && hostAccount) {
-      updateHostSupervisor(hostAccount.id, {
-        registrationLocation: {
-          lat: targetLat,
-          lng: targetLng,
-          radius: targetRadius,
-        } as any,
-        registrationRadius: targetRadius,
-        registrationAddress: targetAddress,
-        companyAddress: targetAddress,
+    if (isHte) {
+      if (hostAccount) {
+        updateHostSupervisor(hostAccount.id, {
+          registrationLocation: {
+            lat: targetLat,
+            lng: targetLng,
+            radius: targetRadius,
+          } as any,
+          registrationRadius: targetRadius,
+          registrationAddress: targetAddress,
+          companyAddress: targetAddress,
+        });
+      }
+
+      // Check also if there are HTE supervisors in employees table
+      const matchedHteEmployees = employees.filter((e) => {
+        const isHteRole = e.role === 'hte' || e.role === 'host' || (e.position && e.position.toLowerCase().includes('hte'));
+        if (!isHteRole) return false;
+        if (hostAccount && (e.id === hostAccount.id || e.employeeId === hostAccount.employeeId)) return true;
+        if (rawId && (e.id === rawId || e.employeeId === rawId)) return true;
+        if (hostAccount?.companyName && e.companyName && e.companyName.toLowerCase() === hostAccount.companyName.toLowerCase()) return true;
+        if (matchedZone?.name && e.companyName && matchedZone.name.toLowerCase().includes(e.companyName.toLowerCase())) return true;
+        return false;
+      });
+      matchedHteEmployees.forEach((he) => {
+        updateEmployee(he.id, {
+          registrationLocation: {
+            lat: targetLat,
+            lng: targetLng,
+            radius: targetRadius,
+          },
+          registrationRadius: targetRadius,
+          registrationAddress: targetAddress,
+          companyAddress: targetAddress,
+        });
       });
 
       // Synchronize all trainees designated to this HTE partner establishment
-      const assignedTrainees = employees.filter(
-        (e) =>
-          isTraineeAccount(e) &&
-          (e.hteId === hostAccount.id ||
-            (hostAccount.companyName && e.companyName && e.companyName.toLowerCase() === hostAccount.companyName.toLowerCase()))
-      );
+      const targetCompany = (
+        hostAccount?.companyName ||
+        (matchedZone as any)?.companyName ||
+        matchedHteEmployees[0]?.companyName ||
+        (matchedZone?.name ? matchedZone.name.replace(/ - Workplace.*$/i, '').replace(/ - Helix.*$/i, '').replace(/ - Talisay.*$/i, '').trim() : '')
+      ).toLowerCase();
+
+      const assignedTrainees = employees.filter((e) => {
+        if (!isTraineeAccount(e)) return false;
+        if (hostAccount && e.hteId === hostAccount.id) return true;
+        if (rawId && e.hteId === rawId) return true;
+        const eComp = (e.companyName || '').toLowerCase();
+        if (targetCompany && (eComp === targetCompany || eComp.includes(targetCompany) || targetCompany.includes(eComp))) return true;
+        if (targetCompany.includes('concentrix') && eComp.includes('concentrix')) return true;
+        if ((targetCompany.includes('chmsu') || targetCompany.includes('printing')) && (eComp.includes('chmsu') || eComp.includes('printing'))) return true;
+        return false;
+      });
+
       assignedTrainees.forEach((t) => {
         updateEmployee(t.id, {
           registrationLocation: {
@@ -925,11 +970,12 @@ export function AdminGeofence() {
         (z) =>
           (z.id === zoneId ||
             z.id === rawId ||
-            (z as any).employeeId === hostAccount.id ||
-            (z as any).employee_id === hostAccount.id ||
-            (z.name && hostAccount.companyName && z.name.toLowerCase().includes(hostAccount.companyName.toLowerCase()))) &&
+            (hostAccount && ((z as any).employeeId === hostAccount.id || (z as any).employee_id === hostAccount.id)) ||
+            (hostAccount?.companyName && z.name && z.name.toLowerCase().includes(hostAccount.companyName.toLowerCase())) ||
+            (targetCompany && z.name && z.name.toLowerCase().includes(targetCompany))) &&
           !z.name?.toLowerCase().includes('trainee') &&
-          !z.name?.toLowerCase().includes('student')
+          !z.name?.toLowerCase().includes('student') &&
+          (z as any).userType !== 'trainee'
       );
 
       if (matchingDbZones.length > 0) {
@@ -941,7 +987,7 @@ export function AdminGeofence() {
           radius: targetRadius,
           address: targetAddress,
           name: targetName,
-          employeeId: hostAccount.id,
+          employeeId: hostAccount?.id || (matchedZone as any)?.employeeId || primaryDbZone.employeeId,
         } as any);
 
         if (matchingDbZones.length > 1) {
@@ -951,7 +997,7 @@ export function AdminGeofence() {
         }
       } else {
         addGeofenceZone({
-          id: hostAccount.id,
+          id: hostAccount?.id || rawId || zoneId,
           name: targetName,
           address: targetAddress,
           lat: targetLat,
@@ -959,9 +1005,17 @@ export function AdminGeofence() {
           radius: targetRadius,
           active: updatedData.active ?? matchedZone?.active ?? true,
           academicYear: selectedAcademicYear !== 'all' ? selectedAcademicYear : settings.activeAcademicYear,
-          employeeId: hostAccount.id,
+          employeeId: hostAccount?.id,
         } as any);
       }
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent('ojt_geofence_updated', {
+            detail: { zoneId, lat: targetLat, lng: targetLng, radius: targetRadius, company: targetCompany },
+          })
+        );
+      } catch {}
       return;
     }
 

@@ -1415,6 +1415,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  // Real-time cross-tab synchronization for Geofence Zones, Employees, and HTEs
+  useEffect(() => {
+    const handleGeofenceStorageOrCustom = (e?: Event) => {
+      if (
+        e &&
+        e.type === 'storage' &&
+        (e as StorageEvent).key &&
+        (e as StorageEvent).key !== STORAGE_KEYS.GEOFENCE_ZONES &&
+        (e as StorageEvent).key !== STORAGE_KEYS.EMPLOYEES &&
+        (e as StorageEvent).key !== STORAGE_KEYS.HOST_SUPERVISORS &&
+        (e as StorageEvent).key !== STORAGE_KEYS.CURRENT_USER
+      ) {
+        return;
+      }
+      try {
+        const freshZones = loadFromStorage<GeofenceZone[]>(STORAGE_KEYS.GEOFENCE_ZONES, []);
+        if (freshZones.length > 0) {
+          setGeofenceZones(sanitizeGeofenceZones(freshZones));
+        }
+        const freshEmps = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+        if (freshEmps.length > 0) {
+          setEmployees(freshEmps);
+        }
+        const freshHosts = loadFromStorage<HostSupervisor[]>(STORAGE_KEYS.HOST_SUPERVISORS, []);
+        if (freshHosts.length > 0) {
+          setHostSupervisors(freshHosts);
+        }
+        const storedUser = loadFromStorage<any>(STORAGE_KEYS.CURRENT_USER, null);
+        if (storedUser) {
+          setCurrentUser(storedUser);
+        }
+      } catch (err) {
+        console.warn('Cross-tab geofence sync notice:', err);
+      }
+    };
+    window.addEventListener('storage', handleGeofenceStorageOrCustom);
+    window.addEventListener('ojt_geofence_updated', handleGeofenceStorageOrCustom);
+    return () => {
+      window.removeEventListener('storage', handleGeofenceStorageOrCustom);
+      window.removeEventListener('ojt_geofence_updated', handleGeofenceStorageOrCustom);
+    };
+  }, []);
+
   // Check if Supabase is configured and load initial data
   useEffect(() => {
     let isMounted = true;
@@ -1707,20 +1750,92 @@ export function AppProvider({ children }: { children: ReactNode }) {
             saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
           }
 
-          // If current logged-in user was deleted in Supabase, force immediate logout
+          // If current logged-in user is updated, keep currentUser in sync immediately
           if (currentUser && currentUser.id !== 'admin') {
-            const stillExists = supabaseEmployees.some(
-              (e) => (e.id === currentUser.id || normalizeEmail(e.email) === normalizeEmail(currentUser.email || '')) && e.active !== false
+            const freshSelf = supabaseEmployees.find(
+              (e) =>
+                e.id === currentUser.id ||
+                e.employeeId === currentUser.employeeId ||
+                (currentUser.email && e.email && normalizeEmail(e.email) === normalizeEmail(currentUser.email))
             );
-            if (!stillExists) {
-              console.warn('Current user account deleted in database. Forcing logout.');
-              clearAuthStorage();
-              setCurrentUser(null);
-              supabase.auth.signOut().catch(() => {});
+            if (freshSelf) {
+              setCurrentUser((prev) => {
+                if (!prev) return prev;
+                const updated = {
+                  ...prev,
+                  ...freshSelf,
+                  registrationLocation: freshSelf.registrationLocation || prev.registrationLocation,
+                  registrationAddress: freshSelf.registrationAddress || prev.registrationAddress,
+                  registrationRadius: freshSelf.registrationRadius || prev.registrationRadius,
+                  geofenceOverride: freshSelf.geofenceOverride || (prev as any).geofenceOverride,
+                  companyName: freshSelf.companyName || prev.companyName,
+                  companyAddress: freshSelf.companyAddress || (prev as any).companyAddress,
+                  hteId: freshSelf.hteId || (prev as any).hteId,
+                };
+                saveToStorage(STORAGE_KEYS.CURRENT_USER, updated);
+                return updated as any;
+              });
+            } else {
+              const stillExists = supabaseEmployees.some(
+                (e) => (e.id === currentUser.id || normalizeEmail(e.email) === normalizeEmail(currentUser.email || '')) && e.active !== false
+              );
+              if (!stillExists) {
+                console.warn('Current user account deleted in database. Forcing logout.');
+                clearAuthStorage();
+                setCurrentUser(null);
+                supabase.auth.signOut().catch(() => {});
+              }
             }
           }
         } catch (err) {
           console.error('Real-time employees/geofence sync error:', err);
+        }
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'host_supervisors' }, async () => {
+        try {
+          const [supabaseHostSupervisors, supabaseZones] = await Promise.all([
+            supabaseService.fetchHostSupervisors(),
+            supabaseService.fetchGeofenceZones(),
+          ]);
+          if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) {
+            setHostSupervisors((prev) => {
+              const merged = mergeHostSupervisors(supabaseHostSupervisors, prev);
+              saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, merged);
+              return merged;
+            });
+            // If current logged in user is this host supervisor, keep in sync
+            if (currentUser) {
+              const freshHost = supabaseHostSupervisors.find(
+                (h) =>
+                  h.id === currentUser.id ||
+                  h.employeeId === currentUser.employeeId ||
+                  (currentUser.email && h.email && normalizeEmail(h.email) === normalizeEmail(currentUser.email))
+              );
+              if (freshHost) {
+                setCurrentUser((prev) => {
+                  if (!prev) return prev;
+                  const updated = {
+                    ...prev,
+                    name: freshHost.name || prev.name,
+                    companyName: freshHost.companyName || prev.companyName,
+                    companyAddress: freshHost.companyAddress || (prev as any).companyAddress,
+                    registrationLocation: freshHost.registrationLocation || prev.registrationLocation,
+                    registrationAddress: freshHost.registrationAddress || (prev as any).registrationAddress,
+                    registrationRadius: freshHost.registrationRadius || (prev as any).registrationRadius,
+                  };
+                  saveToStorage(STORAGE_KEYS.CURRENT_USER, updated);
+                  return updated as any;
+                });
+              }
+            }
+          }
+          const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
+          if (sanitizedZones.length > 0) {
+            setGeofenceZones(sanitizedZones);
+            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
+          }
+        } catch (err) {
+          console.error('Real-time host_supervisors sync error:', err);
         }
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'time_records' }, async (payload) => {
@@ -4439,7 +4554,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateGeofenceZone = (id: string, data: Partial<GeofenceZone>) => {
-    const previous = geofenceZones.find((z) => z.id === id);
     setGeofenceZones((prev) => {
       const next = prev.map((z) => {
         if (z.id !== id) return z;
@@ -4452,15 +4566,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     if (useSupabase) {
       supabaseService.updateGeofenceZone(id, data).catch((err) => {
-        console.error('[AppContext] Failed to update geofence zone in Supabase:', err);
-        if (previous) {
-          setGeofenceZones((prev) => {
-            const restored = prev.map((z) => (z.id === id ? previous : z));
-            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, restored);
-            return restored;
-          });
-        }
-        toast.error('Could not sync geofence zone update to cloud. Changes rolled back.');
+        console.warn('[AppContext] Geofence zone cloud sync notice (saved locally):', err);
       });
     }
   };

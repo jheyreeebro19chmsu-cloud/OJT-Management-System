@@ -46,6 +46,7 @@ import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRe
 import { uploadDocumentToStorage, saveDocumentPassStatus } from '../services/supabaseService';
 import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 import { GeofenceMap } from '../components/GeofenceMap';
+import { resolveHteLocation, getTraineeGeofenceOverride } from '../utils/hteLocation';
 
 
 const GRADE_CONFIG = {
@@ -108,6 +109,9 @@ export function Profile() {
     changeCurrentUserPassword,
     settings,
     addGeofenceZone,
+    employees = [],
+    hostSupervisors = [],
+    geofenceZones = [],
   } = useApp();
   const [syncingLocation, setSyncingLocation] = useState(false);
   const [resolvedGpsAddress, setResolvedGpsAddress] = useState<string>('');
@@ -1078,135 +1082,149 @@ export function Profile() {
       </motion.div>
 
       {/* Permanent Registered Location & Geofence */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
-        <Section title="Permanent Geofence & Location" icon={<MapPin size={15} className="text-blue-700" />}>
-          <InfoRow
-            label="Registered Address"
-            value={resolvedGpsAddress || employee.registrationAddress || 'Assigned Establishment Location'}
-          />
-          <InfoRow
-            label="GPS Coordinates"
-            value={
-              employee.registrationLocation?.lat && employee.registrationLocation?.lng
-                ? `${employee.registrationLocation.lat.toFixed(6)}, ${employee.registrationLocation.lng.toFixed(6)}`
-                : 'Locked upon registration'
-            }
-          />
-          <InfoRow
-            label="Geofence Radius"
-            value="100 meters (Permanent Radius)"
-          />
-          <InfoRow
-            label="Enrollment Status"
-            value={
-              <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs">
-                <CheckCircle size={12} /> Active ({employee.academicYear || settings.activeAcademicYear})
-              </span>
-            }
-          />
-          <div className="pt-3 mt-2 border-t border-gray-100 flex items-center justify-between gap-2">
-            <span className="text-[11px] text-gray-500 font-medium">Real-time attendance calibration</span>
-            <button
-              type="button"
-              onClick={async () => {
-                setSyncingLocation(true);
-                try {
-                  const position = await getCurrentLocation();
-                  const { latitude, longitude, accuracy } = position.coords;
-                  setProfileLiveGps({ lat: latitude, lng: longitude, accuracy });
-                  const resolvedAddress = await reverseGeocode(latitude, longitude);
+      {(() => {
+        const traineeOverride = getTraineeGeofenceOverride(employee);
+        const resolvedHte = resolveHteLocation(employee, hostSupervisors, employees, geofenceZones);
+        const activeLat = traineeOverride?.lat ?? employee?.registrationLocation?.lat ?? resolvedHte?.lat;
+        const activeLng = traineeOverride?.lng ?? employee?.registrationLocation?.lng ?? resolvedHte?.lng;
+        const activeRadius = Math.max(
+          20,
+          Number(
+            traineeOverride?.radius ||
+            employee.registrationLocation?.radius ||
+            employee.registrationRadius ||
+            (employee as any)?.registration_radius ||
+            resolvedHte?.radius ||
+            40
+          )
+        );
+        const activeAddress = resolvedGpsAddress || traineeOverride?.address || employee.registrationAddress || resolvedHte?.address || 'Assigned Establishment Location';
 
-                  await updateEmployee(employee.id, {
-                    registrationLocation: { lat: latitude, lng: longitude },
-                    registrationAddress: resolvedAddress,
-                  });
-
-                  addGeofenceZone({
-                    id: `personal-${employee.id}`,
-                    name: `${employee.name} - ${employee.companyName || 'Assigned Workplace'}`,
-                    address: resolvedAddress,
-                    lat: latitude,
-                    lng: longitude,
-                    radius: 100,
-                    active: true,
-                    academicYear: settings.activeAcademicYear,
-                  });
-
-                  toast.success(`Location calibrated to real-time GPS: ${resolvedAddress}`);
-                  if (accuracy > 100) {
-                    toast.warning(`GPS accuracy is low (±${Math.round(accuracy)}m). For optimal attendance results, calibrate outdoors or near a window.`, { duration: 6000 });
-                  }
-                  if (!isWithinNegrosOccidental(latitude, longitude)) {
-                    toast.warning('Warning: Captured coordinates are outside Negros Occidental / CHMSU region. Please verify your GPS location.', { duration: 7000 });
-                  }
-                } catch (err) {
-                  console.error('Failed to sync location:', err);
-                  toast.error('Could not lock real-time GPS. Please allow location permissions in your browser.');
-                } finally {
-                  setSyncingLocation(false);
-                }
-              }}
-              disabled={syncingLocation}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
-            >
-              {syncingLocation ? (
-                <>
-                  <Loader2 size={12} className="animate-spin" />
-                  <span>Locking GPS...</span>
-                </>
-              ) : (
-                <>
-                  <Navigation size={12} />
-                  <span>Sync Real-Time GPS</span>
-                </>
-              )}
-            </button>
-          </div>
-
-          {employee.registrationLocation?.lat && employee.registrationLocation?.lng && (
-            <div className="mt-3 rounded-2xl overflow-hidden border border-gray-200">
-              <div className="px-3 py-2 bg-slate-50 border-b border-gray-100 flex items-center justify-between text-xs">
-                <span className="font-semibold text-slate-800 flex items-center gap-1.5">
-                  <MapPin size={13} className="text-blue-600" />
-                  Calibrated Workplace Geofence & Live Location
-                </span>
-                <span className="font-mono text-slate-500 text-[11px]">
-                  {employee.registrationLocation.lat.toFixed(5)}, {employee.registrationLocation.lng.toFixed(5)}
-                </span>
-              </div>
-              <GeofenceMap
-                zones={[
-                  {
-                    id: `personal-${employee.id}`,
-                    name: `${employee.name} - ${employee.companyName || 'Assigned Workplace'}`,
-                    address: employee.registrationAddress || 'Calibrated Workplace GPS',
-                    lat: employee.registrationLocation.lat,
-                    lng: employee.registrationLocation.lng,
-                    radius: Math.max(
-                      40,
-                      Number(
-                        employee.registrationLocation.radius ||
-                        employee.registrationRadius ||
-                        (employee as any).registration_radius ||
-                        40
-                      )
-                    ),
-                    active: true,
-                  },
-                ]}
-                liveUser={profileLiveGps}
-                focusCoords={{
-                  lat: employee.registrationLocation.lat,
-                  lng: employee.registrationLocation.lng,
-                }}
-                className="h-56"
-                allowFullscreen={false}
-                allowResize={false}
+        return (
+          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
+            <Section title="Permanent Geofence & Location" icon={<MapPin size={15} className="text-blue-700" />}>
+              <InfoRow
+                label="Registered Address"
+                value={activeAddress}
               />
-            </div>
-          )}
-        </Section>
-      </motion.div>
+              <InfoRow
+                label="GPS Coordinates"
+                value={
+                  activeLat && activeLng
+                    ? `${Number(activeLat).toFixed(6)}, ${Number(activeLng).toFixed(6)}`
+                    : 'Locked upon registration'
+                }
+              />
+              <InfoRow
+                label="Geofence Radius"
+                value={`${activeRadius} meters (Official Geofence Radius)`}
+              />
+              <InfoRow
+                label="Enrollment Status"
+                value={
+                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs">
+                    <CheckCircle size={12} /> Active ({employee.academicYear || settings.activeAcademicYear})
+                  </span>
+                }
+              />
+              <div className="pt-3 mt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+                <span className="text-[11px] text-gray-500 font-medium">Real-time attendance calibration</span>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setSyncingLocation(true);
+                    try {
+                      const position = await getCurrentLocation();
+                      const { latitude, longitude, accuracy } = position.coords;
+                      setProfileLiveGps({ lat: latitude, lng: longitude, accuracy });
+                      const resolvedAddress = await reverseGeocode(latitude, longitude);
+
+                      await updateEmployee(employee.id, {
+                        registrationLocation: { lat: latitude, lng: longitude, radius: activeRadius },
+                        registrationAddress: resolvedAddress,
+                        registrationRadius: activeRadius,
+                      });
+
+                      addGeofenceZone({
+                        id: `personal-${employee.id}`,
+                        name: `${employee.name} - ${employee.companyName || 'Assigned Workplace'}`,
+                        address: resolvedAddress,
+                        lat: latitude,
+                        lng: longitude,
+                        radius: activeRadius,
+                        active: true,
+                        academicYear: settings.activeAcademicYear,
+                      });
+
+                      toast.success(`Location calibrated to real-time GPS: ${resolvedAddress}`);
+                      if (accuracy > 100) {
+                        toast.warning(`GPS accuracy is low (±${Math.round(accuracy)}m). For optimal attendance results, calibrate outdoors or near a window.`, { duration: 6000 });
+                      }
+                      if (!isWithinNegrosOccidental(latitude, longitude)) {
+                        toast.warning('Warning: Captured coordinates are outside Negros Occidental / CHMSU region. Please verify your GPS location.', { duration: 7000 });
+                      }
+                    } catch (err) {
+                      console.error('Failed to sync location:', err);
+                      toast.error('Could not lock real-time GPS. Please allow location permissions in your browser.');
+                    } finally {
+                      setSyncingLocation(false);
+                    }
+                  }}
+                  disabled={syncingLocation}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                >
+                  {syncingLocation ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      <span>Locking GPS...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Navigation size={12} />
+                      <span>Sync Real-Time GPS</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {activeLat != null && activeLng != null && (
+                <div className="mt-3 rounded-2xl overflow-hidden border border-gray-200">
+                  <div className="px-3 py-2 bg-slate-50 border-b border-gray-100 flex items-center justify-between text-xs">
+                    <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                      <MapPin size={13} className="text-blue-600" />
+                      Official Workplace Geofence Perimeter
+                    </span>
+                    <span className="font-mono text-slate-500 text-[11px]">
+                      {Number(activeLat).toFixed(5)}, {Number(activeLng).toFixed(5)} (±{activeRadius}m)
+                    </span>
+                  </div>
+                  <GeofenceMap
+                    zones={[
+                      {
+                        id: `assigned-${employee.id}`,
+                        name: `${employee.name} - ${resolvedHte?.companyName || employee.companyName || 'Assigned Workplace'}`,
+                        address: activeAddress,
+                        lat: Number(activeLat),
+                        lng: Number(activeLng),
+                        radius: activeRadius,
+                        active: true,
+                      },
+                    ]}
+                    liveUser={profileLiveGps}
+                    focusCoords={{
+                      lat: Number(activeLat),
+                      lng: Number(activeLng),
+                    }}
+                    className="h-56"
+                    allowFullscreen={false}
+                    allowResize={false}
+                  />
+                </div>
+              )}
+            </Section>
+          </motion.div>
+        );
+      })()}
 
       {/* Company Info */}
       <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>

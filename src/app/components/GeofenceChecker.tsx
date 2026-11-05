@@ -157,12 +157,17 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
         traineeStationZone?.radius;
       const targetRadius = customRadius ? Math.max(20, Number(customRadius)) : hteLoc.radius;
 
+      const targetLat = traineeOverride?.lat ?? (traineeStationZone && Number.isFinite(Number(traineeStationZone.lat)) ? Number(traineeStationZone.lat) : hteLoc.lat);
+      const targetLng = traineeOverride?.lng ?? (traineeStationZone && Number.isFinite(Number(traineeStationZone.lng)) ? Number(traineeStationZone.lng) : hteLoc.lng);
+      const targetAddress = traineeOverride?.address || traineeStationZone?.address || hteLoc.address;
+      const targetName = traineeStationZone?.name || `${hteLoc.companyName} Workplace Premises`;
+
       const assignedWorkplaceZone: GeofenceZone = {
         id: `station-hte-${employee?.hteId || employee?.id || 'assigned'}`,
-        name: `${hteLoc.companyName} Workplace Premises`,
-        address: hteLoc.address,
-        lat: hteLoc.lat,
-        lng: hteLoc.lng,
+        name: targetName,
+        address: targetAddress,
+        lat: targetLat,
+        lng: targetLng,
         radius: targetRadius,
         active: true,
         userType: 'hte',

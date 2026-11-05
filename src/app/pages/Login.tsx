@@ -45,7 +45,7 @@ function storeActiveOtp(code: string, email: string, durationMs: number = 20 * 6
     const json = JSON.stringify(updated);
     sessionStorage.setItem(OTP_STORAGE_KEY, json);
     localStorage.setItem(OTP_STORAGE_KEY, json);
-  } catch {}
+  } catch { }
 }
 
 function isOtpCodeValid(
@@ -147,7 +147,7 @@ export function Login() {
             localStorage.removeItem(key);
           }
         }
-      } catch {}
+      } catch { }
 
       const redirectOrigin =
         typeof window !== 'undefined' && window.location?.origin
@@ -196,7 +196,7 @@ export function Login() {
           sessionStorage.removeItem('ojt_oauth_url_error');
           capturedError = JSON.parse(rawStored);
         }
-      } catch {}
+      } catch { }
 
       const urlError = searchParams.get('error') || hashParams.get('error') || capturedError?.error || '';
       const urlErrorCode = searchParams.get('error_code') || hashParams.get('error_code') || capturedError?.errorCode || '';
@@ -244,7 +244,7 @@ export function Login() {
 
     // Pre-warm Supabase connection so TLS handshake and GoTrue container are warm
     if (isSupabaseConfigured()) {
-      supabase.auth.getSession().catch(() => {});
+      supabase.auth.getSession().catch(() => { });
     }
   }, [navigate]);
 
@@ -319,7 +319,7 @@ export function Login() {
     try {
       const savedStep = sessionStorage.getItem('ojt_forgot_step');
       if (savedStep === 'otp' || savedStep === 'reset') return savedStep;
-    } catch {}
+    } catch { }
     return 'email';
   });
   const [forgotOtp, setForgotOtp] = useState('');
@@ -344,7 +344,7 @@ export function Login() {
         setForgotStep(savedStep);
         setShowForgot(true);
       }
-    } catch {}
+    } catch { }
   }, []);
 
   const handleSendResetCode = async () => {
@@ -393,7 +393,7 @@ export function Login() {
       try {
         sessionStorage.setItem('ojt_forgot_email', cleanEmail);
         sessionStorage.setItem('ojt_forgot_step', 'otp');
-      } catch {}
+      } catch { }
 
       // 3. Send email with verification code via Resend
       const result = await sendOtpEmail(cleanEmail, code, 'password_reset');
@@ -448,7 +448,7 @@ export function Login() {
     setOtpAttempts(0);
     try {
       sessionStorage.setItem('ojt_forgot_step', 'reset');
-    } catch {}
+    } catch { }
   };
 
   const handleResetPasswordSubmit = async () => {
@@ -506,7 +506,7 @@ export function Login() {
       try {
         sessionStorage.removeItem('ojt_forgot_email');
         sessionStorage.removeItem('ojt_forgot_step');
-      } catch {}
+      } catch { }
 
       // Populate main login form so the user can sign in immediately
       setEmail(cleanEmail);
@@ -780,8 +780,8 @@ export function Login() {
                     {forgotStep === 'email'
                       ? 'Forgot Password'
                       : forgotStep === 'otp'
-                      ? 'Enter Confirmation Code'
-                      : 'Set New Password'}
+                        ? 'Enter Confirmation Code'
+                        : 'Set New Password'}
                   </h3>
                   <button
                     type="button"

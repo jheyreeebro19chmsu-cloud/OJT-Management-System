@@ -26,7 +26,7 @@ import { useApp } from '../store/AppContext';
 import { getPhotoUrl } from '../services/config';
 import { GeofenceMap } from '../components/GeofenceMap';
 import { getPaginationWindow } from '../utils/pagination';
-import { isInvalidHteCompany } from '../utils/hteLocation';
+import { isInvalidHteCompany, resolveHteLocation } from '../utils/hteLocation';
 
 function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
   const [hasError, setHasError] = useState(false);
@@ -51,7 +51,7 @@ function RecordAvatar({ photo, name }: { photo?: string; name: string }) {
 
 export function HTEDashboard() {
   const navigate = useNavigate();
-  const { employees, timeRecords, evaluations, hostFeedback, announcements, currentUser, getCurrentEmployee, settings, geofenceZones } =
+  const { employees, timeRecords, evaluations, hostFeedback, announcements, currentUser, getCurrentEmployee, settings, geofenceZones, hostSupervisors = [] } =
     useApp();
   const currentEmp = getCurrentEmployee();
   const [searchTerm, setSearchTerm] = useState('');
@@ -85,16 +85,26 @@ export function HTEDashboard() {
   const currentHteId = currentUser?.id || currentUser?.employeeId || currentEmp?.id || hteUser?.id || undefined;
 
   const hteZone = useMemo(() => {
-    const currentEmail = (currentUser?.email || currentEmp?.email || hteUser?.email || '').toLowerCase();
-    const isPrinting =
-      currentUser?.id === '95558630-499b-4aac-b869-ba64b0694e8c' ||
-      currentEmp?.id === '95558630-499b-4aac-b869-ba64b0694e8c' ||
-      currentEmail.includes('reejhey') ||
-      companyName.toLowerCase().includes('printing') ||
-      companyName.toLowerCase().includes('chmsu');
+    const activeTarget = currentEmp || currentUser || hteUser;
+    const resolvedHte = resolveHteLocation(
+      {
+        ...activeTarget,
+        companyName,
+        id: currentHteId,
+        role: 'hte',
+      },
+      hostSupervisors,
+      employees,
+      geofenceZones
+    );
 
-    // Permanent official workplace coordinates for HTE establishments (Fixed & Immutable)
-    const permanentCoordinates = isPrinting
+    const normComp = (companyName || '').toLowerCase();
+    const isPrinting =
+      normComp.includes('printing') ||
+      normComp.includes('chmsu') ||
+      currentHteId === '95558630-499b-4aac-b869-ba64b0694e8c';
+
+    const defaultFallback = isPrinting
       ? {
           lat: 10.742858,
           lng: 122.970088,
@@ -110,48 +120,31 @@ export function HTEDashboard() {
           company: 'Concentrix',
         };
 
-    const effectiveName = `${companyName || permanentCoordinates.company} - Workplace Geofence Perimeter`;
+    const effectiveName = `${companyName || defaultFallback.company} - Workplace Geofence Perimeter`;
 
-    // Only match official non-trainee establishment zones from geofenceZones
-    const officialZone = geofenceZones.find((z) => {
-      if (!z.active || !z.lat || !z.lng) return false;
-      const zName = (z.name || '').toLowerCase();
-      // Strictly exclude personal trainee / student zones
-      if (zName.includes('trainee') || zName.includes('student') || (z as any).userType === 'trainee') return false;
-      const cSearch = isPrinting ? 'chmsu' : 'concentrix';
-      return (
-        z.id === currentUser?.id ||
-        z.id === currentEmp?.id ||
-        z.employeeId === currentUser?.id ||
-        zName.includes(cSearch) ||
-        (isPrinting && zName.includes('printing')) ||
-        zName.includes('workplace')
-      );
-    });
-
-    if (officialZone) {
+    if (resolvedHte) {
       return {
-        ...officialZone,
+        id: `station-${currentHteId || 'hte'}`,
         name: effectiveName,
-        address: officialZone.address || permanentCoordinates.address,
-        lat: Number(officialZone.lat) || permanentCoordinates.lat,
-        lng: Number(officialZone.lng) || permanentCoordinates.lng,
-        radius: Math.max(20, Number(officialZone.radius || permanentCoordinates.radius)),
+        address: resolvedHte.address || defaultFallback.address,
+        lat: Number(resolvedHte.lat),
+        lng: Number(resolvedHte.lng),
+        radius: Math.max(20, Number(resolvedHte.radius || 40)),
         active: true,
       };
     }
 
     // Default permanent establishment geofence
     return {
-      id: `station-${currentUser?.id || currentEmp?.id || (isPrinting ? 'printing' : 'concentrix')}`,
+      id: `station-${currentHteId || (isPrinting ? 'printing' : 'concentrix')}`,
       name: effectiveName,
-      address: permanentCoordinates.address,
-      lat: permanentCoordinates.lat,
-      lng: permanentCoordinates.lng,
-      radius: permanentCoordinates.radius,
+      address: defaultFallback.address,
+      lat: defaultFallback.lat,
+      lng: defaultFallback.lng,
+      radius: defaultFallback.radius,
       active: true,
     };
-  }, [geofenceZones, companyName, currentUser, currentEmp, hteUser]);
+  }, [geofenceZones, companyName, currentUser, currentEmp, hteUser, hostSupervisors, employees, currentHteId]);
 
   // Trainees tied to active HTE via company name, direct assignment, or all active OJT trainees in the active academic year
   const trainees = useMemo(() => {

@@ -466,6 +466,13 @@ export default function OAuthCallback() {
           localStorage.setItem('oauth_family_name', familyName);
           localStorage.setItem('oauth_photo', photoUrl || '');
           localStorage.setItem('oauth_user_id', authUser.id);
+          localStorage.setItem('oauth_is_google', 'true');
+          sessionStorage.setItem('pending_oauth_role', 'admin');
+          sessionStorage.setItem('oauth_email', email);
+          sessionStorage.setItem('oauth_name', fullName);
+          sessionStorage.setItem('oauth_user_id', authUser.id);
+          sessionStorage.setItem('oauth_pending', 'true');
+          sessionStorage.setItem('oauth_is_google', 'true');
 
           setTimeout(() => navigate('/register?role=admin', { replace: true }), 300);
           return;
@@ -481,6 +488,13 @@ export default function OAuthCallback() {
           localStorage.setItem('oauth_family_name', familyName);
           localStorage.setItem('oauth_photo', photoUrl || '');
           localStorage.setItem('oauth_user_id', authUser.id);
+          localStorage.setItem('oauth_is_google', 'true');
+          sessionStorage.setItem('pending_oauth_role', 'hte');
+          sessionStorage.setItem('oauth_email', email);
+          sessionStorage.setItem('oauth_name', fullName);
+          sessionStorage.setItem('oauth_user_id', authUser.id);
+          sessionStorage.setItem('oauth_pending', 'true');
+          sessionStorage.setItem('oauth_is_google', 'true');
 
           setTimeout(() => navigate('/register?role=hte', { replace: true }), 300);
           return;
@@ -499,6 +513,13 @@ export default function OAuthCallback() {
         if (photoUrl) localStorage.setItem('oauth_photo', photoUrl);
         localStorage.setItem('oauth_user_id', authUser.id);
         localStorage.setItem('pending_oauth_role', 'trainee');
+        localStorage.setItem('oauth_is_google', 'true');
+        sessionStorage.setItem('oauth_email', email);
+        sessionStorage.setItem('oauth_name', fullName);
+        sessionStorage.setItem('oauth_user_id', authUser.id);
+        sessionStorage.setItem('pending_oauth_role', 'trainee');
+        sessionStorage.setItem('oauth_pending', 'true');
+        sessionStorage.setItem('oauth_is_google', 'true');
 
         setTimeout(() => navigate('/register?role=trainee', { replace: true }), 300);
       } catch (err: any) {

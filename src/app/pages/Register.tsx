@@ -165,6 +165,91 @@ export function parseGoogleFullName(fullName: string, givenName?: string | null,
   return { firstName, middleInitial, lastName };
 }
 
+export function getVerifiedGoogleEmail(): string {
+  try {
+    const direct =
+      localStorage.getItem('oauth_email') ||
+      sessionStorage.getItem('oauth_email') ||
+      localStorage.getItem('google_auth_email') ||
+      sessionStorage.getItem('google_auth_email');
+    if (direct && direct.includes('@')) return direct.trim().toLowerCase();
+
+    // Check all storage keys for Supabase auth session token
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') || key.includes('supabase')) && key.endsWith('-auth-token')) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const email =
+            parsed?.user?.email ||
+            parsed?.session?.user?.email ||
+            parsed?.user?.user_metadata?.email ||
+            parsed?.user?.user_metadata?.preferred_username;
+          if (email && typeof email === 'string' && email.includes('@')) {
+            return email.trim().toLowerCase();
+          }
+        }
+      }
+    }
+
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const key = sessionStorage.key(i);
+      if (key && (key.startsWith('sb-') || key.includes('supabase')) && key.endsWith('-auth-token')) {
+        const raw = sessionStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const email =
+            parsed?.user?.email ||
+            parsed?.session?.user?.email ||
+            parsed?.user?.user_metadata?.email;
+          if (email && typeof email === 'string' && email.includes('@')) {
+            return email.trim().toLowerCase();
+          }
+        }
+      }
+    }
+
+    const storedUserRaw = localStorage.getItem('ojt_user') || localStorage.getItem('ojt_current_user');
+    if (storedUserRaw) {
+      const u = JSON.parse(storedUserRaw);
+      if (u?.email && typeof u.email === 'string' && u.email.includes('@')) {
+        return u.email.trim().toLowerCase();
+      }
+    }
+  } catch {}
+  return '';
+}
+
+export function getVerifiedGoogleName(): string {
+  try {
+    const direct =
+      localStorage.getItem('oauth_name') ||
+      sessionStorage.getItem('oauth_name') ||
+      localStorage.getItem('google_auth_name') ||
+      sessionStorage.getItem('google_auth_name');
+    if (direct && direct.trim()) return direct.trim();
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('sb-') || key.includes('supabase')) && key.endsWith('-auth-token')) {
+        const raw = localStorage.getItem(key);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          const name =
+            parsed?.user?.user_metadata?.full_name ||
+            parsed?.user?.user_metadata?.name ||
+            parsed?.session?.user?.user_metadata?.full_name;
+          if (name && typeof name === 'string' && name.trim()) {
+            return name.trim();
+          }
+        }
+      }
+    }
+  } catch {}
+  return '';
+}
+
 export function Register() {
   const { registerEmployee, updateEmployee, employees, hostSupervisors, geofenceZones, settings, addGeofenceZone, setCurrentUser } = useApp();
   const navigate = useNavigate();
@@ -175,18 +260,24 @@ export function Register() {
   const [faceCapturing, setFaceCapturing] = useState(false);
   const [showCameraPermissionPrompt, setShowCameraPermissionPrompt] = useState(false);
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
-  const [form, setForm] = useState({
-    // Personal Information
-    name: '',
-    firstName: '',
-    lastName: '',
-    middleInitial: '',
-    email: '',
-    birthdate: '',
-    age: '',
-    username: '',
-    password: '',
-    confirmPassword: '',
+  const [form, setForm] = useState(() => {
+    const verifiedEmail = getVerifiedGoogleEmail();
+    const verifiedName = getVerifiedGoogleName();
+    const givenName = (typeof localStorage !== 'undefined' ? localStorage.getItem('oauth_given_name') : '') || '';
+    const familyName = (typeof localStorage !== 'undefined' ? localStorage.getItem('oauth_family_name') : '') || '';
+    const parsed = parseGoogleFullName(verifiedName, givenName, familyName);
+    return {
+      // Personal Information
+      name: verifiedName,
+      firstName: parsed.firstName || '',
+      lastName: parsed.lastName || '',
+      middleInitial: parsed.middleInitial || '',
+      email: verifiedEmail || '',
+      birthdate: '',
+      age: '',
+      username: verifiedEmail ? verifiedEmail.split('@')[0] : '',
+      password: '',
+      confirmPassword: '',
     // Location/Address
     country: 'PH',
     countryManual: '',
@@ -205,7 +296,7 @@ export function Register() {
     // Company (for HTE)
     companyName: '',
     companyAddress: '',
-    contactPerson: '',
+    contactPerson: verifiedName || '',
     contactPhone: '',
     // School/Instructor Information
     schoolName: 'Carlos Hilado Memorial State University',
@@ -217,6 +308,7 @@ export function Register() {
     startDate: '',
     endDate: '',
     requiredHours: 600 as number | string,
+    };
   });
 
   const selectedProgramOptions = useMemo(() => {
@@ -240,9 +332,13 @@ export function Register() {
   const [otpMessage, setOtpMessage] = useState<string | null>(null);
   const [oauthPending, setOauthPending] = useState<boolean>(() => {
     try {
+      const vEmail = getVerifiedGoogleEmail();
       return (
+        Boolean(vEmail) ||
         Boolean(localStorage.getItem('oauth_email')) ||
+        Boolean(sessionStorage.getItem('oauth_email')) ||
         Boolean(localStorage.getItem('oauth_user_id')) ||
+        Boolean(sessionStorage.getItem('oauth_user_id')) ||
         localStorage.getItem('oauth_is_google') === 'true' ||
         sessionStorage.getItem('oauth_pending') === 'true'
       );
@@ -370,13 +466,14 @@ export function Register() {
       setGoogleAvatar(photoUrl);
     }
 
+    const resolvedEmail = email || getVerifiedGoogleEmail() || prev.email || '';
     setForm((prev) => ({
       ...prev,
       name: fullName || prev.name || 'OJT Instructor',
       firstName: fName || prev.firstName || 'Instructor',
       lastName: lName || prev.lastName || 'Faculty',
       middleInitial: mInitial || prev.middleInitial || '',
-      email: email || prev.email,
+      email: resolvedEmail,
       contactPhone: prev.contactPhone && prev.contactPhone.replace(/[^\d]/g, '').length >= 10 ? prev.contactPhone : '+639171234567',
       schoolName: 'Carlos Hilado Memorial State University',
       campus: prev.campus || 'Talisay Campus',
@@ -453,6 +550,7 @@ export function Register() {
       ? 'Domingo Lizares Street, Purok Manpower'
       : 'Helix Service Center, Santa Clara Avenue';
 
+    const resolvedEmail = email || getVerifiedGoogleEmail() || prev.email || '';
     setForm((prev) => ({
       ...prev,
       name: resolvedRepName,
@@ -460,7 +558,7 @@ export function Register() {
       lastName: lName || prev.lastName || 'Representative',
       middleInitial: mInitial || prev.middleInitial || '',
       contactPerson: resolvedRepName,
-      email: email || prev.email,
+      email: resolvedEmail,
       contactPhone: prev.contactPhone && prev.contactPhone.replace(/[^\d]/g, '').length >= 10 ? prev.contactPhone : '+639171234567',
       companyName: prev.companyName || resolvedCompany,
       companyAddress: prev.companyAddress || resolvedAddress,
@@ -479,9 +577,9 @@ export function Register() {
 
   const selectRole = (nextRole: UserRole) => {
     if (oauthPending && (nextRole === 'admin' || nextRole === 'hte')) {
-      const oauthEmail = localStorage.getItem('oauth_email') || form.email;
-      const oauthName = localStorage.getItem('oauth_name') || form.name || [form.firstName, form.lastName].filter(Boolean).join(' ') || (nextRole === 'admin' ? 'OJT Instructor' : 'HTE Representative');
-      const oauthPhoto = localStorage.getItem('oauth_photo') || googleAvatar || photo || '';
+      const oauthEmail = getVerifiedGoogleEmail() || localStorage.getItem('oauth_email') || sessionStorage.getItem('oauth_email') || form.email || '';
+      const oauthName = getVerifiedGoogleName() || localStorage.getItem('oauth_name') || form.name || [form.firstName, form.lastName].filter(Boolean).join(' ') || (nextRole === 'admin' ? 'OJT Instructor' : 'HTE Representative');
+      const oauthPhoto = localStorage.getItem('oauth_photo') || sessionStorage.getItem('oauth_photo') || googleAvatar || photo || '';
 
       if (nextRole === 'admin') {
         prefillInstructorGoogleData(
@@ -1041,6 +1139,12 @@ export function Register() {
 
   const handleSubmit = async () => {
     if (isSubmitting) return; // debounce: block re-entry while a submit is in flight
+    if (!form.email?.trim() && (isGoogleAuth || oauthPending)) {
+      const recovered = getVerifiedGoogleEmail();
+      if (recovered) {
+        form.email = recovered;
+      }
+    }
     const errs = getValidationErrors();
     if (errs.length > 0) {
       setAttemptedNext(true);
@@ -1469,8 +1573,16 @@ export function Register() {
   const getValidationErrors = () => {
     const errors = [];
 
+    let currentEmail = (form.email || '').toString().trim();
+    if (!currentEmail && (isGoogleAuth || oauthPending)) {
+      const recovered = getVerifiedGoogleEmail();
+      if (recovered) {
+        currentEmail = recovered;
+        form.email = recovered;
+      }
+    }
     const hasName = Boolean(form.name || ((form.firstName || '').trim() && (form.lastName || '').trim()));
-    const hasEmail = Boolean((form.email && form.email.toString().trim()) || (form.username && form.username.toString().trim()));
+    const hasEmail = Boolean(currentEmail || (form.username && form.username.toString().trim()));
 
     // Check for email duplication
     const emailToCheck = (form.email || form.username || '').toString().toLowerCase();
@@ -2538,18 +2650,24 @@ export function Register() {
                             <input
                               type="email"
                               value={form.email}
-                              readOnly={oauthPending}
+                              readOnly={Boolean(oauthPending && form.email)}
                               onChange={(e) => update('email', e.target.value)}
                               placeholder="your.email@company.com"
                               className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 ${
-                                oauthPending
+                                oauthPending && form.email
                                   ? 'bg-gray-100 border-gray-300 text-gray-600 cursor-not-allowed'
                                   : 'bg-white border-gray-200 focus:ring-blue-500'
                               }`}
                             />
-                            {oauthPending && (
-                              <p className="text-[10px] text-green-700 font-semibold mt-1">✓ Verified via Google Account</p>
-                            )}
+                            {oauthPending && form.email ? (
+                              <p className="text-[10px] text-green-700 font-semibold mt-1 flex items-center gap-1">
+                                <span>✓</span> Verified via Google Account ({form.email})
+                              </p>
+                            ) : oauthPending && !form.email ? (
+                              <p className="text-[10px] text-amber-700 font-medium mt-1">
+                                Please enter your contact email address
+                              </p>
+                            ) : null}
                           </div>
                         </div>
 
@@ -2809,9 +2927,9 @@ export function Register() {
                           onChange={(e) => { update('email', e.target.value); setEmailTaken(null); }}
                           onBlur={() => checkEmailExists(form.email)}
                           placeholder="your@email.com"
-                          readOnly={isGoogleAuth}
+                          readOnly={Boolean(isGoogleAuth && form.email)}
                           className={`w-full px-3 py-2.5 border rounded-xl text-sm focus:outline-none focus:ring-2 ${
-                            isGoogleAuth ? 'bg-slate-100 text-slate-700 cursor-not-allowed border-gray-200' : 'bg-gray-50'
+                            isGoogleAuth && form.email ? 'bg-slate-100 text-slate-700 cursor-not-allowed border-gray-200' : 'bg-gray-50'
                           } ${
                             (attemptedNext && !isEmailValid) || emailTaken
                               ? 'border-red-400 focus:ring-red-400 bg-red-50/20'

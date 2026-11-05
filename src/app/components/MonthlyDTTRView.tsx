@@ -95,28 +95,19 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   }, [defaultEmployeeId, selectedEmployeeId]);
 
   useEffect(() => {
-    const fetchLatestRecords = () => {
-      if (!selectedEmployee) return;
-      const altIds = [selectedEmployee.employeeId, selectedEmployee.email].filter(Boolean) as string[];
-      supabaseService.fetchTimeRecordsForEmployee(selectedEmployee.id, altIds)
-        .then((records) => {
-          if (Array.isArray(records) && records.length > 0) {
-            setExtraEmployeeRecords(records);
-          }
-        })
-        .catch(() => {});
-    };
+    if (!selectedEmployeeId) return;
+    const emp = employees.find((e) => e.id === selectedEmployeeId || e.employeeId === selectedEmployeeId);
+    if (!emp) return;
 
-    refreshData?.({ force: true }).catch(() => {});
-    fetchLatestRecords();
-
-    const interval = setInterval(() => {
-      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        fetchLatestRecords();
-      }
-    }, 20000);
-    return () => clearInterval(interval);
-  }, [selectedEmployeeId, selectedYear, selectedMonth, refreshData, selectedEmployee]);
+    const altIds = [emp.employeeId, emp.email].filter(Boolean) as string[];
+    supabaseService.fetchTimeRecordsForEmployee(emp.id, altIds)
+      .then((records) => {
+        if (Array.isArray(records) && records.length > 0) {
+          setExtraEmployeeRecords(records);
+        }
+      })
+      .catch(() => {});
+  }, [selectedEmployeeId]);
 
   const instructorName = useMemo(() => {
     if (selectedEmployee?.instructorId) {

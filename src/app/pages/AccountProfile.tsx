@@ -528,7 +528,9 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
           <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 sm:col-span-2">
             <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Geofence Radius</div>
             <div className="flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-sm font-semibold text-slate-800">50 meters (Permanent Radius)</span>
+              <span className="text-sm font-semibold text-slate-800">
+                {Math.max(20, Number(employee?.registrationLocation?.radius || employee?.registrationRadius || (employee as any)?.registration_radius || 40))} meters (Official Geofence Radius)
+              </span>
               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
                 <CheckCircle size={12} className="text-emerald-600" />
                 Active ({settings?.activeAcademicYear || '2026-2027'})

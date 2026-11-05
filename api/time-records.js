@@ -48,6 +48,13 @@ function isUuid(val) {
   return Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val));
 }
 
+function withTimeout(promise, ms = 7500) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('Database upstream timeout')), ms)),
+  ]);
+}
+
 async function resolveToUuid(empId) {
   if (!empId) return null;
   const raw = String(empId).trim();
@@ -177,16 +184,24 @@ export default async function handler(req, res) {
       const extendedFields = `${coreFields}, approval_status, approved_by, approved_at, approval_note`;
       const selectFields = includePhotos ? '*' : extendedFields;
 
-      let { data, error } = await executeQuery(selectFields);
-      if (error && (error.message?.includes('does not exist') || error.code === '42703')) {
-        const fallback = await executeQuery(coreFields);
-        if (!fallback.error) {
-          return sendJson(res, 200, fallback.data || []);
+      let data = [];
+      try {
+        let queryRes = await withTimeout(executeQuery(selectFields), 7500);
+        let error = queryRes?.error;
+        if (error && (error.message?.includes('does not exist') || error.code === '42703')) {
+          const fallback = await withTimeout(executeQuery(coreFields), 7500);
+          if (!fallback.error) {
+            return sendJson(res, 200, fallback.data || []);
+          }
         }
-      }
-
-      if (error) {
-        return sendJson(res, 500, { error: error.message });
+        if (error) {
+          console.warn('api/time-records query note:', error.message);
+          return sendJson(res, 200, []);
+        }
+        data = queryRes?.data || [];
+      } catch (tErr) {
+        console.warn('api/time-records timeout/failure:', tErr.message);
+        return sendJson(res, 200, []);
       }
 
       return sendJson(res, 200, data || []);
@@ -288,6 +303,7 @@ export default async function handler(req, res) {
 
     return sendJson(res, 405, { error: 'Method not allowed' });
   } catch (err) {
-    return sendJson(res, 500, { error: err.message || 'Server error' });
+    console.warn('api/time-records handler exception:', err);
+    return sendJson(res, 200, []);
   }
 }

@@ -1950,9 +1950,12 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
 
   // 1. Primary path: Service role endpoint /api/geofence-zones (guaranteed RLS bypass and persistence)
   try {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 6000);
     const res = await fetch('/api/geofence-zones', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
       body: JSON.stringify({
         id,
         name: updates.name,
@@ -1965,6 +1968,7 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
         employeeId: empId,
       }),
     });
+    clearTimeout(timeoutId);
     if (res.ok) {
       return true;
     }
@@ -1973,52 +1977,56 @@ export async function updateGeofenceZone(id: string, updates: Partial<GeofenceZo
   }
 
   // 2. Direct Supabase client fallback
-  const supabaseUpdates: any = {};
-  if (updates.name !== undefined) supabaseUpdates.name = updates.name;
-  if (updates.address !== undefined) supabaseUpdates.address = updates.address;
-  if (updates.lat !== undefined) supabaseUpdates.lat = Number(updates.lat);
-  if (updates.lng !== undefined) supabaseUpdates.lng = Number(updates.lng);
-  if (updates.radius !== undefined) supabaseUpdates.radius = Number(updates.radius);
-  if (updates.active !== undefined) supabaseUpdates.active = updates.active;
-  if (empId && isValidUUID(empId)) supabaseUpdates.employee_id = empId;
+  try {
+    const supabaseUpdates: any = {};
+    if (updates.name !== undefined) supabaseUpdates.name = updates.name;
+    if (updates.address !== undefined) supabaseUpdates.address = updates.address;
+    if (updates.lat !== undefined) supabaseUpdates.lat = Number(updates.lat);
+    if (updates.lng !== undefined) supabaseUpdates.lng = Number(updates.lng);
+    if (updates.radius !== undefined) supabaseUpdates.radius = Number(updates.radius);
+    if (updates.active !== undefined) supabaseUpdates.active = updates.active;
+    if (empId && isValidUUID(empId)) supabaseUpdates.employee_id = empId;
 
-  if (isValidUUID(id)) {
-    const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id).select();
-    if (!error && updatedRows && updatedRows.length > 0) return true;
-  }
-
-  // Match by employee_id if available
-  if (empId) {
-    try {
-      const { data: matchedEmp } = await supabase.from('geofence_zones').select('id').eq('employee_id', empId).limit(1);
-      if (matchedEmp && matchedEmp.length > 0) {
-        const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matchedEmp[0].id).select();
-        if (!error && updatedRows && updatedRows.length > 0) return true;
-      }
-    } catch {}
-  }
-
-  if (updates.name) {
-    const { data: matched } = await supabase.from('geofence_zones').select('id').eq('name', updates.name).limit(1);
-    if (matched && matched.length > 0 && isValidUUID(matched[0].id)) {
-      const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matched[0].id).select();
+    if (isValidUUID(id)) {
+      const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', id).select();
       if (!error && updatedRows && updatedRows.length > 0) return true;
     }
-  }
 
-  // If not yet present in geofence_zones table, create record with resolved coordinates
-  if (updates.lat && updates.lng) {
-    await createGeofenceZone({
-      id: isValidUUID(id) ? id : undefined,
-      name: updates.name || 'Workplace Geofence Zone',
-      address: updates.address || '',
-      lat: Number(updates.lat),
-      lng: Number(updates.lng),
-      radius: Math.max(20, Number(updates.radius) || 40),
-      active: updates.active !== false,
-      academicYear: updates.academicYear,
-      employeeId: empId,
-    } as any);
+    // Match by employee_id if available
+    if (empId) {
+      try {
+        const { data: matchedEmp } = await supabase.from('geofence_zones').select('id').eq('employee_id', empId).limit(1);
+        if (matchedEmp && matchedEmp.length > 0) {
+          const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matchedEmp[0].id).select();
+          if (!error && updatedRows && updatedRows.length > 0) return true;
+        }
+      } catch {}
+    }
+
+    if (updates.name) {
+      const { data: matched } = await supabase.from('geofence_zones').select('id').eq('name', updates.name).limit(1);
+      if (matched && matched.length > 0 && isValidUUID(matched[0].id)) {
+        const { data: updatedRows, error } = await supabase.from('geofence_zones').update(supabaseUpdates).eq('id', matched[0].id).select();
+        if (!error && updatedRows && updatedRows.length > 0) return true;
+      }
+    }
+
+    // If not yet present in geofence_zones table, create record with resolved coordinates
+    if (updates.lat && updates.lng) {
+      await createGeofenceZone({
+        id: isValidUUID(id) ? id : undefined,
+        name: updates.name || 'Workplace Geofence Zone',
+        address: updates.address || '',
+        lat: Number(updates.lat),
+        lng: Number(updates.lng),
+        radius: Math.max(20, Number(updates.radius) || 40),
+        active: updates.active !== false,
+        academicYear: updates.academicYear,
+        employeeId: empId,
+      } as any);
+    }
+  } catch (sbErr) {
+    console.warn('Direct Supabase geofence update note:', sbErr);
   }
 
   return true;
@@ -2107,11 +2115,22 @@ export async function migrateAdministratorPosition(): Promise<number> {
 export async function fetchSettings(): Promise<AppSettings | null> {
   if (!isSupabaseConfigured()) return null;
 
-  const { data, error } = await supabase.from('app_settings').select('*').maybeSingle();
-
-  if (error) {
-    if (error.code === 'PGRST116') return null;
-    console.error('Error fetching settings:', error);
+  let data: any = null;
+  try {
+    const result = await supabase.from('app_settings').select('*').maybeSingle();
+    if (result.error) {
+      if (result.error.code !== 'PGRST116') {
+        console.warn('fetchSettings database note:', result.error.message);
+      }
+      return null;
+    }
+    data = result.data;
+  } catch (netErr) {
+    console.warn('fetchSettings network note (using cached settings if available):', netErr);
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('ojt_settings') : null;
+      if (raw) return JSON.parse(raw);
+    } catch {}
     return null;
   }
 
@@ -3020,14 +3039,15 @@ export async function createAnnouncementComment(comment: Omit<AnnouncementCommen
 export async function fetchHostFeedback(): Promise<HostFeedback[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase.from('host_feedback').select('*').order('submitted_at', { ascending: false });
+  try {
+    const { data, error } = await supabase.from('host_feedback').select('*').order('submitted_at', { ascending: false });
 
-  if (error) {
-    console.error('Error fetching host feedback:', error);
-    return [];
-  }
+    if (error) {
+      console.warn('fetchHostFeedback database note:', error.message);
+      return [];
+    }
 
-  return (data || []).map((hf: any) => ({
+    return (data || []).map((hf: any) => ({
     id: hf.id,
     employeeId: hf.employee_id,
     hostName: hf.host_name,
@@ -3047,6 +3067,10 @@ export async function fetchHostFeedback(): Promise<HostFeedback[]> {
     status: hf.status,
     academicYear: hf.academic_year,
   }));
+  } catch (netErr) {
+    console.warn('fetchHostFeedback network note:', netErr);
+    return [];
+  }
 }
 
 export async function createHostFeedback(feedback: Omit<HostFeedback, 'id'>): Promise<HostFeedback | null> {
@@ -3571,12 +3595,24 @@ export async function upsertTimeRecords(records: TimeRecord[]): Promise<boolean>
 export async function fetchHostSupervisors(): Promise<HostSupervisor[]> {
   if (!isSupabaseConfigured()) return [];
 
-  const { data, error } = await supabase.from('host_supervisors').select('*').order('created_at', { ascending: false });
-  if (error) {
-    console.error('Error fetching host_supervisors:', error);
+  try {
+    const { data, error } = await supabase.from('host_supervisors').select('*').order('created_at', { ascending: false });
+    if (error) {
+      console.warn('fetchHostSupervisors database note:', error.message);
+      return [];
+    }
+    return (data || []).map(transformSupabaseHostSupervisor);
+  } catch (netErr) {
+    console.warn('fetchHostSupervisors network note:', netErr);
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('ojt_host_supervisors') : null;
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {}
     return [];
   }
-  return (data || []).map(transformSupabaseHostSupervisor);
 }
 
 export async function createHostSupervisor(host: HostSupervisor): Promise<HostSupervisor | null> {
