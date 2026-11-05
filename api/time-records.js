@@ -72,8 +72,46 @@ async function resolveToUuid(empId) {
   return raw;
 }
 
+function extractSlotNotes(notes) {
+  if (!notes || typeof notes !== 'string') return {};
+  const match = notes.match(/\[slots:(.*?)\]/);
+  if (match) {
+    try {
+      return JSON.parse(match[1]);
+    } catch {}
+  }
+  return {};
+}
+
+function encodeSlotNotes(existingNotes, r) {
+  const existingSlots = extractSlotNotes(existingNotes);
+  const slots = { ...existingSlots };
+
+  if (r.amArrival || r.am_arrival) slots.amArrival = r.amArrival || r.am_arrival;
+  if (r.amDeparture || r.am_departure) slots.amDeparture = r.amDeparture || r.am_departure;
+  if (r.pmArrival || r.pm_arrival) slots.pmArrival = r.pmArrival || r.pm_arrival;
+  if (r.pmDeparture || r.pm_departure) slots.pmDeparture = r.pmDeparture || r.pm_departure;
+
+  if (r.amArrivalFaceVerified ?? r.am_arrival_face_verified) slots.amArrivalFaceVerified = true;
+  if (r.amDepartureFaceVerified ?? r.am_departure_face_verified) slots.amDepartureFaceVerified = true;
+  if (r.pmArrivalFaceVerified ?? r.pm_arrival_face_verified) slots.pmArrivalFaceVerified = true;
+  if (r.pmDepartureFaceVerified ?? r.pm_departure_face_verified) slots.pmDepartureFaceVerified = true;
+
+  if (r.amArrivalGeofenced ?? r.am_arrival_geofenced) slots.amArrivalGeofenced = true;
+  if (r.amDepartureGeofenced ?? r.am_departure_geofenced) slots.amDepartureGeofenced = true;
+  if (r.pmArrivalGeofenced ?? r.pm_arrival_geofenced) slots.pmArrivalGeofenced = true;
+  if (r.pmDepartureGeofenced ?? r.pm_departure_geofenced) slots.pmDepartureGeofenced = true;
+
+  if (Object.keys(slots).length === 0) return existingNotes || null;
+
+  const baseNote = (existingNotes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+  const slotTag = `[slots:${JSON.stringify(slots)}]`;
+  return baseNote ? `${baseNote} ${slotTag}` : slotTag;
+}
+
 function transformToDbPayload(r) {
   const cleanDate = r.date ? String(r.date).split('T')[0].split(' ')[0].trim() : new Date().toISOString().split('T')[0];
+  const encodedNotes = encodeSlotNotes(r.notes, r);
   const payload = {
     employee_id: r.employee_id || r.employeeId || r.employeeID,
     date: cleanDate,
@@ -81,7 +119,7 @@ function transformToDbPayload(r) {
     time_out: r.time_out ?? r.timeOut ?? r.pmDeparture ?? r.amDeparture ?? null,
     total_hours: r.total_hours != null ? Number(r.total_hours) : (r.totalHours != null ? Number(r.totalHours) : 0),
     status: r.status || 'present',
-    notes: r.notes || null,
+    notes: encodedNotes || r.notes || null,
   };
 
   if (r.id && isUuid(r.id)) {
@@ -257,13 +295,14 @@ export default async function handler(req, res) {
           }
 
           if (existing?.id) {
-            // Merge & Update existing record
+            // Merge & Update existing record while preserving and merging slot notes
+            const mergedNotes = encodeSlotNotes(existing.notes, payload) || payload.notes || existing.notes;
             const mergedPayload = {
               ...payload,
-              time_in: payload.time_in || existing.time_in,
+              time_in: existing.time_in || payload.time_in,
               time_out: payload.time_out || existing.time_out,
               total_hours: Math.max(Number(payload.total_hours) || 0, Number(existing.total_hours) || 0),
-              notes: payload.notes !== undefined && payload.notes !== null ? payload.notes : existing.notes,
+              notes: mergedNotes,
             };
             delete mergedPayload.id;
 

@@ -2199,15 +2199,36 @@ export function Dashboard() {
         {/* 4-Slot Daily Attendance Cards (Civil Service Form 48 / DTTR Standard) */}
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
           {(() => {
-            const hasAmIn = Boolean(
+            const displayAmIn =
               todayRecord?.amArrival ||
-              (todayRecord?.timeIn && !/pm/i.test(todayRecord.timeIn) && parseInt(todayRecord.timeIn, 10) < 12) ||
-              (todayRecord?.timeIn && !todayRecord?.pmArrival)
-            );
-            const hasAmOut = Boolean(
+              (todayRecord?.timeIn && (!todayRecord.pmArrival || parseInt(todayRecord.timeIn, 10) < 12 || /am/i.test(todayRecord.timeIn))
+                ? todayRecord.timeIn
+                : '');
+
+            const displayAmOut =
               todayRecord?.amDeparture ||
-              (todayRecord?.timeOut && parseInt(todayRecord.timeOut, 10) < 13 && todayRecord.amArrival)
-            );
+              (todayRecord?.timeOut &&
+              (!todayRecord.pmArrival || parseInt(todayRecord.timeOut, 10) === 12 || parseInt(todayRecord.timeOut, 10) < 12 || (/am/i.test(todayRecord.timeOut) && !/pm/i.test(todayRecord.timeOut))) &&
+              todayRecord.timeOut !== todayRecord?.pmDeparture
+                ? todayRecord.timeOut
+                : '');
+
+            const displayPmIn =
+              todayRecord?.pmArrival ||
+              (todayRecord?.timeIn && (todayRecord.timeIn !== displayAmIn || parseInt(todayRecord.timeIn, 10) >= 12) && (todayRecord.amArrival || parseInt(todayRecord.timeIn, 10) >= 13)
+                ? todayRecord.timeIn
+                : '');
+
+            const displayPmOut =
+              todayRecord?.pmDeparture ||
+              (todayRecord?.timeOut && todayRecord.timeOut !== displayAmOut && (todayRecord.pmArrival || parseInt(todayRecord.timeOut, 10) >= 13 || (/pm/i.test(todayRecord.timeOut) && parseInt(todayRecord.timeOut, 10) !== 12))
+                ? todayRecord.timeOut
+                : '');
+
+            const hasAmIn = Boolean(displayAmIn);
+            const hasAmOut = Boolean(displayAmOut);
+            const hasPmIn = Boolean(displayPmIn);
+            const hasPmOut = Boolean(displayPmOut);
 
             return (
               <>
@@ -2217,9 +2238,9 @@ export function Dashboard() {
                     <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
                   </div>
                   <p className="text-white font-bold text-sm">
-                    {todayRecord?.amArrival ? formatTime(todayRecord.amArrival) : (todayRecord?.timeIn && (!todayRecord.amArrival && !todayRecord.pmArrival) ? formatTime(todayRecord.timeIn) : '— —')}
+                    {hasAmIn ? formatTime(displayAmIn) : '— —'}
                   </p>
-                  {Boolean(todayRecord?.amArrivalFaceVerified || (todayRecord?.timeInFaceVerified && !todayRecord?.amArrival)) && (
+                  {Boolean(hasAmIn && (todayRecord?.amArrivalFaceVerified || todayRecord?.timeInFaceVerified || todayRecord?.amArrivalGeofenced || todayRecord?.timeInGeofenced)) && (
                     <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
                       <Camera size={9} />
                       <span>Verified</span>
@@ -2233,9 +2254,9 @@ export function Dashboard() {
                     <span className="text-[9px] px-1 bg-white/20 rounded">AM</span>
                   </div>
                   <p className="text-white font-bold text-sm">
-                    {todayRecord?.amDeparture ? formatTime(todayRecord.amDeparture) : '— —'}
+                    {hasAmOut ? formatTime(displayAmOut) : '— —'}
                   </p>
-                  {Boolean(todayRecord?.amDepartureFaceVerified) ? (
+                  {hasAmOut && Boolean(todayRecord?.amDepartureFaceVerified || todayRecord?.timeOutFaceVerified || todayRecord?.amDepartureGeofenced) ? (
                     <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
                       <Camera size={9} />
                       <span>Verified</span>
@@ -2254,9 +2275,9 @@ export function Dashboard() {
                     <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
                   </div>
                   <p className="text-white font-bold text-sm">
-                    {todayRecord?.pmArrival ? formatTime(todayRecord.pmArrival) : '— —'}{' '}
+                    {hasPmIn ? formatTime(displayPmIn) : '— —'}
                   </p>
-                  {Boolean(todayRecord?.pmArrivalFaceVerified) ? (
+                  {hasPmIn && Boolean(todayRecord?.pmArrivalFaceVerified || todayRecord?.timeInFaceVerified || todayRecord?.pmArrivalGeofenced) ? (
                     <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
                       <Camera size={9} />
                       <span>Verified</span>
@@ -2280,9 +2301,9 @@ export function Dashboard() {
                     <span className="text-[9px] px-1 bg-white/20 rounded">PM</span>
                   </div>
                   <p className="text-white font-bold text-sm">
-                    {todayRecord?.pmDeparture ? formatTime(todayRecord.pmDeparture) : (todayRecord?.timeOut && (!todayRecord.amDeparture && !todayRecord.pmDeparture) ? formatTime(todayRecord.timeOut) : '— —')}
+                    {hasPmOut ? formatTime(displayPmOut) : '— —'}
                   </p>
-                  {Boolean(todayRecord?.pmDepartureFaceVerified || (todayRecord?.timeOutFaceVerified && !todayRecord?.pmDeparture)) ? (
+                  {hasPmOut && Boolean(todayRecord?.pmDepartureFaceVerified || todayRecord?.timeOutFaceVerified || todayRecord?.pmDepartureGeofenced) ? (
                     <div className="flex items-center gap-1 mt-1 text-[10px] text-green-300">
                       <Camera size={9} />
                       <span>Verified</span>
@@ -2297,7 +2318,7 @@ export function Dashboard() {
                       <Lock size={9} />
                       <span>Req. AM Out</span>
                     </div>
-                  ) : !todayRecord?.pmArrival ? (
+                  ) : !hasPmIn ? (
                     <div className="flex items-center gap-1 mt-1 text-[10px] text-amber-200/90 font-medium">
                       <Lock size={9} />
                       <span>Req. PM In</span>
@@ -2326,17 +2347,36 @@ export function Dashboard() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         {(() => {
           const h = currentTime.getHours();
-          const hasAmIn = Boolean(
+          const displayAmIn =
             todayRecord?.amArrival ||
-            (todayRecord?.timeIn && !/pm/i.test(todayRecord.timeIn) && parseInt(todayRecord.timeIn, 10) < 12) ||
-            (todayRecord?.timeIn && !todayRecord?.pmArrival)
-          );
-          const hasAmOut = Boolean(
+            (todayRecord?.timeIn && (!todayRecord.pmArrival || parseInt(todayRecord.timeIn, 10) < 12 || /am/i.test(todayRecord.timeIn))
+              ? todayRecord.timeIn
+              : '');
+
+          const displayAmOut =
             todayRecord?.amDeparture ||
-            (todayRecord?.timeOut && parseInt(todayRecord.timeOut, 10) < 13 && todayRecord.amArrival)
-          );
-          const hasPmIn = Boolean(todayRecord?.pmArrival);
-          const hasPmOut = Boolean(todayRecord?.pmDeparture);
+            (todayRecord?.timeOut &&
+            (!todayRecord.pmArrival || parseInt(todayRecord.timeOut, 10) === 12 || parseInt(todayRecord.timeOut, 10) < 12 || (/am/i.test(todayRecord.timeOut) && !/pm/i.test(todayRecord.timeOut))) &&
+            todayRecord.timeOut !== todayRecord?.pmDeparture
+              ? todayRecord.timeOut
+              : '');
+
+          const displayPmIn =
+            todayRecord?.pmArrival ||
+            (todayRecord?.timeIn && (todayRecord.timeIn !== displayAmIn || parseInt(todayRecord.timeIn, 10) >= 12) && (todayRecord.amArrival || parseInt(todayRecord.timeIn, 10) >= 13)
+              ? todayRecord.timeIn
+              : '');
+
+          const displayPmOut =
+            todayRecord?.pmDeparture ||
+            (todayRecord?.timeOut && todayRecord.timeOut !== displayAmOut && (todayRecord.pmArrival || parseInt(todayRecord.timeOut, 10) >= 13 || (/pm/i.test(todayRecord.timeOut) && parseInt(todayRecord.timeOut, 10) !== 12))
+              ? todayRecord.timeOut
+              : '');
+
+          const hasAmIn = Boolean(displayAmIn);
+          const hasAmOut = Boolean(displayAmOut);
+          const hasPmIn = Boolean(displayPmIn);
+          const hasPmOut = Boolean(displayPmOut);
 
           let nextPunch: {
             label: string;
@@ -2360,28 +2400,24 @@ export function Dashboard() {
               label: 'RECORD TIME OUT AM (REQUIRED)',
               title: 'CLOCK OUT TIME OUT AM',
               sub: h >= 12
-                ? `Morning Shift Out Required • Clocked In at ${formatTime(todayRecord?.amArrival || todayRecord?.timeIn || '')} • Complete AM Out before PM`
-                : `Lunch Break Out • Clocked In at ${formatTime(todayRecord?.amArrival || todayRecord?.timeIn || '')}`,
+                ? `Morning Shift Out Required • Clocked In at ${formatTime(displayAmIn)} • Complete AM Out before PM`
+                : `Lunch Break Out • Clocked In at ${formatTime(displayAmIn)}`,
               theme: 'out',
             };
-          }
-
-          if (!nextPunch && hasAmIn && hasAmOut) {
-            if (!hasPmIn) {
-              nextPunch = {
-                label: 'RECORD TIME IN PM',
-                title: 'CLOCK IN TIME IN PM',
-                sub: 'Afternoon Shift Start • 1:00 PM – 5:00 PM',
-                theme: 'in',
-              };
-            } else if (!hasPmOut) {
-              nextPunch = {
-                label: 'RECORD TIME OUT PM',
-                title: 'CLOCK OUT TIME OUT PM',
-                sub: `End of Shift Out • PM Clocked In at ${formatTime(todayRecord?.pmArrival || '')}`,
-                theme: 'out',
-              };
-            }
+          } else if (!hasPmIn) {
+            nextPunch = {
+              label: 'RECORD TIME IN PM',
+              title: 'CLOCK IN TIME IN PM',
+              sub: 'Afternoon Shift Start • 1:00 PM – 5:00 PM',
+              theme: 'in',
+            };
+          } else if (!hasPmOut) {
+            nextPunch = {
+              label: 'RECORD TIME OUT PM',
+              title: 'CLOCK OUT TIME OUT PM',
+              sub: `End of Shift Out • PM Clocked In at ${formatTime(displayPmIn)}`,
+              theme: 'out',
+            };
           }
 
           if (nextPunch) {
@@ -2455,7 +2491,7 @@ export function Dashboard() {
                       TODAY'S SHIFTS COMPLETED (AM &amp; PM)
                     </h3>
                     <p className="text-xs text-emerald-100 mt-0.5">
-                      AM: {formatTime(todayRecord?.amArrival || '')} – {formatTime(todayRecord?.amDeparture || '')} &bull; PM: {formatTime(todayRecord?.pmArrival || '')} – {formatTime(todayRecord?.pmDeparture || '')}
+                      AM: {formatTime(displayAmIn || '')} – {formatTime(displayAmOut || '')} &bull; PM: {formatTime(displayPmIn || '')} – {formatTime(displayPmOut || '')}
                       {todayRecord?.totalHours ? ` (${todayRecord.totalHours.toFixed(1)} hrs rendered)` : ''}
                     </p>
                   </div>

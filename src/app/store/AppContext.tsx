@@ -4379,40 +4379,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!empIdentifier) return null;
     const rawToday = getDTRSessionDate(new Date());
     const today = rawToday.split('T')[0].split(' ')[0].trim();
+    const todayIso = new Date().toISOString().split('T')[0];
     const cleanEmpId = (empIdentifier || '').trim();
 
-    // Find associated employee to resolve all possible IDs
+    // Find associated employee to resolve all possible IDs (UUID, student ID, email, name)
     const emp = employees.find(
       (e) =>
         e.id === cleanEmpId ||
         e.employeeId === cleanEmpId ||
-        (e.email && cleanEmpId && normalizeEmail(e.email) === normalizeEmail(cleanEmpId))
+        (cleanEmpId && e.employeeId && cleanEmpId.replace(/[-\s]/g, '').toLowerCase() === e.employeeId.replace(/[-\s]/g, '').toLowerCase()) ||
+        (e.email && cleanEmpId && normalizeEmail(e.email) === normalizeEmail(cleanEmpId)) ||
+        (currentUser?.email && e.email && normalizeEmail(e.email) === normalizeEmail(currentUser.email)) ||
+        (currentUser?.employeeId && e.employeeId && currentUser.employeeId.replace(/[-\s]/g, '').toLowerCase() === e.employeeId.replace(/[-\s]/g, '').toLowerCase()) ||
+        (currentUser?.name && e.name && currentUser.name.trim().toLowerCase() === e.name.trim().toLowerCase())
     );
 
     const validIds = new Set<string>();
-    validIds.add(cleanEmpId);
-    validIds.add(cleanEmpId.toLowerCase());
+    if (cleanEmpId) {
+      validIds.add(cleanEmpId);
+      validIds.add(cleanEmpId.toLowerCase());
+      validIds.add(cleanEmpId.replace(/[-\s]/g, '').toLowerCase());
+    }
     if (emp) {
       if (emp.id) { validIds.add(emp.id); validIds.add(emp.id.toLowerCase()); }
-      if (emp.employeeId) { validIds.add(emp.employeeId); validIds.add(emp.employeeId.toLowerCase()); }
+      if (emp.employeeId) {
+        validIds.add(emp.employeeId);
+        validIds.add(emp.employeeId.toLowerCase());
+        validIds.add(emp.employeeId.replace(/[-\s]/g, '').toLowerCase());
+      }
       if (emp.email) validIds.add(emp.email.toLowerCase());
     }
-    const isTargetingCurrentUser = !!(currentUser && (
-      (currentUser.id && (cleanEmpId === currentUser.id || cleanEmpId.toLowerCase() === currentUser.id.toLowerCase())) ||
-      (currentUser.employeeId && (cleanEmpId === currentUser.employeeId || cleanEmpId.toLowerCase() === currentUser.employeeId.toLowerCase())) ||
-      (currentUser.email && cleanEmpId && currentUser.email.toLowerCase() === cleanEmpId.toLowerCase())
-    ));
-    if (isTargetingCurrentUser && currentUser) {
+    if (currentUser) {
       if (currentUser.id) { validIds.add(currentUser.id); validIds.add(currentUser.id.toLowerCase()); }
-      if (currentUser.employeeId) { validIds.add(currentUser.employeeId); validIds.add(currentUser.employeeId.toLowerCase()); }
+      if (currentUser.employeeId) {
+        validIds.add(currentUser.employeeId);
+        validIds.add(currentUser.employeeId.toLowerCase());
+        validIds.add(currentUser.employeeId.replace(/[-\s]/g, '').toLowerCase());
+      }
       if (currentUser.email) validIds.add(currentUser.email.toLowerCase());
     }
 
     const todayRecords = timeRecords.filter((r) => {
       const rDate = (r.date || '').split('T')[0].split(' ')[0].trim();
-      if (rDate !== today) return false;
+      if (rDate !== today && rDate !== todayIso) return false;
       const rEmpId = (r.employeeId || '').trim();
-      if (validIds.has(rEmpId) || validIds.has(rEmpId.toLowerCase())) return true;
+      const rEmpClean = rEmpId.replace(/[-\s]/g, '').toLowerCase();
+      if (validIds.has(rEmpId) || validIds.has(rEmpId.toLowerCase()) || validIds.has(rEmpClean)) return true;
       return false;
     });
 
@@ -4449,13 +4461,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Check localStorage fast punch cache for any immediate local punch
     if (typeof window !== 'undefined') {
       try {
+        const idList = Array.from(validIds);
         const cacheKeys = [
-          `ojt_today_punch_${cleanEmpId}_${today}`,
-          emp?.employeeId ? `ojt_today_punch_${emp.employeeId}_${today}` : null,
-          emp?.id ? `ojt_today_punch_${emp.id}_${today}` : null,
-          currentUser?.employeeId ? `ojt_today_punch_${currentUser.employeeId}_${today}` : null,
-          currentUser?.id ? `ojt_today_punch_${currentUser.id}_${today}` : null,
-        ].filter(Boolean) as string[];
+          ...idList.map((id) => `ojt_today_punch_${id}_${today}`),
+          ...idList.map((id) => `ojt_today_punch_${id}_${todayIso}`),
+        ];
 
         for (const key of cacheKeys) {
           const cachedRaw = localStorage.getItem(key);
@@ -4476,6 +4486,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
               if (!baseRecord.pmDeparture && cached.pmDeparture) baseRecord.pmDeparture = cached.pmDeparture;
               if (!baseRecord.timeIn && cached.timeIn) baseRecord.timeIn = cached.timeIn;
               if (!baseRecord.timeOut && cached.timeOut) baseRecord.timeOut = cached.timeOut;
+              if (cached.amArrivalFaceVerified) baseRecord.amArrivalFaceVerified = true;
+              if (cached.amDepartureFaceVerified) baseRecord.amDepartureFaceVerified = true;
+              if (cached.pmArrivalFaceVerified) baseRecord.pmArrivalFaceVerified = true;
+              if (cached.pmDepartureFaceVerified) baseRecord.pmDepartureFaceVerified = true;
             }
             break;
           }
