@@ -203,12 +203,8 @@ export function resolveHteLocation(
       if ((z as any).companyName && String((z as any).companyName).toLowerCase().includes(normCompany)) return true;
       // Also match known aliases
       if (normCompany.includes('concentrix') && zName.includes('concentrix')) return true;
-      if (
-        (normCompany.includes('chmsu') || normCompany.includes('printing')) &&
-        (zName.includes('chmsu') || zName.includes('printing') || zName.includes('press'))
-      ) {
-        return true;
-      }
+      if (normCompany.includes('printing') && (zName.includes('printing') || zName.includes('press'))) return true;
+      if (normCompany.includes('chmsu') && zName.includes('chmsu')) return true;
     }
     return false;
   });
@@ -233,12 +229,8 @@ export function resolveHteLocation(
     if (hasValidCompany && h.companyName && h.companyName.trim().toLowerCase() === normCompany) return true;
     if (hasValidCompany && h.name && h.name.trim().toLowerCase() === normCompany) return true;
     if (normCompany.includes('concentrix') && (h.companyName?.toLowerCase().includes('concentrix') || h.name?.toLowerCase().includes('concentrix'))) return true;
-    if (
-      (normCompany.includes('chmsu') || normCompany.includes('printing')) &&
-      (h.companyName?.toLowerCase().includes('printing') || h.companyName?.toLowerCase().includes('chmsu'))
-    ) {
-      return true;
-    }
+    if (normCompany.includes('printing') && (h.companyName?.toLowerCase().includes('printing') || h.companyName?.toLowerCase().includes('press') || h.name?.toLowerCase().includes('printing'))) return true;
+    if (normCompany.includes('chmsu') && (h.companyName?.toLowerCase().includes('chmsu') || h.name?.toLowerCase().includes('chmsu'))) return true;
     return false;
   });
 
@@ -274,12 +266,8 @@ export function resolveHteLocation(
     if (hteId && (e.id === hteId || e.employeeId === hteId)) return true;
     if (hasValidCompany && e.companyName && e.companyName.trim().toLowerCase() === normCompany) return true;
     if (normCompany.includes('concentrix') && e.companyName?.toLowerCase().includes('concentrix')) return true;
-    if (
-      (normCompany.includes('chmsu') || normCompany.includes('printing')) &&
-      (e.companyName?.toLowerCase().includes('printing') || e.companyName?.toLowerCase().includes('chmsu'))
-    ) {
-      return true;
-    }
+    if (normCompany.includes('printing') && (e.companyName?.toLowerCase().includes('printing') || e.companyName?.toLowerCase().includes('press'))) return true;
+    if (normCompany.includes('chmsu') && e.companyName?.toLowerCase().includes('chmsu')) return true;
     return false;
   });
 
@@ -305,9 +293,7 @@ export function resolveHteLocation(
   const isChmsuHte =
     hteId === CHMSU_HTE_SITE.id ||
     normCompany === 'chmsu' ||
-    normCompany.includes('chmsu') ||
-    normCompany.includes('printing') ||
-    normCompany.includes('press');
+    (normCompany.includes('chmsu') && !normCompany.includes('concentrix') && !normCompany.includes('printing'));
 
   if (isChmsuHte) {
     const comp = rawCompany && !normCompany.includes('pending') ? rawCompany : CHMSU_HTE_SITE.companyName;

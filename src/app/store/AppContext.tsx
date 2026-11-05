@@ -1937,6 +1937,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setEmployees((prev) => {
           const merged = mergeEmployees(supabaseEmployees, prev);
           saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
+
+          // Real-time synchronization: Keep currentUser in sync with cloud updates (e.g. HTE deployment / geofence changes)
+          if (currentUser) {
+            const matchedEmp = merged.find(
+              (e) =>
+                e.id === currentUser.id ||
+                (e.employeeId && (e.employeeId === currentUser.employeeId || e.employeeId === currentUser.id)) ||
+                (currentUser.email && e.email && normalizeEmail(e.email) === normalizeEmail(currentUser.email))
+            );
+            if (matchedEmp) {
+              setCurrentUser((cUser) => {
+                if (!cUser) return cUser;
+                const nextUser = {
+                  ...cUser,
+                  ...matchedEmp,
+                  name: matchedEmp.name || cUser.name,
+                  email: matchedEmp.email || cUser.email,
+                  photo: matchedEmp.photo || cUser.photo,
+                  companyName: matchedEmp.companyName ?? cUser.companyName,
+                  supervisorName: matchedEmp.supervisorName ?? cUser.supervisorName,
+                  companyAddress: matchedEmp.companyAddress ?? (cUser as any).companyAddress,
+                  registrationLocation: matchedEmp.registrationLocation ?? (cUser as any).registrationLocation,
+                  registrationAddress: matchedEmp.registrationAddress ?? (cUser as any).registrationAddress,
+                };
+                saveToStorage(STORAGE_KEYS.CURRENT_USER, nextUser);
+                return nextUser;
+              });
+            }
+          }
+
           return merged;
         });
       }
@@ -3653,6 +3683,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
         saveToStorage(STORAGE_KEYS.CURRENT_USER, nextUser);
         return nextUser;
       });
+    }
+
+    // Auto-sync trainee geofence zone when HTE or company is updated
+    if (isStudent && updatedEmployee && (data.companyName || data.hteId || data.registrationLocation)) {
+      const reg = (updatedEmployee.registrationLocation || data.registrationLocation) as any;
+      if (reg && reg.lat && reg.lng) {
+        const comp = updatedEmployee.companyName || data.companyName || 'Assigned Workplace';
+        const zonePayload: GeofenceZone = {
+          id: `station-${updatedEmployee.id}`,
+          name: `${updatedEmployee.name} - Trainee Geofence (${comp})`,
+          address: updatedEmployee.registrationAddress || updatedEmployee.companyAddress || reg.address || '',
+          lat: Number(reg.lat),
+          lng: Number(reg.lng),
+          radius: Number(reg.radius || 40),
+          active: true,
+          academicYear: updatedEmployee.academicYear || settings?.activeAcademicYear,
+          employeeId: updatedEmployee.id,
+          userType: 'trainee',
+        };
+        setGeofenceZones((prev) => {
+          const remaining = prev.filter((z) => z.id !== zonePayload.id && (z as any).employeeId !== updatedEmployee.id && (z as any).employee_id !== updatedEmployee.id);
+          const combined = [...remaining, zonePayload];
+          saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, combined);
+          return combined;
+        });
+        if (useSupabase) {
+          supabaseService.createGeofenceZone(zonePayload).catch(() => {});
+        }
+      }
     }
 
     let dbSuccess = true;

@@ -81,8 +81,8 @@ export default async function handler(req, res) {
 
       let zoneId = id && isUuid(id) ? id : (rawId && isUuid(rawId) ? rawId : undefined);
 
-      // Check if an existing record matches by employee_id, id, or name
-      if (!zoneId && payload.employee_id) {
+      // Check if an existing record matches by employee_id first (so trainee station zones always update their existing record)
+      if (payload.employee_id) {
         const { data: existing } = await withTimeout(
           supabase.from('geofence_zones').select('id').eq('employee_id', payload.employee_id).limit(1)
         ).catch(() => ({ data: null }));

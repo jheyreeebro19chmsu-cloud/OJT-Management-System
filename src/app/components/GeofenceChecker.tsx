@@ -149,18 +149,36 @@ export function GeofenceChecker({ onResult, autoCheck = true }: GeofenceCheckerP
           (z as any).employee_id === employee.id
       );
       const traineeOverride = getTraineeGeofenceOverride(employee);
+
+      // Only treat traineeStationZone as valid if it explicitly belongs to the trainee's CURRENT assigned HTE
+      const stationZoneName = (traineeStationZone?.name || '').toLowerCase();
+      const currentHteComp = (hteLoc.companyName || employee?.companyName || '').toLowerCase().trim();
+      const stationMatchesCurrentHte = Boolean(
+        traineeStationZone &&
+        currentHteComp &&
+        (
+          (traineeStationZone as any).hteId === employee.hteId ||
+          stationZoneName.includes(currentHteComp) ||
+          (!stationZoneName.includes('(') && !stationZoneName.includes('chmsu') && !stationZoneName.includes('concentrix') && !stationZoneName.includes('printing'))
+        )
+      );
+
       const customRadius =
         traineeOverride?.radius ||
         (employee.registrationLocation as any)?.radius ||
         employee.registrationRadius ||
         (employee as any)?.registration_radius ||
-        traineeStationZone?.radius;
+        (stationMatchesCurrentHte ? traineeStationZone?.radius : undefined);
       const targetRadius = customRadius ? Math.max(20, Number(customRadius)) : hteLoc.radius;
 
-      const targetLat = traineeOverride?.lat ?? (traineeStationZone && Number.isFinite(Number(traineeStationZone.lat)) ? Number(traineeStationZone.lat) : hteLoc.lat);
-      const targetLng = traineeOverride?.lng ?? (traineeStationZone && Number.isFinite(Number(traineeStationZone.lng)) ? Number(traineeStationZone.lng) : hteLoc.lng);
-      const targetAddress = traineeOverride?.address || traineeStationZone?.address || hteLoc.address;
-      const targetName = traineeStationZone?.name || `${hteLoc.companyName} Workplace Premises`;
+      const targetLat = traineeOverride?.lat ?? (stationMatchesCurrentHte && Number.isFinite(Number(traineeStationZone?.lat)) ? Number(traineeStationZone.lat) : hteLoc.lat);
+      const targetLng = traineeOverride?.lng ?? (stationMatchesCurrentHte && Number.isFinite(Number(traineeStationZone?.lng)) ? Number(traineeStationZone.lng) : hteLoc.lng);
+      const targetAddress = traineeOverride?.address || (stationMatchesCurrentHte ? traineeStationZone?.address : '') || hteLoc.address;
+      const targetName = traineeOverride
+        ? `${employee.name} - Trainee Geofence (${hteLoc.companyName})`
+        : (stationMatchesCurrentHte && traineeStationZone?.name
+            ? traineeStationZone.name
+            : `${employee.name} - Trainee Geofence (${hteLoc.companyName})`);
 
       const assignedWorkplaceZone: GeofenceZone = {
         id: `station-hte-${employee?.hteId || employee?.id || 'assigned'}`,

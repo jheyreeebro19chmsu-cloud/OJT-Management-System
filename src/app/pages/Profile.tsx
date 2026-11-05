@@ -1085,20 +1085,20 @@ export function Profile() {
       {(() => {
         const traineeOverride = getTraineeGeofenceOverride(employee);
         const resolvedHte = resolveHteLocation(employee, hostSupervisors, employees, geofenceZones);
-        const activeLat = traineeOverride?.lat ?? employee?.registrationLocation?.lat ?? resolvedHte?.lat;
-        const activeLng = traineeOverride?.lng ?? employee?.registrationLocation?.lng ?? resolvedHte?.lng;
+        const activeLat = traineeOverride?.lat ?? resolvedHte?.lat ?? employee?.registrationLocation?.lat;
+        const activeLng = traineeOverride?.lng ?? resolvedHte?.lng ?? employee?.registrationLocation?.lng;
         const activeRadius = Math.max(
           20,
           Number(
             traineeOverride?.radius ||
+            resolvedHte?.radius ||
             employee.registrationLocation?.radius ||
             employee.registrationRadius ||
             (employee as any)?.registration_radius ||
-            resolvedHte?.radius ||
             40
           )
         );
-        const activeAddress = resolvedGpsAddress || traineeOverride?.address || employee.registrationAddress || resolvedHte?.address || 'Assigned Establishment Location';
+        const activeAddress = resolvedGpsAddress || traineeOverride?.address || resolvedHte?.address || employee.registrationAddress || 'Assigned Establishment Location';
 
         return (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
