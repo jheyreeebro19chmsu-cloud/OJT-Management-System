@@ -290,7 +290,7 @@ export function AdvancedAnalyticsDashboard({
       const mKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
       const label = d.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
 
-      const mRecs = allRecords.filter((r) => r.date.startsWith(mKey));
+      const mRecs = allRecords.filter((r) => Boolean(r && r.date && String(r.date).startsWith(mKey)));
       const hours = mRecs.reduce((sum, r) => sum + (Number(r.totalHours) || 0), 0);
       const studentSet = new Set(mRecs.map((r) => r.employeeId));
 

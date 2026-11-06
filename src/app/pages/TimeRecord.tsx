@@ -309,7 +309,7 @@ export function TimeRecord() {
   // CORS-safe prefetch of registered face image
   useEffect(() => {
     const photo = registeredPhotoSource;
-    if (!photo) {
+    if (!photo || typeof photo !== 'string') {
       setRegisteredImageDataUrl(undefined);
       return;
     }

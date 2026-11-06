@@ -2057,11 +2057,12 @@ export function AdminReports() {
                           displayName = 'Jhey Ree Ebro';
                           displayCode = '20231379';
                         } else {
-                          displayName = record.employeeId;
+                          displayName = record.employeeId || 'Trainee';
+                          const empCodeStr = String(record.employeeId || '');
                           displayCode =
-                            record.employeeId.startsWith('OJT-') || record.employeeId.startsWith('HTE-')
-                              ? record.employeeId
-                              : `OJT-${record.employeeId.slice(0, 8)}`;
+                            empCodeStr.startsWith('OJT-') || empCodeStr.startsWith('HTE-')
+                              ? empCodeStr
+                              : (empCodeStr ? `OJT-${empCodeStr.slice(0, 8)}` : 'OJT-TRAINEE');
                         }
                       }
                       const approvalStatus = record.approvalStatus || 'pending';

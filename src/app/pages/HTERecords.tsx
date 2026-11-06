@@ -215,8 +215,12 @@ export function HTERecords() {
           displayName = 'OJT Instructor';
           displayCode = 'ADM-2024-001';
         } else {
-          displayName = r.employeeId;
-          displayCode = r.employeeId.startsWith('OJT-') || r.employeeId.startsWith('HTE-') ? r.employeeId : `OJT-${r.employeeId.slice(0, 8)}`;
+          displayName = r.employeeId || 'Trainee';
+          const empCodeStr = String(r.employeeId || '');
+          displayCode =
+            empCodeStr.startsWith('OJT-') || empCodeStr.startsWith('HTE-')
+              ? empCodeStr
+              : (empCodeStr ? `OJT-${empCodeStr.slice(0, 8)}` : 'OJT-TRAINEE');
         }
       }
 

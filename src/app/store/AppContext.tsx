@@ -446,9 +446,10 @@ function sanitizeGeofenceZones(inputs: unknown): GeofenceZone[] {
     .map(sanitizeGeofenceZone)
     .filter((zone): zone is GeofenceZone =>
       zone !== null &&
-      !zone.name.toLowerCase().includes('main training center') &&
+      Boolean(zone.name) &&
+      !String(zone.name).toLowerCase().includes('main training center') &&
       zone.id !== 'zone-1' &&
-      !zone.id.startsWith('personal-')
+      !String(zone.id || '').startsWith('personal-')
     );
 
   // Strict deduplication (Geofence patch): prioritize employee_id and normalized identity to guarantee exactly 1 active zone per workplace/user
@@ -942,9 +943,11 @@ function mergeTimeRecords(
   // Purge obsolete past-date mock/seed records for employees who already have authentic database records.
   const localOnly = (currentLocalRecords || [])
     .filter((localR) => {
-      if (remoteIds.has(localR.id)) return false;
-      const rawEmp = (localR.employeeId || '').toLowerCase();
-      const datePart = (localR.date || '').split('T')[0].split(' ')[0];
+      if (!localR || typeof localR !== 'object') return false;
+      const recId = String(localR.id || '').trim();
+      if (recId && remoteIds.has(recId)) return false;
+      const rawEmp = String(localR.employeeId || '').toLowerCase().trim();
+      const datePart = String(localR.date || '').split('T')[0].split(' ')[0].trim();
       const key = `${rawEmp}_${datePart}`;
       const remoteMatch = remoteEmpDateMap.get(key);
 
@@ -979,11 +982,12 @@ function mergeTimeRecords(
         return false;
       }
 
-      // Drop demo / mock / seed generated records
+      // Drop demo / mock / seed generated records or records without valid ID
       if (
-        localR.id.startsWith('demo-') ||
-        localR.id.startsWith('mock-') ||
-        localR.id.startsWith('seed-') ||
+        !recId ||
+        recId.startsWith('demo-') ||
+        recId.startsWith('mock-') ||
+        recId.startsWith('seed-') ||
         (localR as any).is_mock
       ) {
         return false;
@@ -1377,8 +1381,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const [traineeSelfMonitoringReports, setTraineeSelfMonitoringReports] = useState<TraineeSelfMonitoringReport[]>(() => {
     const stored = loadFromStorage<TraineeSelfMonitoringReport[]>(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, []);
-    const cleaned = stored.filter((r) => !r.id.startsWith('smr-demo-'));
-    if (cleaned.length !== stored.length) {
+    const cleaned = (stored || []).filter((r) => r && r.id && !String(r.id).startsWith('smr-demo-'));
+    if (cleaned.length !== (stored || []).length) {
       saveToStorage(STORAGE_KEYS.TRAINEE_SELF_MONITORING_REPORTS, cleaned);
     }
     return cleaned;
@@ -4654,7 +4658,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     });
 
     // 2. Identify associated employee and clear their registration coordinates
-    let matchedEmpId = id.startsWith('personal-') ? id.replace('personal-', '') : id;
+    let matchedEmpId = (typeof id === 'string' && id.startsWith('personal-')) ? id.replace('personal-', '') : (id || '');
     const targetZone = geofenceZones.find((z) => z.id === id);
     if (targetZone) {
       const personPrefix = targetZone.name?.includes(' - ')
