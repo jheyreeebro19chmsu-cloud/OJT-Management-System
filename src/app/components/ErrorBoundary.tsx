@@ -40,9 +40,12 @@ export default class ErrorBoundary extends React.Component<Props, State> {
             {this.state.error?.message}
             {this.state.error?.stack && '\n\n' + this.state.error.stack}
           </pre>
-          <div style={{ marginTop: 12 }}>
-            <button onClick={() => location.reload()} style={{ background: '#0f172a', color: 'white', padding: '8px 12px', borderRadius: 8 }}>
+          <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
+            <button onClick={() => location.reload()} style={{ background: '#0f172a', color: 'white', padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer' }}>
               Reload App
+            </button>
+            <button onClick={() => { try { localStorage.removeItem('ojt_time_records'); localStorage.removeItem('ojt_monitoring_reports'); localStorage.removeItem('ojt_trainee_self_monitoring_reports'); } catch {} window.location.href = window.location.pathname + '?v=' + Date.now(); }} style={{ background: '#2563eb', color: 'white', padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer' }}>
+              Clear Cache & Refresh
             </button>
           </div>
         </div>
