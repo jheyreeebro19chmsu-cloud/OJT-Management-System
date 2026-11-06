@@ -3440,6 +3440,21 @@ export function transformSupabaseTimeRecord(data: any): TimeRecord {
     }
   }
 
+  // Re-align if amDeparture was erroneously recorded during afternoon / evening
+  const amOutMins = amDeparture ? parseTimeToMinutes(amDeparture) : null;
+  if (amOutMins !== null && amOutMins >= 13 * 60) {
+    if (!pmDeparture) pmDeparture = amDeparture;
+    amDeparture = undefined;
+  }
+
+  // Full-day attendance alignment: if trainee has morning arrival and evening departure without separate lunch punches
+  const amInMins = amArrival ? parseTimeToMinutes(amArrival) : null;
+  const pmOutMins = pmDeparture ? parseTimeToMinutes(pmDeparture) : null;
+  if (amInMins !== null && pmOutMins !== null && amInMins < 12 * 60 && pmOutMins >= 13 * 60) {
+    if (!amDeparture) amDeparture = '12:00:00';
+    if (!pmArrival) pmArrival = '13:00:00';
+  }
+
   return {
     id: data.id,
     employeeId: data.employee_id || data.employeeId || data.employeeID || data.employee_Id || data.userId || data.user_id || '',

@@ -72,6 +72,76 @@ async function resolveToUuid(empId) {
   return raw;
 }
 
+function parseTimeToMinutes(t) {
+  if (!t || typeof t !== 'string') return null;
+  t = t.trim();
+  const match12 = t.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (match12) {
+    let h = parseInt(match12[1], 10);
+    const m = parseInt(match12[2], 10);
+    const ampm = match12[3].toUpperCase();
+    if (ampm === 'PM' && h !== 12) h += 12;
+    if (ampm === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  }
+  const match24 = t.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (match24) {
+    return parseInt(match24[1], 10) * 60 + parseInt(match24[2], 10);
+  }
+  return null;
+}
+
+function enrichRecordWithSlots(row) {
+  if (!row) return row;
+  const slots = extractSlotNotes(row.notes);
+  const timeInMins = parseTimeToMinutes(row.time_in);
+  const timeOutMins = parseTimeToMinutes(row.time_out);
+
+  const amArrival = slots.amArrival || row.amArrival || row.am_arrival || (timeInMins !== null && timeInMins < 12 * 60 ? row.time_in : undefined);
+  let amDeparture = slots.amDeparture || row.amDeparture || row.am_departure || undefined;
+  const pmArrival = slots.pmArrival || row.pmArrival || row.pm_arrival || (timeInMins !== null && timeInMins >= 12 * 60 ? row.time_in : undefined);
+  let pmDeparture = slots.pmDeparture || row.pmDeparture || row.pm_departure || (timeOutMins !== null && timeOutMins >= 12 * 60 ? row.time_out : undefined);
+
+  // If amDeparture was erroneously recorded during afternoon / evening, shift it to pmDeparture
+  const amOutMins = parseTimeToMinutes(amDeparture);
+  if (amOutMins !== null && amOutMins >= 13 * 60 && !pmDeparture) {
+    pmDeparture = amDeparture;
+    amDeparture = undefined;
+  }
+
+  // Auto bridge lunch break for full day continuous attendance
+  const amInMins = parseTimeToMinutes(amArrival);
+  const pmOutMins = parseTimeToMinutes(pmDeparture);
+  if (amInMins !== null && pmOutMins !== null && amInMins < 12 * 60 && pmOutMins >= 13 * 60) {
+    if (!amDeparture) amDeparture = '12:00:00';
+    if (!pmArrival) pmArrival = '13:00:00';
+  }
+
+  return {
+    ...row,
+    employeeId: row.employee_id || row.employeeId,
+    timeIn: row.time_in || row.timeIn,
+    timeOut: row.time_out || row.timeOut,
+    totalHours: row.total_hours != null ? Number(row.total_hours) : (row.totalHours != null ? Number(row.totalHours) : 0),
+    amArrival,
+    amDeparture,
+    pmArrival,
+    pmDeparture,
+    am_arrival: amArrival,
+    am_departure: amDeparture,
+    pm_arrival: pmArrival,
+    pm_departure: pmDeparture,
+    amArrivalFaceVerified: slots.amArrivalFaceVerified ?? row.time_in_face_verified,
+    amDepartureFaceVerified: slots.amDepartureFaceVerified ?? row.time_out_face_verified,
+    pmArrivalFaceVerified: slots.pmArrivalFaceVerified ?? row.time_in_face_verified,
+    pmDepartureFaceVerified: slots.pmDepartureFaceVerified ?? row.time_out_face_verified,
+    amArrivalGeofenced: slots.amArrivalGeofenced ?? row.time_in_geofenced,
+    amDepartureGeofenced: slots.amDepartureGeofenced ?? row.time_out_geofenced,
+    pmArrivalGeofenced: slots.pmArrivalGeofenced ?? row.time_in_geofenced,
+    pmDepartureGeofenced: slots.pmDepartureGeofenced ?? row.time_out_geofenced,
+  };
+}
+
 function extractSlotNotes(notes) {
   if (!notes || typeof notes !== 'string') return {};
   const match = notes.match(/\[slots:(.*?)\]/);
@@ -229,7 +299,7 @@ export default async function handler(req, res) {
         if (error && (error.message?.includes('does not exist') || error.code === '42703')) {
           const fallback = await withTimeout(executeQuery(coreFields), 7500);
           if (!fallback.error) {
-            return sendJson(res, 200, fallback.data || []);
+            return sendJson(res, 200, (fallback.data || []).map(enrichRecordWithSlots));
           }
         }
         if (error) {
@@ -242,7 +312,7 @@ export default async function handler(req, res) {
         return sendJson(res, 200, []);
       }
 
-      return sendJson(res, 200, data || []);
+      return sendJson(res, 200, (data || []).map(enrichRecordWithSlots));
     }
 
     // ─── POST / PUT: Create or Upsert Time Records (Service Role) ─────────────
@@ -297,10 +367,15 @@ export default async function handler(req, res) {
           if (existing?.id) {
             // Merge & Update existing record while preserving and merging slot notes
             const mergedNotes = encodeSlotNotes(existing.notes, payload) || payload.notes || existing.notes;
+            const existingSlots = extractSlotNotes(existing.notes);
+            const payloadSlots = extractSlotNotes(payload.notes);
+            const effectiveTimeIn = payload.time_in || payloadSlots.amArrival || payloadSlots.pmArrival || existing.time_in || existingSlots.amArrival || existingSlots.pmArrival || null;
+            const effectiveTimeOut = payload.time_out || payloadSlots.pmDeparture || payloadSlots.amDeparture || existing.time_out || existingSlots.pmDeparture || existingSlots.amDeparture || null;
+
             const mergedPayload = {
               ...payload,
-              time_in: existing.time_in || payload.time_in,
-              time_out: payload.time_out || existing.time_out,
+              time_in: effectiveTimeIn,
+              time_out: effectiveTimeOut,
               total_hours: Math.max(Number(payload.total_hours) || 0, Number(existing.total_hours) || 0),
               notes: mergedNotes,
             };

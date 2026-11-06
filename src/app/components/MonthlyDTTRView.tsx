@@ -278,16 +278,47 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       const cleanDate = (r.date || '').split('T')[0].split(' ')[0].trim();
       const dayNum = parseInt(cleanDate.split('-')[2], 10);
       if (!Number.isNaN(dayNum)) {
+        let slotNotes = {};
+        if (r.notes && typeof r.notes === 'string') {
+          const match = r.notes.match(/\[slots:(.*?)\]/);
+          if (match) {
+            try { slotNotes = JSON.parse(match[1]); } catch {}
+          }
+        }
         const cleanNotes = (r.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+
+        let recAmIn = r.amArrival || slotNotes.amArrival;
+        let recAmOut = r.amDeparture || slotNotes.amDeparture;
+        let recPmIn = r.pmArrival || slotNotes.pmArrival;
+        let recPmOut = r.pmDeparture || slotNotes.pmDeparture;
+
+        const inMins = r.timeIn ? parseTimeToMinutes(r.timeIn) : null;
+        const outMins = r.timeOut ? parseTimeToMinutes(r.timeOut) : null;
+
+        if (!recAmIn && !recPmIn && inMins !== null) {
+          if (inMins < 12 * 60) recAmIn = r.timeIn;
+          else recPmIn = r.timeIn;
+        }
+
+        const amOutMins = recAmOut ? parseTimeToMinutes(recAmOut) : null;
+        if (amOutMins !== null && amOutMins >= 13 * 60) {
+          if (!recPmOut) recPmOut = recAmOut;
+          recAmOut = undefined;
+        }
+
+        if (!recPmOut && outMins !== null && outMins >= 12 * 60) {
+          recPmOut = r.timeOut;
+        }
+
         const existing = map.get(dayNum);
         if (existing) {
           map.set(dayNum, {
             ...existing,
             ...r,
-            amArrival: r.amArrival || existing.amArrival,
-            amDeparture: r.amDeparture || existing.amDeparture,
-            pmArrival: r.pmArrival || existing.pmArrival,
-            pmDeparture: r.pmDeparture || existing.pmDeparture,
+            amArrival: recAmIn || existing.amArrival,
+            amDeparture: recAmOut || existing.amDeparture,
+            pmArrival: recPmIn || existing.pmArrival,
+            pmDeparture: recPmOut || existing.pmDeparture,
             timeIn: existing.timeIn || r.timeIn,
             timeOut: r.timeOut || existing.timeOut,
             totalHours: Math.max(existing.totalHours || 0, r.totalHours || 0),
@@ -296,6 +327,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         } else {
           map.set(dayNum, {
             ...r,
+            amArrival: recAmIn,
+            amDeparture: recAmOut,
+            pmArrival: recPmIn,
+            pmDeparture: recPmOut,
             notes: cleanNotes,
           });
         }
@@ -375,44 +410,37 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
             });
           }
         } else {
-          // Legacy 2-slot auto-split
-          const parseH = (tStr?: string) => {
-            if (!tStr) return null;
-            const [h, m] = tStr.split(':').map(Number);
-            return { h, m, raw: tStr };
-          };
+          // Accurate 2-slot auto-split respecting AM/PM
+          const tInMins = autoRec.timeIn ? parseTimeToMinutes(autoRec.timeIn) : null;
+          const tOutMins = autoRec.timeOut ? parseTimeToMinutes(autoRec.timeOut) : null;
 
-          const tIn = parseH(autoRec.timeIn);
-          const tOut = parseH(autoRec.timeOut);
-
-          const format12 = (h: number, m: number) => {
-            const ampm = h >= 12 ? 'PM' : 'AM';
-            const hh = h % 12 === 0 ? 12 : h % 12;
-            const mm = String(m).padStart(2, '0');
-            return `${hh}:${mm} ${ampm}`;
-          };
-
-          if (tIn && tOut) {
-            if (tIn.h < 12 && tOut.h >= 12) {
-              // Full day spanning lunch break
-              autoAmIn = format12(tIn.h, tIn.m);
+          if (tInMins !== null && tOutMins !== null) {
+            if (tInMins < 12 * 60 && tOutMins >= 12 * 60) {
+              // Full day spanning morning and afternoon
+              autoAmIn = format12Str(autoRec.timeIn);
               autoAmOut = '12:00 PM';
               autoPmIn = '1:00 PM';
-              autoPmOut = format12(tOut.h, tOut.m);
-            } else if (tIn.h < 12 && tOut.h < 12) {
+              autoPmOut = format12Str(autoRec.timeOut);
+            } else if (tInMins < 12 * 60 && tOutMins < 12 * 60) {
               // Morning only
-              autoAmIn = format12(tIn.h, tIn.m);
-              autoAmOut = format12(tOut.h, tOut.m);
+              autoAmIn = format12Str(autoRec.timeIn);
+              autoAmOut = format12Str(autoRec.timeOut);
             } else {
-              // Afternoon only
-              autoPmIn = format12(tIn.h, tIn.m);
-              autoPmOut = format12(tOut.h, tOut.m);
+              // Afternoon / evening only (e.g. 9:42 PM - 10:11 PM)
+              autoPmIn = format12Str(autoRec.timeIn);
+              autoPmOut = format12Str(autoRec.timeOut);
             }
-          } else if (tIn) {
-            if (tIn.h < 12) {
-              autoAmIn = format12(tIn.h, tIn.m);
+          } else if (tInMins !== null) {
+            if (tInMins < 12 * 60) {
+              autoAmIn = format12Str(autoRec.timeIn);
             } else {
-              autoPmIn = format12(tIn.h, tIn.m);
+              autoPmIn = format12Str(autoRec.timeIn);
+            }
+          } else if (tOutMins !== null) {
+            if (tOutMins < 12 * 60) {
+              autoAmOut = format12Str(autoRec.timeOut);
+            } else {
+              autoPmOut = format12Str(autoRec.timeOut);
             }
           }
 

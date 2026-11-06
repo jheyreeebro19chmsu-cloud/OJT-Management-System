@@ -36,6 +36,7 @@ import {
   formatTime,
   calculateTotalHours,
   calculate4SlotHours,
+  parseTimeToMinutes,
   getAttendanceStatus,
   getCurrentLocation,
   getDTRSessionDate,
@@ -199,23 +200,48 @@ export function TimeRecord() {
 
   // Auto-slot selector logic
   const getRecommendedSlot = (rec: TimeRecordType | null, hour: number): AttendanceSlot => {
-    const hasAmIn = Boolean(rec?.amArrival || (rec?.timeIn && !/pm/i.test(rec.timeIn) && parseInt(rec.timeIn, 10) < 12));
-    const hasAmOut = Boolean(rec?.amDeparture || (rec?.timeOut && parseInt(rec.timeOut, 10) < 13 && rec.amArrival));
-    const hasPmIn = Boolean(rec?.pmArrival || (rec?.timeIn && (/pm/i.test(rec.timeIn) || parseInt(rec.timeIn, 10) >= 12)));
-    const hasPmOut = Boolean(rec?.pmDeparture || (rec?.timeOut && (/pm/i.test(rec.timeOut) || parseInt(rec.timeOut, 10) >= 12)));
+    const amInMins = rec?.amArrival ? parseTimeToMinutes(rec.amArrival) : (rec?.timeIn ? parseTimeToMinutes(rec.timeIn) : null);
+    const hasAmIn = Boolean(rec?.amArrival || (amInMins !== null && amInMins < 12 * 60));
 
-    // STRICT RULE: Trainee MUST time in for AM Time In first
-    if (!hasAmIn) {
+    const amOutMins = rec?.amDeparture ? parseTimeToMinutes(rec.amDeparture) : null;
+    const hasAmOut = Boolean(rec?.amDeparture && (amOutMins === null || amOutMins < 13 * 60));
+
+    const pmInMins = rec?.pmArrival ? parseTimeToMinutes(rec.pmArrival) : (rec?.timeIn ? parseTimeToMinutes(rec.timeIn) : null);
+    const hasPmIn = Boolean(rec?.pmArrival || (pmInMins !== null && pmInMins >= 12 * 60));
+
+    const pmOutMins = rec?.pmDeparture ? parseTimeToMinutes(rec.pmDeparture) : (rec?.timeOut ? parseTimeToMinutes(rec.timeOut) : null);
+    const hasPmOut = Boolean(rec?.pmDeparture || (pmOutMins !== null && pmOutMins >= 12 * 60));
+
+    // 1. Not timed in at all yet:
+    if (!hasAmIn && !hasPmIn) {
+      if (hour >= 13) {
+        return 'pm_arrival';
+      }
       return 'am_arrival';
     }
 
-    // STRICT RULE: Trainee MUST time out for AM Time Out before proceeding to PM
-    if (!hasAmOut) {
-      return 'am_departure';
+    // 2. Trainee timed in this morning:
+    if (hasAmIn) {
+      // If afternoon/evening (hour >= 13, e.g. 1:00 PM onwards):
+      if (hour >= 13) {
+        if (!hasPmOut) return 'pm_departure';
+      }
+      // If lunch hour (11:30 AM – 1:00 PM):
+      if (!hasAmOut) {
+        return 'am_departure';
+      }
+      // If lunch out recorded and waiting for PM arrival:
+      if (!hasPmIn) {
+        return 'pm_arrival';
+      }
+      return 'pm_departure';
     }
 
-    if (!hasPmIn) return 'pm_arrival';
-    if (!hasPmOut) return 'pm_departure';
+    // 3. Trainee started in afternoon (PM In):
+    if (hasPmIn && !hasPmOut) {
+      return 'pm_departure';
+    }
+
     return 'pm_departure';
   };
 
@@ -446,24 +472,19 @@ export function TimeRecord() {
 
       const slot = selectedSlot;
 
-      // Strict validation before saving
+      // Validation before saving
       const hasAmIn = Boolean(
         getSlotTime('amArrival') ||
-        (currentRecord?.timeIn && !/pm/i.test(currentRecord.timeIn) && parseInt(currentRecord.timeIn, 10) < 12)
+        (currentRecord?.timeIn && parseTimeToMinutes(currentRecord.timeIn) !== null && parseTimeToMinutes(currentRecord.timeIn)! < 12 * 60)
       );
-      const hasAmOut = Boolean(
-        getSlotTime('amDeparture') ||
-        (currentRecord?.timeOut && parseInt(currentRecord.timeOut, 10) < 13 && currentRecord.amArrival)
+      const hasPmIn = Boolean(
+        getSlotTime('pmArrival') ||
+        (currentRecord?.timeIn && parseTimeToMinutes(currentRecord.timeIn) !== null && parseTimeToMinutes(currentRecord.timeIn)! >= 12 * 60)
       );
 
-      if (slot !== 'am_arrival' && !hasAmIn) {
-        toast.error('Clock-in blocked: You cannot proceed without recording Time In AM first.');
-        setIsProcessingAction(false);
-        return;
-      }
-
-      if ((slot === 'pm_arrival' || slot === 'pm_departure') && !hasAmOut) {
-        toast.error('Clock-in blocked: Trainee must complete Time Out AM before proceeding to afternoon attendance.');
+      // Trainee cannot record departure without any arrival first
+      if (slot.includes('departure') && !hasAmIn && !hasPmIn) {
+        toast.error('Clock-in blocked: You cannot clock out without clocking in first.');
         setIsProcessingAction(false);
         return;
       }
@@ -473,16 +494,36 @@ export function TimeRecord() {
       const now = new Date();
       const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
       const dateStr = getDTRSessionDate(now);
+      const nowMins = now.getHours() * 60 + now.getMinutes();
 
       const baseRec = currentRecord;
-      const newAmArrival = slot === 'am_arrival' ? timeStr : baseRec?.amArrival;
-      const newAmDeparture = slot === 'am_departure' ? timeStr : baseRec?.amDeparture;
-      const newPmArrival = slot === 'pm_arrival' ? timeStr : baseRec?.pmArrival;
-      const newPmDeparture = slot === 'pm_departure' ? timeStr : baseRec?.pmDeparture;
+      const baseInMins = baseRec?.timeIn ? parseTimeToMinutes(baseRec.timeIn) : null;
+      const baseOutMins = baseRec?.timeOut ? parseTimeToMinutes(baseRec.timeOut) : null;
+
+      let newAmArrival = slot === 'am_arrival' ? timeStr : (baseRec?.amArrival || (baseInMins !== null && baseInMins < 12 * 60 ? baseRec?.timeIn : undefined));
+      let newAmDeparture = slot === 'am_departure' ? timeStr : baseRec?.amDeparture;
+      let newPmArrival = slot === 'pm_arrival' ? timeStr : (baseRec?.pmArrival || (baseInMins !== null && baseInMins >= 12 * 60 ? baseRec?.timeIn : undefined));
+      let newPmDeparture = slot === 'pm_departure' ? timeStr : (baseRec?.pmDeparture || (baseOutMins !== null && baseOutMins >= 12 * 60 ? baseRec?.timeOut : undefined));
+
+      // Auto-correct: If am_departure was clicked in the afternoon/evening (>= 1:00 PM / 13:00), treat as pm_departure
+      if (slot === 'am_departure' && nowMins >= 13 * 60) {
+        newPmDeparture = timeStr;
+        newAmDeparture = baseRec?.amDeparture || (newAmArrival ? '12:00:00' : undefined);
+        if (newAmArrival && !newPmArrival) {
+          newPmArrival = '13:00:00';
+        }
+      }
+
+      // Continuous full-day shift bridging (Civil Service Form 48 DTTR Standard):
+      // If trainee clocked in morning and clocks out in afternoon/evening without separate lunch punches
+      if ((slot === 'pm_departure' || nowMins >= 13 * 60) && newAmArrival && newPmDeparture) {
+        if (!newAmDeparture) newAmDeparture = '12:00:00';
+        if (!newPmArrival) newPmArrival = '13:00:00';
+      }
 
       // Legacy mirror for backward compatibility
       const primaryTimeIn = newAmArrival || newPmArrival || baseRec?.timeIn || timeStr;
-      const primaryTimeOut = newPmDeparture || newAmDeparture || baseRec?.timeOut;
+      const primaryTimeOut = newPmDeparture || newAmDeparture || baseRec?.timeOut || timeStr;
 
       const totalHours = calculate4SlotHours(
         newAmArrival,
@@ -495,49 +536,27 @@ export function TimeRecord() {
 
       const status = getAttendanceStatus(primaryTimeIn, settings.workStartTime, settings.lateThresholdMinutes, geofencePassed);
 
-      let slotPayload: Partial<TimeRecordType> = {};
-      if (slot === 'am_arrival') {
-        slotPayload = {
-          amArrival: timeStr,
-          amArrivalFaceVerified: true,
-          amArrivalGeofenced: geofencePassed,
-          timeIn: primaryTimeIn,
-          timeInFaceVerified: true,
-          timeInGeofenced: geofencePassed,
-          timeInLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-          ...(imageData ? { timeInPhoto: imageData } : {}),
-        };
-      } else if (slot === 'am_departure') {
-        slotPayload = {
-          amDeparture: timeStr,
-          amDepartureFaceVerified: true,
-          amDepartureGeofenced: geofencePassed,
-          timeOut: timeStr,
-          timeOutFaceVerified: true,
-          timeOutGeofenced: geofencePassed,
-          timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-          ...(imageData ? { timeOutPhoto: imageData } : {}),
-        };
-      } else if (slot === 'pm_arrival') {
-        slotPayload = {
-          pmArrival: timeStr,
-          pmArrivalFaceVerified: true,
-          pmArrivalGeofenced: geofencePassed,
-          timeIn: primaryTimeIn,
-          ...(imageData && !baseRec?.timeInPhoto ? { timeInPhoto: imageData } : {}),
-        };
-      } else if (slot === 'pm_departure') {
-        slotPayload = {
-          pmDeparture: timeStr,
-          pmDepartureFaceVerified: true,
-          pmDepartureGeofenced: geofencePassed,
-          timeOut: timeStr,
-          timeOutFaceVerified: true,
-          timeOutGeofenced: geofencePassed,
-          timeOutLocation: geofenceCoords || (currentEmp as any).registrationLocation,
-          ...(imageData ? { timeOutPhoto: imageData } : {}),
-        };
-      }
+      const slotPayload: Partial<TimeRecordType> = {
+        amArrival: newAmArrival,
+        amDeparture: newAmDeparture,
+        pmArrival: newPmArrival,
+        pmDeparture: newPmDeparture,
+        timeIn: primaryTimeIn,
+        timeOut: primaryTimeOut,
+        totalHours,
+        status: baseRec?.status === 'present' && totalHours > 9 ? 'overtime' : (baseRec?.status || status),
+        timeInFaceVerified: Boolean(baseRec?.timeInFaceVerified || slot === 'am_arrival' || slot === 'pm_arrival'),
+        timeInGeofenced: Boolean(baseRec?.timeInGeofenced || (slot.includes('arrival') && geofencePassed)),
+        timeOutFaceVerified: Boolean(baseRec?.timeOutFaceVerified || slot.includes('departure')),
+        timeOutGeofenced: Boolean(baseRec?.timeOutGeofenced || (slot.includes('departure') && geofencePassed)),
+        timeInLocation: geofenceCoords || (currentEmp as any)?.registrationLocation || baseRec?.timeInLocation,
+        timeOutLocation: slot.includes('departure') ? (geofenceCoords || (currentEmp as any)?.registrationLocation || baseRec?.timeOutLocation) : baseRec?.timeOutLocation,
+        ...(slot === 'am_arrival' ? { amArrivalFaceVerified: true, amArrivalGeofenced: geofencePassed } : {}),
+        ...(slot === 'am_departure' ? { amDepartureFaceVerified: true, amDepartureGeofenced: geofencePassed } : {}),
+        ...(slot === 'pm_arrival' ? { pmArrivalFaceVerified: true, pmArrivalGeofenced: geofencePassed } : {}),
+        ...(slot === 'pm_departure' ? { pmDepartureFaceVerified: true, pmDepartureGeofenced: geofencePassed } : {}),
+        ...(imageData ? (slot.includes('arrival') ? { timeInPhoto: imageData } : { timeOutPhoto: imageData }) : {}),
+      };
 
       let createdRecordId: string | null = null;
 
@@ -1036,24 +1055,17 @@ export function TimeRecord() {
                   {(() => {
                     const pmInTime = getSlotTime('pmArrival');
                     const pmOutTime = getSlotTime('pmDeparture');
-                    const isPmInLocked = !hasAmInRecorded || !hasAmOutRecorded;
-                    const isPmOutLocked = !hasAmInRecorded || !hasAmOutRecorded || !pmInTime;
-                    const pmInLockLabel = !hasAmInRecorded ? 'Req. AM In' : 'Req. AM Out';
-                    const pmOutLockLabel = !hasAmInRecorded ? 'Req. AM In' : !hasAmOutRecorded ? 'Req. AM Out' : 'Req. PM In';
+                    const currentHour = currentTime.getHours();
+                    const isPmInLocked = !hasAmInRecorded && currentHour < 12;
+                    const isPmOutLocked = !hasAmInRecorded && !pmInTime;
+                    const pmInLockLabel = !hasAmInRecorded && currentHour < 12 ? 'Req. AM In' : 'Not Clocked';
+                    const pmOutLockLabel = !hasAmInRecorded && !pmInTime ? 'Req. In' : 'Not Clocked';
 
                     return (
                       <div className="grid grid-cols-2 gap-1.5">
                         <button
                           type="button"
                           onClick={() => {
-                            if (!hasAmInRecorded) {
-                              toast.error('Slot Locked: Trainee must complete "Time In AM" first.');
-                              return;
-                            }
-                            if (!hasAmOutRecorded) {
-                              toast.error('Slot Locked: Trainee must complete "Time Out AM" before proceeding to afternoon attendance.');
-                              return;
-                            }
                             setSelectedSlot('pm_arrival');
                             userActionOverrideRef.current = true;
                           }}
@@ -1094,16 +1106,8 @@ export function TimeRecord() {
                         <button
                           type="button"
                           onClick={() => {
-                            if (!hasAmInRecorded) {
-                              toast.error('Slot Locked: Trainee must complete "Time In AM" first.');
-                              return;
-                            }
-                            if (!hasAmOutRecorded) {
-                              toast.error('Slot Locked: Trainee must complete "Time Out AM" before proceeding to afternoon attendance.');
-                              return;
-                            }
-                            if (!pmInTime) {
-                              toast.error('Slot Locked: You must record Time In PM before recording Time Out PM.');
+                            if (!hasAmInRecorded && !pmInTime) {
+                              toast.error('Slot Locked: Trainee must complete Clock In first before Clock Out.');
                               return;
                             }
                             setSelectedSlot('pm_departure');

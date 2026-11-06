@@ -892,11 +892,36 @@ function cleanRecordPhoto(photo?: string | null): string | undefined {
 
 function sanitizeTimeRecords(records: TimeRecord[]): TimeRecord[] {
   if (!Array.isArray(records)) return [];
-  return records.map((r) => ({
-    ...r,
-    timeInPhoto: cleanRecordPhoto(r.timeInPhoto),
-    timeOutPhoto: cleanRecordPhoto(r.timeOutPhoto),
-  }));
+  return records
+    .filter((r): r is TimeRecord => Boolean(r && typeof r === 'object'))
+    .map((r) => {
+      let slots: Record<string, any> = {};
+      if (r.notes && typeof r.notes === 'string') {
+        const match = r.notes.match(/\[slots:(.*?)\]/);
+        if (match) {
+          try {
+            slots = JSON.parse(match[1]);
+          } catch {}
+        }
+      }
+      return {
+        ...r,
+        amArrival: r.amArrival || slots.amArrival,
+        amDeparture: r.amDeparture || slots.amDeparture,
+        pmArrival: r.pmArrival || slots.pmArrival,
+        pmDeparture: r.pmDeparture || slots.pmDeparture,
+        amArrivalFaceVerified: r.amArrivalFaceVerified ?? slots.amArrivalFaceVerified,
+        amDepartureFaceVerified: r.amDepartureFaceVerified ?? slots.amDepartureFaceVerified,
+        pmArrivalFaceVerified: r.pmArrivalFaceVerified ?? slots.pmArrivalFaceVerified,
+        pmDepartureFaceVerified: r.pmDepartureFaceVerified ?? slots.pmDepartureFaceVerified,
+        amArrivalGeofenced: r.amArrivalGeofenced ?? slots.amArrivalGeofenced,
+        amDepartureGeofenced: r.amDepartureGeofenced ?? slots.amDepartureGeofenced,
+        pmArrivalGeofenced: r.pmArrivalGeofenced ?? slots.pmArrivalGeofenced,
+        pmDepartureGeofenced: r.pmDepartureGeofenced ?? slots.pmDepartureGeofenced,
+        timeInPhoto: cleanRecordPhoto(r.timeInPhoto),
+        timeOutPhoto: cleanRecordPhoto(r.timeOutPhoto),
+      };
+    });
 }
 
 function mergeTimeRecords(
