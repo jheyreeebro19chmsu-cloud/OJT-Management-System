@@ -17,6 +17,8 @@ import {
   ChevronRight,
   User,
   Sparkles,
+  Plus,
+  Minus,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useRef, useEffect, useState, useCallback } from 'react';
@@ -133,6 +135,23 @@ export function FaceCapture({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [showMoveControls, setShowMoveControls] = useState<boolean>(false);
 
+  // Scalable mesh size state & refs (0.6x to 1.8x, default 1.0)
+  const [meshScale, setMeshScale] = useState<number>(1.0);
+  const meshScaleRef = useRef<number>(1.0);
+
+  const changeMeshScale = useCallback((delta: number) => {
+    setMeshScale((prev) => {
+      const next = Math.max(0.6, Math.min(1.8, Math.round((prev + delta) * 10) / 10));
+      meshScaleRef.current = next;
+      return next;
+    });
+  }, []);
+
+  const resetMeshScale = useCallback(() => {
+    meshScaleRef.current = 1.0;
+    setMeshScale(1.0);
+  }, []);
+
   const nudgeGrid = useCallback((dx: number, dy: number) => {
     const newX = Math.max(-130, Math.min(130, gridOffsetRef.current.x + dx));
     const newY = Math.max(-150, Math.min(150, gridOffsetRef.current.y + dy));
@@ -143,6 +162,8 @@ export function FaceCapture({
   const resetGrid = useCallback(() => {
     gridOffsetRef.current = { x: 0, y: 0 };
     setGridOffset({ x: 0, y: 0 });
+    meshScaleRef.current = 1.0;
+    setMeshScale(1.0);
   }, []);
 
   const stateRef = useRef<ScanState>(state);
@@ -270,33 +291,54 @@ export function FaceCapture({
       const isSuccess = currentState === 'success';
       const isFailed = currentState === 'failed' || Boolean(currentMismatch);
 
-      // Calculate user's movable grid offset in canvas coordinates
-      // Note: canvas has CSS scaleX(-1) mirror effect, so screen +X corresponds to -X in internal canvas coordinates
-      const canvasOffsetX = displayW > 0 ? -(gridOffsetRef.current.x / displayW) * canvas.width : 0;
-      const canvasOffsetY = displayH > 0 ? (gridOffsetRef.current.y / displayH) * canvas.height : 0;
+      // User manual adjustment offsets (scaled by dpr for internal canvas coordinate space)
+      // Canvas has CSS scaleX(-1) mirror effect, so screen +X corresponds to -X in internal canvas space
+      const userOffsetX = -(gridOffsetRef.current.x * dpr);
+      const userOffsetY = (gridOffsetRef.current.y * dpr);
+      const currentScale = meshScaleRef.current;
 
       // Determine 68 landmark points (live face tracked or anatomical template)
       let targetPts: Array<{ x: number; y: number }>;
       const isLiveTracked = Boolean(
         liveLandmarksRef.current &&
         liveLandmarksRef.current.length >= 68 &&
-        Date.now() - lastLandmarkDetectionTimeRef.current < 650
+        Date.now() - lastLandmarkDetectionTimeRef.current < 850
       );
 
       if (isLiveTracked && liveLandmarksRef.current && video.videoWidth > 0) {
-        const scaleX = canvas.width / video.videoWidth;
-        const scaleY = canvas.height / video.videoHeight;
-        targetPts = liveLandmarksRef.current.map((p) => ({
-          x: p.x * scaleX,
-          y: p.y * scaleY,
+        // Pixel-perfect CSS object-cover projection mapping from raw video to canvas
+        const scale = Math.max(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+        const offsetX = (canvas.width - video.videoWidth * scale) / 2;
+        const offsetY = (canvas.height - video.videoHeight * scale) / 2;
+
+        const mappedPts = liveLandmarksRef.current.map((p) => ({
+          x: p.x * scale + offsetX + userOffsetX,
+          y: p.y * scale + offsetY + userOffsetY,
         }));
+
+        // Dynamically scale landmarks around centroid if user adjusted manual scale multiplier
+        if (currentScale !== 1.0 && mappedPts.length > 0) {
+          let cx = 0, cy = 0;
+          for (const p of mappedPts) {
+            cx += p.x;
+            cy += p.y;
+          }
+          cx /= mappedPts.length;
+          cy /= mappedPts.length;
+          targetPts = mappedPts.map((p) => ({
+            x: cx + (p.x - cx) * currentScale,
+            y: cy + (p.y - cy) * currentScale,
+          }));
+        } else {
+          targetPts = mappedPts;
+        }
       } else {
-        // Ideal anatomical biometric mesh template centered in scanner with soft breathing pulse + user movable offset
-        const cx = canvas.width / 2 + canvasOffsetX;
-        const cy = canvas.height * 0.48 + canvasOffsetY;
-        const breathe = Math.sin(Date.now() / 600) * 0.015;
-        const faceW = canvas.width * (0.35 + breathe);
-        const faceH = canvas.height * (0.35 + breathe);
+        // Anatomical template fallback centered in scanner with natural proportion + user offset & scale
+        const cx = canvas.width / 2 + userOffsetX;
+        const cy = canvas.height * 0.48 + userOffsetY;
+        const breathe = Math.sin(Date.now() / 600) * 0.012;
+        const faceW = canvas.width * (0.42 + breathe) * currentScale;
+        const faceH = canvas.height * (0.42 + breathe) * currentScale;
         targetPts = NORMALIZED_68_LANDMARKS.map((p) => ({
           x: cx + p.x * faceW,
           y: cy + p.y * faceH,
@@ -307,7 +349,7 @@ export function FaceCapture({
       if (!smoothedLandmarksRef.current || smoothedLandmarksRef.current.length !== targetPts.length) {
         smoothedLandmarksRef.current = targetPts.map((p) => ({ ...p }));
       } else {
-        const smoothRate = isDraggingRef.current ? 1.0 : isLiveTracked ? 0.38 : 0.20;
+        const smoothRate = isDraggingRef.current ? 1.0 : isLiveTracked ? 0.65 : 0.25;
         for (let i = 0; i < targetPts.length; i++) {
           smoothedLandmarksRef.current[i].x += (targetPts[i].x - smoothedLandmarksRef.current[i].x) * smoothRate;
           smoothedLandmarksRef.current[i].y += (targetPts[i].y - smoothedLandmarksRef.current[i].y) * smoothRate;
@@ -606,6 +648,10 @@ export function FaceCapture({
     let active = true;
     let timer: any = null;
 
+    let detectorOpt320: any = null;
+    let detectorOpt224: any = null;
+    let consecutiveMisses = 0;
+
     const track = async () => {
       if (!active) return;
       const video = videoRef.current;
@@ -614,10 +660,25 @@ export function FaceCapture({
           if (typeof window !== 'undefined' && (window as any).faceapi) {
             const api = (window as any).faceapi;
             if (api.nets?.tinyFaceDetector?.params && api.nets?.faceLandmark68Net?.params) {
-              const res = await api
-                .detectSingleFace(video, new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.08 }))
+              if (!detectorOpt320) {
+                detectorOpt320 = new api.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.05 });
+                detectorOpt224 = new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.04 });
+              }
+
+              // Use 320 for high precision, fallback to 224 if consecutive misses
+              const currentOpt = consecutiveMisses > 2 ? detectorOpt224 : detectorOpt320;
+              let res = await api
+                .detectSingleFace(video, currentOpt)
                 .withFaceLandmarks();
+
+              if (!res && currentOpt === detectorOpt320) {
+                res = await api
+                  .detectSingleFace(video, detectorOpt224)
+                  .withFaceLandmarks();
+              }
+
               if (res?.landmarks?.positions && active) {
+                consecutiveMisses = 0;
                 liveLandmarksRef.current = res.landmarks.positions.map((p: any) => ({
                   x: Number(p.x),
                   y: Number(p.y),
@@ -640,7 +701,7 @@ export function FaceCapture({
                     faceDetectedSinceRef.current = now;
                   }
                   const elapsed = now - faceDetectedSinceRef.current;
-                  const HOLD_DURATION = 1200; // 1.2 seconds of steady, aligned face tracking
+                  const HOLD_DURATION = 1100; // 1.1 seconds of steady, aligned face tracking
                   const pct = Math.min(100, Math.round((elapsed / HOLD_DURATION) * 100));
                   setAutoScanProgress(pct);
 
@@ -649,14 +710,17 @@ export function FaceCapture({
                     handleManualSnap();
                   }
                 }
-              } else if (Date.now() - lastLandmarkDetectionTimeRef.current > 600) {
-                if (faceDetectedSinceRef.current !== 0) {
-                  faceDetectedSinceRef.current = 0;
-                  setAutoScanProgress(0);
-                }
-                if (isFaceLockedRef.current) {
-                  isFaceLockedRef.current = false;
-                  setIsFaceLocked(false);
+              } else {
+                consecutiveMisses++;
+                if (Date.now() - lastLandmarkDetectionTimeRef.current > 850) {
+                  if (faceDetectedSinceRef.current !== 0) {
+                    faceDetectedSinceRef.current = 0;
+                    setAutoScanProgress(0);
+                  }
+                  if (isFaceLockedRef.current) {
+                    isFaceLockedRef.current = false;
+                    setIsFaceLocked(false);
+                  }
                 }
               }
             }
@@ -666,7 +730,7 @@ export function FaceCapture({
         }
       }
       if (active) {
-        timer = setTimeout(track, 60);
+        timer = setTimeout(track, 25);
       }
     };
 
@@ -1015,6 +1079,7 @@ export function FaceCapture({
 
   const hasStartedRef = useRef(false);
   useEffect(() => {
+    loadFaceModels().catch(() => {});
     if (autoStart && !hasStartedRef.current) {
       hasStartedRef.current = true;
       startScan();
@@ -1122,9 +1187,15 @@ export function FaceCapture({
 
             {/* Top Center: Facial Landmark Mesh Alignment Pill */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none whitespace-nowrap">
-              <div className="px-3.5 py-1 rounded-full backdrop-blur-md text-[10.5px] font-bold flex items-center gap-1.5 shadow-lg bg-black/70 border border-white/15 text-white/95">
-                <User size={11} className="text-cyan-400" />
-                <span>Align Face with Biometric Mesh</span>
+              <div
+                className={`px-3.5 py-1 rounded-full backdrop-blur-md text-[10.5px] font-bold flex items-center gap-1.5 shadow-lg transition-all ${
+                  isFaceLocked
+                    ? 'bg-emerald-950/85 border border-emerald-400/80 text-emerald-300'
+                    : 'bg-black/70 border border-white/15 text-white/95'
+                }`}
+              >
+                <User size={11} className={isFaceLocked ? 'text-emerald-400 animate-pulse' : 'text-cyan-400'} />
+                <span>{isFaceLocked ? 'Face Locked • Mesh Tracking' : 'Align Face with Biometric Mesh'}</span>
               </div>
             </div>
 
@@ -1182,7 +1253,7 @@ export function FaceCapture({
                 <span>Auto: {autoScanEnabled ? 'ON' : 'OFF'}</span>
               </button>
 
-              {(gridOffset.x !== 0 || gridOffset.y !== 0) && (
+              {(gridOffset.x !== 0 || gridOffset.y !== 0 || meshScale !== 1.0) && (
                 <button
                   type="button"
                   onClick={(e) => {
@@ -1190,10 +1261,10 @@ export function FaceCapture({
                     resetGrid();
                   }}
                   className="px-2 py-1 rounded-full bg-slate-900/80 hover:bg-slate-800 border border-cyan-500/40 text-cyan-300 hover:text-white text-[9.5px] font-bold backdrop-blur-md flex items-center gap-1 shadow-md transition-all cursor-pointer"
-                  title="Reset grid to center"
+                  title="Reset mesh position and scale"
                 >
                   <RotateCcw size={9} className="text-cyan-400" />
-                  <span>Center</span>
+                  <span>Reset</span>
                 </button>
               )}
               <button
@@ -1207,21 +1278,21 @@ export function FaceCapture({
                     ? 'bg-cyan-600 border-cyan-400 text-white shadow-md'
                     : 'bg-black/60 border border-white/10 text-slate-300 hover:text-white'
                 }`}
-                title="Toggle move controls"
+                title="Toggle move & scale controls"
               >
                 <Move size={10} />
                 <span>Move</span>
               </button>
             </div>
 
-            {/* Floating Precision D-Pad Nudge Controls */}
+            {/* Floating Precision Move & Scale Controls */}
             {showMoveControls && isScanning && (
               <div
                 onClick={(e) => e.stopPropagation()}
                 onPointerDown={(e) => e.stopPropagation()}
-                className="absolute bottom-12 right-3 bg-slate-950/90 backdrop-blur-md p-2 rounded-2xl border border-cyan-500/50 shadow-2xl z-30 flex flex-col items-center gap-1 pointer-events-auto select-none"
+                className="absolute bottom-12 right-3 bg-slate-950/95 backdrop-blur-md p-2.5 rounded-2xl border border-cyan-500/50 shadow-2xl z-30 flex flex-col items-center gap-1.5 pointer-events-auto select-none"
               >
-                <div className="text-[9px] font-extrabold text-cyan-400 tracking-wider mb-0.5">MOVE GRID</div>
+                <div className="text-[9px] font-extrabold text-cyan-400 tracking-wider">MOVE MESH</div>
                 <button
                   type="button"
                   onClick={() => nudgeGrid(0, -15)}
@@ -1243,7 +1314,7 @@ export function FaceCapture({
                     type="button"
                     onClick={resetGrid}
                     className="w-7 h-7 flex items-center justify-center rounded-lg bg-slate-800/90 hover:bg-slate-700 active:scale-95 text-cyan-400 text-[10px] font-bold transition-all cursor-pointer shadow-sm"
-                    title="Center Grid"
+                    title="Center & Reset Mesh"
                   >
                     ●
                   </button>
@@ -1264,6 +1335,33 @@ export function FaceCapture({
                 >
                   <ChevronDown size={15} />
                 </button>
+
+                {/* Mesh Scale Controls */}
+                <div className="w-full border-t border-slate-800 my-0.5" />
+                <div className="text-[8.5px] font-extrabold text-cyan-400 tracking-wider">MESH SIZE</div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => changeMeshScale(-0.1)}
+                    disabled={meshScale <= 0.6}
+                    className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-800/90 hover:bg-cyan-600 disabled:opacity-40 active:scale-95 text-white transition-all cursor-pointer shadow-sm"
+                    title="Shrink Mesh"
+                  >
+                    <Minus size={12} />
+                  </button>
+                  <span className="text-[10px] font-mono font-bold text-white min-w-[34px] text-center">
+                    {Math.round(meshScale * 100)}%
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => changeMeshScale(0.1)}
+                    disabled={meshScale >= 1.8}
+                    className="w-6 h-6 flex items-center justify-center rounded-lg bg-slate-800/90 hover:bg-cyan-600 disabled:opacity-40 active:scale-95 text-white transition-all cursor-pointer shadow-sm"
+                    title="Enlarge Mesh"
+                  >
+                    <Plus size={12} />
+                  </button>
+                </div>
               </div>
             )}
 

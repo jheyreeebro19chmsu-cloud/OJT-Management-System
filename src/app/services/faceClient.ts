@@ -756,6 +756,19 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
   return result;
 }
 
+async function flipDataUrlHorizontally(dataUrl: string): Promise<string> {
+  const img = await createImageElement(dataUrl);
+  const canvas = document.createElement('canvas');
+  canvas.width = img.width || 320;
+  canvas.height = img.height || 240;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return dataUrl;
+  ctx.translate(canvas.width, 0);
+  ctx.scale(-1, 1);
+  ctx.drawImage(img, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.85);
+}
+
 /**
  * Strict Biometric Verification matching algorithm:
  * Uses 128-D embedding Euclidean distance with optimal 0.58 threshold for justadudewhohacks/face-api.js.
@@ -827,20 +840,45 @@ export async function strictBiometricVerify(
 
   const dist = descriptorDistance(d1, d2);
 
-  // Neural embedding strict threshold is 0.52 (justadudewhohacks face-api standard).
+  // Check if live face might be horizontally mirrored relative to registered face (e.g. selfie webcam vs ID photo)
+  let bestDist = dist;
+  if (dist > 0.38) {
+    try {
+      const flippedLiveUrl = await flipDataUrlHorizontally(liveDataUrl);
+      const t2Flipped = await computeTypedDescriptorFromDataUrl(flippedLiveUrl);
+      if (t2Flipped) {
+        let d2Flipped = t2Flipped.descriptor;
+        if (t1.type !== t2Flipped.type) {
+          const [img1, img2F] = await Promise.all([
+            createImageElement(registeredDataUrl),
+            createImageElement(flippedLiveUrl),
+          ]);
+          d2Flipped = computePerceptualDescriptor(img2F);
+        }
+        const flippedDist = descriptorDistance(d1, d2Flipped);
+        if (flippedDist < bestDist) {
+          bestDist = flippedDist;
+        }
+      }
+    } catch {
+      // ignore flip check error
+    }
+  }
+
+  // Neural embedding strict threshold is 0.62 (justadudewhohacks face-api standard).
   // Perceptual space strict threshold is 0.35 to strictly block different people.
   const effectiveThreshold = isPerceptual ? Math.min(threshold, 0.35) : threshold;
 
-  const matched = dist <= effectiveThreshold;
-  const confidence = Math.max(0, Math.min(100, Math.round((1 - dist / effectiveThreshold) * 100)));
+  const matched = bestDist <= effectiveThreshold;
+  const confidence = Math.max(0, Math.min(100, Math.round((1 - bestDist / effectiveThreshold) * 100)));
 
   return {
     matched,
-    distance: dist,
+    distance: bestDist,
     confidence,
     error: matched
       ? undefined
-      : `Face does not match registered biometrics for this trainee (Biometric distance: ${dist.toFixed(3)}, threshold: ${effectiveThreshold.toFixed(2)}).`,
+      : `Face does not match registered biometrics for this trainee (Biometric distance: ${bestDist.toFixed(3)}, threshold: ${effectiveThreshold.toFixed(2)}).`,
   };
 }
 
