@@ -2192,6 +2192,27 @@ export function AppProvider({ children }: { children: ReactNode }) {
     };
   }, [refreshData, useSupabase, currentUser]);
 
+  // Cross-Device Permanent Attendance Synchronization:
+  // When a trainee or supervisor logs in or loads on any device (phone, laptop, tablet),
+  // immediately pull their authentic database time records so all timestamps are permanently visible.
+  useEffect(() => {
+    if (!currentUser?.id && !currentUser?.employeeId) return;
+    const lookupId = currentUser.id || currentUser.employeeId || '';
+    const altIds = [currentUser.employeeId, currentUser.id, currentUser.email].filter(Boolean) as string[];
+
+    supabaseService.fetchTimeRecordsForEmployee(lookupId, altIds)
+      .then((records) => {
+        if (Array.isArray(records) && records.length > 0) {
+          setTimeRecords((prev) => {
+            const merged = mergeTimeRecords(records, prev);
+            saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+            return merged;
+          });
+        }
+      })
+      .catch((err) => console.warn('[AppContext] Cloud attendance sync notice:', err));
+  }, [currentUser?.id, currentUser?.employeeId]);
+
   // Save to localStorage only when not using Supabase
   useEffect(() => {
     if (!useSupabase && employees.length > 0) {
@@ -4470,20 +4491,35 @@ export function AppProvider({ children }: { children: ReactNode }) {
       };
 
       for (const r of todayRecords) {
-        if (!baseRecord.amArrival && r.amArrival) baseRecord.amArrival = r.amArrival;
-        if (!baseRecord.amDeparture && r.amDeparture) baseRecord.amDeparture = r.amDeparture;
-        if (!baseRecord.pmArrival && r.pmArrival) baseRecord.pmArrival = r.pmArrival;
-        if (!baseRecord.pmDeparture && r.pmDeparture) baseRecord.pmDeparture = r.pmDeparture;
+        let slotNotes: any = {};
+        if (r.notes && typeof r.notes === 'string') {
+          const match = r.notes.match(/\[slots:(.*?)\]/);
+          if (match) {
+            try { slotNotes = JSON.parse(match[1]); } catch {}
+          }
+        }
+        const effAmIn = r.amArrival || slotNotes.amArrival;
+        const effAmOut = r.amDeparture || slotNotes.amDeparture;
+        const effPmIn = r.pmArrival || slotNotes.pmArrival;
+        const effPmOut = r.pmDeparture || slotNotes.pmDeparture;
+
+        if (!baseRecord.amArrival && effAmIn) baseRecord.amArrival = effAmIn;
+        if (!baseRecord.amDeparture && effAmOut) baseRecord.amDeparture = effAmOut;
+        if (!baseRecord.pmArrival && effPmIn) baseRecord.pmArrival = effPmIn;
+        if (!baseRecord.pmDeparture && effPmOut) baseRecord.pmDeparture = effPmOut;
         if (!baseRecord.timeIn && r.timeIn) baseRecord.timeIn = r.timeIn;
         if (!baseRecord.timeOut && r.timeOut) baseRecord.timeOut = r.timeOut;
-        if (r.amArrivalFaceVerified) baseRecord.amArrivalFaceVerified = true;
-        if (r.amDepartureFaceVerified) baseRecord.amDepartureFaceVerified = true;
-        if (r.pmArrivalFaceVerified) baseRecord.pmArrivalFaceVerified = true;
-        if (r.pmDepartureFaceVerified) baseRecord.pmDepartureFaceVerified = true;
-        if (r.amArrivalGeofenced) baseRecord.amArrivalGeofenced = true;
-        if (r.amDepartureGeofenced) baseRecord.amDepartureGeofenced = true;
-        if (r.pmArrivalGeofenced) baseRecord.pmArrivalGeofenced = true;
-        if (r.pmDepartureGeofenced) baseRecord.pmDepartureGeofenced = true;
+        if (r.totalHours && r.totalHours > (baseRecord.totalHours || 0)) baseRecord.totalHours = r.totalHours;
+        if (baseRecord.status === 'absent' && r.status && r.status !== 'absent') baseRecord.status = r.status;
+        if (r.notes && (!baseRecord.notes || !baseRecord.notes.includes('[slots:'))) baseRecord.notes = r.notes;
+        if (r.amArrivalFaceVerified || slotNotes.amArrivalFaceVerified) baseRecord.amArrivalFaceVerified = true;
+        if (r.amDepartureFaceVerified || slotNotes.amDepartureFaceVerified) baseRecord.amDepartureFaceVerified = true;
+        if (r.pmArrivalFaceVerified || slotNotes.pmArrivalFaceVerified) baseRecord.pmArrivalFaceVerified = true;
+        if (r.pmDepartureFaceVerified || slotNotes.pmDepartureFaceVerified) baseRecord.pmDepartureFaceVerified = true;
+        if (r.amArrivalGeofenced || slotNotes.amArrivalGeofenced) baseRecord.amArrivalGeofenced = true;
+        if (r.amDepartureGeofenced || slotNotes.amDepartureGeofenced) baseRecord.amDepartureGeofenced = true;
+        if (r.pmArrivalGeofenced || slotNotes.pmArrivalGeofenced) baseRecord.pmArrivalGeofenced = true;
+        if (r.pmDepartureGeofenced || slotNotes.pmDepartureGeofenced) baseRecord.pmDepartureGeofenced = true;
       }
     }
 

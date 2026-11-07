@@ -1162,34 +1162,34 @@ export async function fetchTimeRecords(): Promise<TimeRecord[]> {
   if (dbRecords.length === 0) return storageRecords;
 
   const map = new Map<string, TimeRecord>();
-  for (const r of dbRecords) {
-    if (!r) continue;
-    const dateKey = (r.date || '').split('T')[0].trim();
-    const key = `${(r.employeeId || '').toLowerCase()}_${dateKey}`;
-    map.set(key, r);
-  }
   for (const s of storageRecords) {
     if (!s) continue;
     const dateKey = (s.date || '').split('T')[0].trim();
     const key = `${(s.employeeId || '').toLowerCase()}_${dateKey}`;
+    map.set(key, s);
+  }
+  for (const r of dbRecords) {
+    if (!r) continue;
+    const dateKey = (r.date || '').split('T')[0].trim();
+    const key = `${(r.employeeId || '').toLowerCase()}_${dateKey}`;
     const existing = map.get(key);
     if (!existing) {
-      map.set(key, s);
+      map.set(key, r);
     } else {
       map.set(key, {
         ...existing,
-        ...s,
-        id: existing.id && !existing.id.startsWith('rec-') ? existing.id : s.id || existing.id,
-        timeIn: s.timeIn || existing.timeIn,
-        timeOut: s.timeOut || existing.timeOut,
-        amArrival: s.amArrival || existing.amArrival,
-        amDeparture: s.amDeparture || existing.amDeparture,
-        pmArrival: s.pmArrival || existing.pmArrival,
-        pmDeparture: s.pmDeparture || existing.pmDeparture,
-        totalHours: Math.max(Number(s.totalHours) || 0, Number(existing.totalHours) || 0),
-        notes: (s.notes && s.notes.trim()) ? s.notes : existing.notes,
-        timeInPhoto: existing.timeInPhoto || s.timeInPhoto,
-        timeOutPhoto: existing.timeOutPhoto || s.timeOutPhoto,
+        ...r,
+        id: r.id && !r.id.startsWith('rec-') ? r.id : existing.id,
+        timeIn: r.timeIn || existing.timeIn,
+        timeOut: r.timeOut || existing.timeOut,
+        amArrival: r.amArrival || existing.amArrival,
+        amDeparture: r.amDeparture || existing.amDeparture,
+        pmArrival: r.pmArrival || existing.pmArrival,
+        pmDeparture: r.pmDeparture || existing.pmDeparture,
+        totalHours: Math.max(Number(r.totalHours) || 0, Number(existing.totalHours) || 0),
+        notes: (r.notes && r.notes.trim()) ? r.notes : existing.notes,
+        timeInPhoto: r.timeInPhoto || existing.timeInPhoto,
+        timeOutPhoto: r.timeOutPhoto || existing.timeOutPhoto,
       });
     }
   }
@@ -1265,30 +1265,30 @@ export async function fetchTimeRecordsForEmployee(
   if (dbRecords.length === 0) return storageRecords;
 
   const map = new Map<string, TimeRecord>();
-  for (const r of dbRecords) {
-    if (!r) continue;
-    const dateKey = (r.date || '').split('T')[0].trim();
-    map.set(dateKey, r);
-  }
   for (const s of storageRecords) {
     if (!s) continue;
     const dateKey = (s.date || '').split('T')[0].trim();
+    map.set(dateKey, s);
+  }
+  for (const r of dbRecords) {
+    if (!r) continue;
+    const dateKey = (r.date || '').split('T')[0].trim();
     const existing = map.get(dateKey);
     if (!existing) {
-      map.set(dateKey, s);
+      map.set(dateKey, r);
     } else {
       map.set(dateKey, {
         ...existing,
-        ...s,
-        id: existing.id && !existing.id.startsWith('rec-') ? existing.id : s.id || existing.id,
-        timeIn: s.timeIn || existing.timeIn,
-        timeOut: s.timeOut || existing.timeOut,
-        amArrival: s.amArrival || existing.amArrival,
-        amDeparture: s.amDeparture || existing.amDeparture,
-        pmArrival: s.pmArrival || existing.pmArrival,
-        pmDeparture: s.pmDeparture || existing.pmDeparture,
-        totalHours: Math.max(Number(s.totalHours) || 0, Number(existing.totalHours) || 0),
-        notes: s.notes && s.notes.trim() ? s.notes : existing.notes,
+        ...r,
+        id: r.id && !r.id.startsWith('rec-') ? r.id : existing.id,
+        timeIn: r.timeIn || existing.timeIn,
+        timeOut: r.timeOut || existing.timeOut,
+        amArrival: r.amArrival || existing.amArrival,
+        amDeparture: r.amDeparture || existing.amDeparture,
+        pmArrival: r.pmArrival || existing.pmArrival,
+        pmDeparture: r.pmDeparture || existing.pmDeparture,
+        totalHours: Math.max(Number(r.totalHours) || 0, Number(existing.totalHours) || 0),
+        notes: r.notes && r.notes.trim() ? r.notes : existing.notes,
       });
     }
   }
@@ -1588,6 +1588,14 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
         date: updates.date,
         time_in: updates.timeIn || updates.amArrival || updates.pmArrival,
         time_out: updates.timeOut || updates.pmDeparture || updates.amDeparture,
+        amArrival: updates.amArrival,
+        amDeparture: updates.amDeparture,
+        pmArrival: updates.pmArrival,
+        pmDeparture: updates.pmDeparture,
+        am_arrival: updates.amArrival,
+        am_departure: updates.amDeparture,
+        pm_arrival: updates.pmArrival,
+        pm_departure: updates.pmDeparture,
         total_hours: updates.totalHours,
         status: updates.status,
         notes: supabaseUpdates.notes ?? updates.notes,

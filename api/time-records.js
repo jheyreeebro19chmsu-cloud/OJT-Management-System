@@ -190,6 +190,10 @@ function transformToDbPayload(r) {
     total_hours: r.total_hours != null ? Number(r.total_hours) : (r.totalHours != null ? Number(r.totalHours) : 0),
     status: r.status || 'present',
     notes: encodedNotes || r.notes || null,
+    amArrival: r.amArrival || r.am_arrival,
+    amDeparture: r.amDeparture || r.am_departure,
+    pmArrival: r.pmArrival || r.pm_arrival,
+    pmDeparture: r.pmDeparture || r.pm_departure,
   };
 
   if (r.id && isUuid(r.id)) {
@@ -366,11 +370,22 @@ export default async function handler(req, res) {
 
           if (existing?.id) {
             // Merge & Update existing record while preserving and merging slot notes
-            const mergedNotes = encodeSlotNotes(existing.notes, payload) || payload.notes || existing.notes;
             const existingSlots = extractSlotNotes(existing.notes);
             const payloadSlots = extractSlotNotes(payload.notes);
-            const effectiveTimeIn = payload.time_in || payloadSlots.amArrival || payloadSlots.pmArrival || existing.time_in || existingSlots.amArrival || existingSlots.pmArrival || null;
-            const effectiveTimeOut = payload.time_out || payloadSlots.pmDeparture || payloadSlots.amDeparture || existing.time_out || existingSlots.pmDeparture || existingSlots.amDeparture || null;
+            const rawSlots = {
+              ...(payload.amArrival ? { amArrival: payload.amArrival } : {}),
+              ...(payload.amDeparture ? { amDeparture: payload.amDeparture } : {}),
+              ...(payload.pmArrival ? { pmArrival: payload.pmArrival } : {}),
+              ...(payload.pmDeparture ? { pmDeparture: payload.pmDeparture } : {}),
+            };
+            const mergedSlots = { ...existingSlots, ...payloadSlots, ...rawSlots };
+            const baseNote = (existing.notes || payload.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+            const mergedNotes = Object.keys(mergedSlots).length
+              ? `${baseNote} [slots:${JSON.stringify(mergedSlots)}]`.trim()
+              : (baseNote || null);
+
+            const effectiveTimeIn = payload.time_in || mergedSlots.amArrival || mergedSlots.pmArrival || existing.time_in || null;
+            const effectiveTimeOut = payload.time_out || mergedSlots.pmDeparture || mergedSlots.amDeparture || existing.time_out || null;
 
             const mergedPayload = {
               ...payload,
@@ -380,6 +395,10 @@ export default async function handler(req, res) {
               notes: mergedNotes,
             };
             delete mergedPayload.id;
+            delete mergedPayload.amArrival;
+            delete mergedPayload.amDeparture;
+            delete mergedPayload.pmArrival;
+            delete mergedPayload.pmDeparture;
 
             const { data: updated, error: updateErr } = await supabase
               .from('time_records')

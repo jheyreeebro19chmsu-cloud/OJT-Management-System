@@ -31,7 +31,7 @@ import {
   uploadAttendancePhoto,
 } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
-import { uploadFacePhoto } from '../services/supabaseService';
+import { uploadFacePhoto, fetchTimeRecordsForEmployee } from '../services/supabaseService';
 import {
   formatTime,
   calculateTotalHours,
@@ -269,10 +269,25 @@ export function TimeRecord() {
     return () => clearInterval(t);
   }, []);
 
-  // Pull today's punches from the cloud on open so recorded timestamps always appear
+  // Pull today's punches from the cloud on open so recorded timestamps always appear across devices
   useEffect(() => {
+    const lookupId = empLookupId || employee?.id || currentUser?.employeeId || currentUser?.id || '';
+    if (lookupId) {
+      const altIds = [employee?.id, employee?.employeeId, currentUser?.employeeId, currentUser?.id, currentUser?.email].filter(Boolean) as string[];
+      fetchTimeRecordsForEmployee(lookupId, altIds)
+        .then((records) => {
+          if (Array.isArray(records) && records.length > 0) {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const foundToday = records.find((r) => (r.date || '').split('T')[0] === todayStr);
+            if (foundToday) {
+              setCurrentRecord(foundToday);
+            }
+          }
+        })
+        .catch(() => {});
+    }
     refreshData?.({ force: true } as any)?.catch?.(() => {});
-  }, []);
+  }, [empLookupId]);
 
   // Proactive GPS permission check
   useEffect(() => {

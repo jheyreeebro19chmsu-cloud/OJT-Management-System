@@ -50,7 +50,7 @@ import { supabase } from '../lib/supabase';
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
-import { transformSupabaseEmployee, uploadDocumentToStorage, saveDocumentPassStatus } from '../services/supabaseService';
+import { transformSupabaseEmployee, uploadDocumentToStorage, saveDocumentPassStatus, fetchTimeRecordsForEmployee } from '../services/supabaseService';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS, REQUIRED_TRAINEE_DOCUMENTS, getTraineeDocItem } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory, formatFileSize } from '../utils/attachmentHelper';
@@ -136,10 +136,14 @@ export function Dashboard() {
     return false;
   }, [currentUser, employee]);
 
-  // Automatically refresh data when instructor or admin views the dashboard
+  // Automatically pull live attendance from Supabase so trainee timestamps on laptop/cellphone are always permanent and visible
   useEffect(() => {
-    refreshData();
-  }, [refreshData]);
+    if (empLookupId) {
+      const altIds = [employee?.id, employee?.employeeId, currentUser?.employeeId, currentUser?.id, currentUser?.email].filter(Boolean) as string[];
+      fetchTimeRecordsForEmployee(empLookupId, altIds).catch(() => {});
+    }
+    refreshData({ force: true }).catch(() => {});
+  }, [empLookupId, refreshData]);
   
   // HTE/Instructor Dashboard Metrics
   // Student trainees across the active cohort
