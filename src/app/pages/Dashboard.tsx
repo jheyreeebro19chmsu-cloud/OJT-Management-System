@@ -117,6 +117,8 @@ export function Dashboard() {
     refreshData,
   } = useApp();
   const employee = getCurrentEmployee();
+  const currentEmp = employee || getCurrentEmployee();
+  const empLookupId = currentEmp?.id || currentEmp?.employeeId || currentUser?.employeeId || currentUser?.id || '';
   const isAdmin = useMemo(() => {
     const role = (currentUser?.role || (employee as any)?.role || '').toLowerCase();
     const pos = (currentUser?.position || employee?.position || '').toLowerCase();
@@ -350,8 +352,6 @@ export function Dashboard() {
   }, [linkedStudentsPage, totalLinkedPages]);
   
   // Original Dashboard State (for non-admin/students)
-  const currentEmp = employee || getCurrentEmployee();
-  const empLookupId = currentEmp?.id || currentEmp?.employeeId || currentUser?.employeeId || currentUser?.id || '';
   const displayName = currentEmp?.name || currentUser?.name || (isAdmin ? 'OJT Instructor' : 'Trainee');
   const displayId = currentEmp?.employeeId || currentUser?.employeeId || (isAdmin ? 'INSTRUCTOR' : '');
   const todayRecord = empLookupId ? getTodayRecord(empLookupId) : null;
