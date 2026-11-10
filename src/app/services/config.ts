@@ -7,11 +7,12 @@ export const getApiBase = (): string => {
   const envUrl = import.meta.env.VITE_DJANGO_API_URL;
   const securityKey = import.meta.env.VITE_SECURITY_API_KEY;
 
-  // 1. If VITE_DJANGO_API_URL is configured, valid, and not the old dead f35i deployment
+  // 1. If VITE_DJANGO_API_URL is configured, valid, and not a retired Railway/Render deployment
   if (
     envUrl &&
     envUrl.startsWith('http') &&
     !envUrl.includes('railway.app') &&
+    !envUrl.includes('onrender.com') &&
     !envUrl.includes('ojt-management-system-capstone-f35i')
   ) {
     return envUrl.replace(/\/+$/, '');
@@ -32,6 +33,7 @@ export const getApiBase = (): string => {
     securityKey &&
     securityKey.startsWith('http') &&
     !securityKey.includes('railway.app') &&
+    !securityKey.includes('onrender.com') &&
     !securityKey.includes('ojt-management-system-capstone-f35i')
   ) {
     return `${securityKey.replace(/\/+$/, '')}/api`;

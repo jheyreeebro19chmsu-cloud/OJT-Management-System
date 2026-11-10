@@ -60,8 +60,8 @@ export async function fetchEmployees(): Promise<Employee[]> {
         return apiData.map(transformSupabaseEmployee);
       }
     }
-  } catch (apiErr) {
-    console.warn('fetchEmployees /api/employees notice:', apiErr);
+  } catch {
+    // Fall back silently to direct Supabase query below
   }
 
   // 2. Direct Supabase fallback
@@ -787,27 +787,37 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     }
     const errText = await res.text().catch(() => '');
     console.warn(`API endpoint /api/employees returned status ${res.status}:`, errText);
-  } catch (apiErr) {
-    console.warn('API endpoint /api/employees error, falling back to direct Supabase:', apiErr);
+  } catch {
+    // Fall back to direct Supabase client below
   }
 
   // 2. Direct Supabase client fallback
-  let query = supabase.from('employees').update(supabaseUpdates);
-  if (isUuid(id)) {
-    query = query.eq('id', id);
-  } else if (updates.email) {
-    query = query.eq('email', updates.email.trim().toLowerCase());
-  } else {
-    query = query.eq('employee_id', id);
-  }
+  try {
+    let query = supabase.from('employees').update(supabaseUpdates);
+    if (isUuid(id)) {
+      query = query.eq('id', id);
+    } else if (updates.email) {
+      query = query.eq('email', updates.email.trim().toLowerCase());
+    } else {
+      query = query.eq('employee_id', id);
+    }
 
-  const { error } = await query;
-  if (error) {
-    console.error('Error updating employee:', error);
-    throw new Error(error.message || 'Failed to update employee in database');
-  }
+    const { error } = await query;
+    if (error) {
+      if (String(error.message || '').includes('Failed to fetch')) {
+        return false;
+      }
+      console.error('Error updating employee:', error);
+      throw new Error(error.message || 'Failed to update employee in database');
+    }
 
-  return true;
+    return true;
+  } catch (err: any) {
+    if (String(err?.message || err || '').includes('Failed to fetch')) {
+      return false;
+    }
+    throw err;
+  }
 }
 
 export async function fetchEmployeeDocuments(employeeId: string): Promise<{
@@ -2594,25 +2604,15 @@ export async function fetchAnnouncements(): Promise<Announcement[]> {
 
   // 1. Primary path: Service role endpoint /api/announcements (bypasses RLS)
   try {
-    let res: Response | null = null;
-    try {
-      res = await fetch('/api/announcements');
-    } catch {
-      await new Promise((r) => setTimeout(r, 350));
-      try {
-        res = await fetch('/api/announcements');
-      } catch (retryErr) {
-        console.warn('fetchAnnouncements /api/announcements note (using client fallback):', retryErr);
-      }
-    }
+    const res = await fetch('/api/announcements');
     if (res && res.ok) {
       const data = await res.json();
       if (Array.isArray(data)) {
         return sortAnnouncements(data as Announcement[]);
       }
     }
-  } catch (apiErr) {
-    console.warn('fetchAnnouncements /api/announcements note:', apiErr);
+  } catch {
+    // Fall back silently to direct Supabase client below
   }
 
   // 2. Direct Supabase client fallback
@@ -4053,8 +4053,8 @@ export async function fetchRequiredDocumentsFromStorage(): Promise<RequiredDocum
         return data;
       }
     }
-  } catch (err) {
-    console.warn('fetchRequiredDocumentsFromStorage notice:', err);
+  } catch {
+    // Fall back to Supabase client download below
   }
 
   // 3. Supabase client download

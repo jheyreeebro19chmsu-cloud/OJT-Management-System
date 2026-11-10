@@ -2009,17 +2009,20 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [useSupabase, currentUser]);
 
   const lastRefreshTimeRef = useRef<number>(0);
+  const isRefreshingRef = useRef<boolean>(false);
 
   // Periodic polling & window focus auto-sync across all open tabs/devices
   const refreshData = useCallback(async (options?: { force?: boolean }) => {
     if (!useSupabase && !isSupabaseConfigured()) return;
     if (!currentUser && !options?.force) return;
+    if (isRefreshingRef.current) return;
     const now = Date.now();
     // Protect database Disk IO & CPU: debounce refresh calls so open clients never flood Postgres
     const cooldown = options?.force ? 10000 : 30000;
     if (now - lastRefreshTimeRef.current < cooldown) {
       return;
     }
+    isRefreshingRef.current = true;
     lastRefreshTimeRef.current = now;
     try {
       // Tier 1: Core Dashboard Data (Employees, Host Supervisors, Geofence Zones, Settings, Time Records)
@@ -2221,6 +2224,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) setHostSupervisors(supabaseHostSupervisors);
     } catch (err) {
       console.warn('Manual or auto refreshData failed:', err);
+    } finally {
+      isRefreshingRef.current = false;
     }
   }, [useSupabase, currentUser]);
 
@@ -2426,6 +2431,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   }, [currentUser]);
 
+  const syncedPhotoEmployeeIdsRef = useRef<Set<string>>(new Set());
+
   // Cross-synchronize photo between employees state and currentUser so avatars always resolve immediately
   useEffect(() => {
     if (!currentUser || employees.length === 0) return;
@@ -2442,11 +2449,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (matched.photo && (!currentUser.photo || currentUser.photo !== matched.photo)) {
       setCurrentUser((prev) => (prev ? { ...prev, photo: matched.photo } : prev));
     }
-    // Case 2: currentUser has photo (e.g. from Google OAuth), database does not -> persist to DB
-    else if (currentUser.photo && !matched.photo) {
+    // Case 2: currentUser has photo (e.g. from Google OAuth), database does not -> persist to DB once per session
+    else if (currentUser.photo && !matched.photo && !syncedPhotoEmployeeIdsRef.current.has(matched.id)) {
+      syncedPhotoEmployeeIdsRef.current.add(matched.id);
       matched.photo = currentUser.photo;
       if (useSupabase) {
-        supabaseService.updateEmployee(matched.id, { photo: currentUser.photo }).catch(console.warn);
+        supabaseService.updateEmployee(matched.id, { photo: currentUser.photo }).catch(() => {});
       }
     }
   }, [employees, currentUser?.id, currentUser?.employeeId, currentUser?.email, currentUser?.photo, useSupabase]);

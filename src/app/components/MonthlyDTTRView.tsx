@@ -105,28 +105,28 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     const altIds = [emp?.employeeId, emp?.email, currentUser?.employeeId, currentUser?.email].filter(Boolean) as string[];
     let mounted = true;
 
-    const syncFromCloud = () => {
+    const syncFromCloud = (isInitial = false) => {
       Promise.allSettled([
         supabaseService.fetchTimeRecordsForEmployee(lookupId, altIds).then((records) => {
           if (mounted && Array.isArray(records) && records.length > 0) {
             setExtraEmployeeRecords(records);
           }
         }),
-        refreshData?.({ force: true } as any),
+        refreshData?.(isInitial ? ({ force: true } as any) : undefined),
       ]).finally(() => {
         if (mounted) setHasSyncedCloudDttr(true);
       });
     };
 
-    syncFromCloud();
+    syncFromCloud(true);
 
     const onFocusOrVisible = () => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      syncFromCloud();
+      syncFromCloud(false);
     };
     window.addEventListener('focus', onFocusOrVisible);
     document.addEventListener('visibilitychange', onFocusOrVisible);
-    const interval = setInterval(onFocusOrVisible, 20000);
+    const interval = setInterval(onFocusOrVisible, 30000);
 
     return () => {
       mounted = false;
