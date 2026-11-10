@@ -50,6 +50,13 @@ type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
 
 export type AttendanceSlot = 'am_arrival' | 'am_departure' | 'pm_arrival' | 'pm_departure';
 
+/** True when the record belongs to the given DTR session day (YYYY-MM-DD). */
+function isSameSessionDay(rec: { date?: string } | null | undefined, sessionDate: string): boolean {
+  if (!rec) return false;
+  const d = String(rec.date || '').split('T')[0].split(' ')[0].trim();
+  return d === sessionDate;
+}
+
 interface SlotMeta {
   id: AttendanceSlot;
   label: string;
@@ -140,6 +147,8 @@ export function TimeRecord() {
   const [currentRecord, setCurrentRecord] = useState<TimeRecordType | null>(todayRecord);
   const [completedMessage, setCompletedMessage] = useState('');
   const [currentTime, setCurrentTime] = useState(new Date());
+  // Current DTR session day (resets daily at 6:00 AM) – used to make sure we never punch into a stale day
+  const sessionDate = getDTRSessionDate(currentTime);
   const [securityHealth, setSecurityHealth] = useState<SecurityHealthResponse | null>(null);
   const [retryCount, setRetryCount] = useState(0);
   const [isProcessingAction, setIsProcessingAction] = useState(false);
@@ -277,8 +286,8 @@ export function TimeRecord() {
       fetchTimeRecordsForEmployee(lookupId, altIds)
         .then((records) => {
           if (Array.isArray(records) && records.length > 0) {
-            const todayStr = new Date().toISOString().split('T')[0];
-            const foundToday = records.find((r) => (r.date || '').split('T')[0] === todayStr);
+            const todayStr = getDTRSessionDate(new Date());
+            const foundToday = records.find((r) => (r.date || '').split('T')[0].split(' ')[0] === todayStr);
             if (foundToday) {
               setCurrentRecord(foundToday);
             }
@@ -319,15 +328,17 @@ export function TimeRecord() {
     const lookupId = empLookupId || employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
     if (lookupId) {
       const rec = getTodayRecord(lookupId);
-      if (rec) {
-        setCurrentRecord(rec);
+      // Never keep a record from a previous day as "today" (e.g. a tab left open overnight)
+      const safePrev = currentRecord && isSameSessionDay(currentRecord, sessionDate) ? currentRecord : null;
+      const effectiveRec = rec || safePrev;
+      if (effectiveRec !== currentRecord) {
+        setCurrentRecord(effectiveRec);
       }
       if (pageState !== 'completed' && !userActionOverrideRef.current) {
-        const effectiveRec = rec || currentRecord;
         setSelectedSlot(getRecommendedSlot(effectiveRec, new Date().getHours()));
       }
     }
-  }, [employee, empLookupId, currentUser, timeRecords, pageState]);
+  }, [employee, empLookupId, currentUser, timeRecords, pageState, sessionDate]);
 
   useEffect(() => {
     let mounted = true;
@@ -511,7 +522,7 @@ export function TimeRecord() {
       const dateStr = getDTRSessionDate(now);
       const nowMins = now.getHours() * 60 + now.getMinutes();
 
-      const baseRec = currentRecord;
+      const baseRec = currentRecord && isSameSessionDay(currentRecord, dateStr) ? currentRecord : null;
       const baseInMins = baseRec?.timeIn ? parseTimeToMinutes(baseRec.timeIn) : null;
       const baseOutMins = baseRec?.timeOut ? parseTimeToMinutes(baseRec.timeOut) : null;
 
@@ -605,6 +616,7 @@ export function TimeRecord() {
       // Fast local punch backup persistence
       try {
         const cachePunch = {
+          savedAt: Date.now(),
           amArrival: newAmArrival,
           amDeparture: newAmDeparture,
           pmArrival: newPmArrival,

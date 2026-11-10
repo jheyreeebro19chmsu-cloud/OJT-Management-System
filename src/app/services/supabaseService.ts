@@ -1379,10 +1379,11 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
       clearTimeout(timer);
       if (apiRes.ok) {
         const resData = await apiRes.json();
-        const saved = resData?.records?.[0] || resData;
-        if (saved) {
-          saveDttrStoreToStorage({ timeRecords: [saved] }).catch(() => {});
-          return transformSupabaseTimeRecord(saved);
+        const saved = Array.isArray(resData?.records) ? resData.records[0] : (resData?.id ? resData : null);
+        if (saved && (saved.id || saved.employee_id || saved.employeeId)) {
+          const transformed = transformSupabaseTimeRecord(saved);
+          saveDttrStoreToStorage({ timeRecords: [transformed] }).catch(() => {});
+          return transformed;
         }
       }
     } catch {}
@@ -1605,7 +1606,14 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(endpointPayload),
       });
-      if (apiRes.ok) return true;
+      if (apiRes.ok) {
+        const resData = await apiRes.json().catch(() => null);
+        const saved = Array.isArray(resData?.records) ? resData.records[0] : null;
+        if (saved && (saved.id || saved.employee_id || saved.employeeId)) {
+          saveDttrStoreToStorage({ timeRecords: [transformSupabaseTimeRecord(saved)] }).catch(() => {});
+          return true;
+        }
+      }
     } catch (e) {
       console.warn('Endpoint /api/time-records update notice:', e);
     }
@@ -4571,18 +4579,20 @@ export async function saveDttrStoreToStorage(payload: {
     if (payload.timeRecords) {
       const recMap = new Map<string, TimeRecord>();
       for (const r of existing.timeRecords || []) {
-        if (!r) continue;
+        if (!r || !r.employeeId || !r.date) continue;
         const dateKey = (r.date || '').split('T')[0].trim();
         recMap.set(`${(r.employeeId || '').toLowerCase()}_${dateKey}`, r);
       }
       for (const r of payload.timeRecords) {
-        if (!r) continue;
+        if (!r || !(r.employeeId || (r as any).employee_id) || !r.date) continue;
+        const empId = r.employeeId || (r as any).employee_id;
         const dateKey = (r.date || '').split('T')[0].trim();
-        const key = `${(r.employeeId || '').toLowerCase()}_${dateKey}`;
+        const key = `${String(empId).toLowerCase()}_${dateKey}`;
         const prev = recMap.get(key);
         recMap.set(key, prev ? {
           ...prev,
           ...r,
+          employeeId: empId,
           timeIn: r.timeIn || prev.timeIn,
           timeOut: r.timeOut || prev.timeOut,
           amArrival: r.amArrival || prev.amArrival,
@@ -4591,9 +4601,11 @@ export async function saveDttrStoreToStorage(payload: {
           pmDeparture: r.pmDeparture || prev.pmDeparture,
           totalHours: Math.max(Number(r.totalHours) || 0, Number(prev.totalHours) || 0),
           notes: r.notes !== undefined && String(r.notes).trim() !== '' ? r.notes : prev.notes,
-        } : r);
+        } : { ...r, employeeId: empId });
       }
-      mergedTimeRecords = Array.from(recMap.values());
+      mergedTimeRecords = Array.from(recMap.values()).sort((a, b) =>
+        String(b.date || '').localeCompare(String(a.date || ''))
+      );
     }
 
     const apiRes = await fetch('/api/documents', {

@@ -87,6 +87,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
 
   // Target-specific time records for the selected trainee intern across all connected databases
   const [extraEmployeeRecords, setExtraEmployeeRecords] = useState<TimeRecord[]>([]);
+  const [hasSyncedCloudDttr, setHasSyncedCloudDttr] = useState(false);
 
   useEffect(() => {
     if (defaultEmployeeId && defaultEmployeeId !== selectedEmployeeId) {
@@ -95,19 +96,45 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   }, [defaultEmployeeId, selectedEmployeeId]);
 
   useEffect(() => {
-    if (!selectedEmployeeId) return;
-    const emp = employees.find((e) => e.id === selectedEmployeeId || e.employeeId === selectedEmployeeId);
-    if (!emp) return;
+    const emp =
+      employees.find((e) => e.id === selectedEmployeeId || e.employeeId === selectedEmployeeId) ||
+      selectedEmployee;
+    const lookupId = emp?.id || selectedEmployeeId || currentUser?.id || currentUser?.employeeId || '';
+    if (!lookupId) return;
 
-    const altIds = [emp.employeeId, emp.email].filter(Boolean) as string[];
-    supabaseService.fetchTimeRecordsForEmployee(emp.id, altIds)
-      .then((records) => {
-        if (Array.isArray(records) && records.length > 0) {
-          setExtraEmployeeRecords(records);
-        }
-      })
-      .catch(() => {});
-  }, [selectedEmployeeId]);
+    const altIds = [emp?.employeeId, emp?.email, currentUser?.employeeId, currentUser?.email].filter(Boolean) as string[];
+    let mounted = true;
+
+    const syncFromCloud = () => {
+      Promise.allSettled([
+        supabaseService.fetchTimeRecordsForEmployee(lookupId, altIds).then((records) => {
+          if (mounted && Array.isArray(records) && records.length > 0) {
+            setExtraEmployeeRecords(records);
+          }
+        }),
+        refreshData?.({ force: true } as any),
+      ]).finally(() => {
+        if (mounted) setHasSyncedCloudDttr(true);
+      });
+    };
+
+    syncFromCloud();
+
+    const onFocusOrVisible = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      syncFromCloud();
+    };
+    window.addEventListener('focus', onFocusOrVisible);
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    const interval = setInterval(onFocusOrVisible, 20000);
+
+    return () => {
+      mounted = false;
+      window.removeEventListener('focus', onFocusOrVisible);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      clearInterval(interval);
+    };
+  }, [selectedEmployeeId, selectedEmployee?.id]);
 
   const instructorName = useMemo(() => {
     if (selectedEmployee?.instructorId) {
@@ -287,10 +314,16 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         }
         const cleanNotes = (r.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
 
-        let recAmIn = r.amArrival || slotNotes.amArrival;
-        let recAmOut = r.amDeparture || slotNotes.amDeparture;
-        let recPmIn = r.pmArrival || slotNotes.pmArrival;
-        let recPmOut = r.pmDeparture || slotNotes.pmDeparture;
+        let recAmIn = r.amArrival || (slotNotes as any).amArrival;
+        let recAmOut = r.amDeparture || (slotNotes as any).amDeparture;
+        let recPmIn = r.pmArrival || (slotNotes as any).pmArrival;
+        let recPmOut = r.pmDeparture || (slotNotes as any).pmDeparture;
+
+        // Guard: PM departure must be >= 12:00 PM (reject stale morning punches like 7:24 AM in PM Out)
+        const pmOutCheckMins = recPmOut ? parseTimeToMinutes(recPmOut) : null;
+        if (pmOutCheckMins !== null && pmOutCheckMins < 12 * 60) {
+          recPmOut = undefined;
+        }
 
         const inMins = r.timeIn ? parseTimeToMinutes(r.timeIn) : null;
         const outMins = r.timeOut ? parseTimeToMinutes(r.timeOut) : null;
@@ -460,11 +493,18 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       // Official biometric/attendance record takes absolute precedence and cannot be overridden
       const hasAutoPunch = !!(autoAmIn || autoAmOut || autoPmIn || autoPmOut || autoHours > 0);
 
-      // For arrival/departures: trainee punches are the authoritative source of truth
+      // For arrival/departures: merge authoritative attendance punches with saved DTTR entries,
+      // while rejecting invalid morning times (< 12:00 PM) inside PM Departure.
+      const cleanCustomPmOut = (() => {
+        const raw = custom?.pmDeparture?.trim() || '';
+        if (!raw) return '';
+        const mins = parseTimeToMinutes(raw);
+        return mins !== null && mins < 12 * 60 ? '' : raw;
+      })();
       const finalAmIn = autoAmIn || custom?.amArrival?.trim() || '';
       const finalAmOut = autoAmOut || custom?.amDeparture?.trim() || '';
       const finalPmIn = autoPmIn || custom?.pmArrival?.trim() || '';
-      const finalPmOut = autoPmOut || custom?.pmDeparture?.trim() || '';
+      const finalPmOut = autoPmOut || cleanCustomPmOut || '';
 
       // Compute hours automatically if missing
       let finalHours = autoHours > 0 ? autoHours : (typeof custom?.hours === 'number' && custom.hours > 0 ? custom.hours : 0);
@@ -528,6 +568,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   // Auto-snapshot trainee attendance punches, computed hours, and tasks into MonthlyDttrRecord
   // This guarantees that Instructor, Coordinator, and HTE accounts always see identical calculated hours, AM/PM punches, and tasks
   useEffect(() => {
+    if (!hasSyncedCloudDttr) return;
     if (viewerRole !== 'employee' || !canEditTasks || !selectedEmployee) return;
     if (!dailyRows || dailyRows.length === 0) return;
 
@@ -538,10 +579,11 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     dailyRows.forEach((row) => {
       if (row.hours > 0 || row.amArrival || row.pmDeparture || row.tasks) {
         const existing = nextCustom[row.day];
-        const newAmIn = row.amArrival || existing?.amArrival || '';
-        const newAmOut = row.amDeparture || existing?.amDeparture || '';
-        const newPmIn = row.pmArrival || existing?.pmArrival || '';
-        const newPmOut = row.pmDeparture || existing?.pmDeparture || '';
+        // Snapshot mirrors the authoritative row exactly (no sticky stale punches from another device)
+        const newAmIn = row.amArrival || '';
+        const newAmOut = row.amDeparture || '';
+        const newPmIn = row.pmArrival || '';
+        const newPmOut = row.pmDeparture || '';
         const newHours = row.hours || existing?.hours || 0;
         const newTasks = row.tasks || existing?.tasks || '';
 
@@ -584,7 +626,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       };
       saveMonthlyDttr(record);
     }
-  }, [dailyRows, viewerRole, canEditTasks, selectedEmployee, selectedYear, selectedMonth, savedDttr, saveMonthlyDttr]);
+  }, [hasSyncedCloudDttr, dailyRows, viewerRole, canEditTasks, selectedEmployee, selectedYear, selectedMonth, savedDttr, saveMonthlyDttr]);
 
   // Number of active rendered days
   const totalRenderedDays = useMemo(() => {
@@ -623,6 +665,22 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       return taskEdits[day] !== undefined && taskEdits[day].trim() !== originalText.trim();
     }).length;
   }, [taskEdits, dailyRows]);
+
+  // Auto-save modified tasks after 1.5s of inactivity so mobile users don't lose edits if they switch devices without pressing Enter/Send
+  useEffect(() => {
+    if (!canEditTasks || !selectedEmployee || modifiedDayCount === 0) return;
+    const timer = setTimeout(() => {
+      Object.keys(taskEdits).forEach((dayStr) => {
+        const day = Number(dayStr);
+        const row = dailyRows.find((r) => r.day === day);
+        const originalText = row?.tasks || '';
+        if (taskEdits[day] !== undefined && taskEdits[day].trim() !== originalText.trim()) {
+          handleSendSingleTask(day);
+        }
+      });
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, [taskEdits, canEditTasks, selectedEmployee, modifiedDayCount]);
 
   // Send / Save a single task for a specific day ONLY (preserves arrival, departure, and hours)
   const handleSendSingleTask = async (day: number) => {

@@ -172,6 +172,8 @@ function encodeSlotNotes(existingNotes, r) {
   if (r.pmArrivalGeofenced ?? r.pm_arrival_geofenced) slots.pmArrivalGeofenced = true;
   if (r.pmDepartureGeofenced ?? r.pm_departure_geofenced) slots.pmDepartureGeofenced = true;
 
+  if (r.academic_year || r.academicYear) slots.academicYear = r.academic_year || r.academicYear;
+
   if (Object.keys(slots).length === 0) return existingNotes || null;
 
   const baseNote = (existingNotes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
@@ -210,9 +212,6 @@ function transformToDbPayload(r) {
   }
   if (r.time_out_face_verified !== undefined || r.timeOutFaceVerified !== undefined) {
     payload.time_out_face_verified = Boolean(r.time_out_face_verified ?? r.timeOutFaceVerified);
-  }
-  if (r.academic_year || r.academicYear) {
-    payload.academic_year = r.academic_year || r.academicYear;
   }
   return payload;
 }
@@ -292,9 +291,9 @@ export default async function handler(req, res) {
         return q.limit(limit);
       };
 
-      const coreFields = 'id, employee_id, date, time_in, time_out, total_hours, status, notes, academic_year, time_in_geofenced, time_out_geofenced, time_in_face_verified, time_out_face_verified, time_in_lat, time_in_lng, time_out_lat, time_out_lng, created_at';
+      const coreFields = 'id, employee_id, date, time_in, time_out, total_hours, status, notes, time_in_geofenced, time_out_geofenced, time_in_face_verified, time_out_face_verified, time_in_lat, time_in_lng, time_out_lat, time_out_lng, created_at';
       const extendedFields = `${coreFields}, approval_status, approved_by, approved_at, approval_note`;
-      const selectFields = includePhotos ? '*' : extendedFields;
+      const selectFields = includePhotos ? '*' : coreFields;
 
       let data = [];
       try {
@@ -379,7 +378,10 @@ export default async function handler(req, res) {
               ...(payload.pmDeparture ? { pmDeparture: payload.pmDeparture } : {}),
             };
             const mergedSlots = { ...existingSlots, ...payloadSlots, ...rawSlots };
-            const baseNote = (existing.notes || payload.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+            const stripSlots = (s) => (s || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+            const incomingClean = payload.notes !== undefined && payload.notes !== null ? stripSlots(payload.notes) : '';
+            const existingClean = stripSlots(existing.notes);
+            const baseNote = incomingClean || existingClean;
             const mergedNotes = Object.keys(mergedSlots).length
               ? `${baseNote} [slots:${JSON.stringify(mergedSlots)}]`.trim()
               : (baseNote || null);
@@ -399,6 +401,7 @@ export default async function handler(req, res) {
             delete mergedPayload.amDeparture;
             delete mergedPayload.pmArrival;
             delete mergedPayload.pmDeparture;
+            delete mergedPayload.academic_year;
 
             const { data: updated, error: updateErr } = await supabase
               .from('time_records')
@@ -408,18 +411,30 @@ export default async function handler(req, res) {
               .single();
 
             if (!updateErr && updated) {
-              savedResults.push(updated);
+              savedResults.push(enrichRecordWithSlots(updated));
+            } else if (updateErr) {
+              console.warn('api/time-records update error:', updateErr.message);
             }
           } else {
-            // Insert new record
+            // Insert new record (strip virtual slot fields not in SQL schema)
+            const insertPayload = { ...payload };
+            delete insertPayload.id;
+            delete insertPayload.amArrival;
+            delete insertPayload.amDeparture;
+            delete insertPayload.pmArrival;
+            delete insertPayload.pmDeparture;
+            delete insertPayload.academic_year;
+
             const { data: inserted, error: insertErr } = await supabase
               .from('time_records')
-              .insert([payload])
+              .insert([insertPayload])
               .select()
               .single();
 
             if (!insertErr && inserted) {
-              savedResults.push(inserted);
+              savedResults.push(enrichRecordWithSlots(inserted));
+            } else if (insertErr) {
+              console.warn('api/time-records insert error:', insertErr.message);
             }
           }
         } catch (recordErr) {

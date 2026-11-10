@@ -538,8 +538,13 @@ export default async function handler(req, res) {
             ? existingStore.timeRecords
             : [];
 
+          // Sort newest-first before capping so recent attendance records are never sliced off
+          const sortedTimeRecords = [...rawTimeRecords]
+            .filter((r) => r && typeof r === 'object' && (r.employeeId || r.employee_id) && r.date)
+            .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+
           // Strip inline base64 photos from DTTR store so JSON stays tiny and fast
-          const slimTimeRecords = rawTimeRecords.slice(0, 600).map((r) => {
+          const slimTimeRecords = sortedTimeRecords.slice(0, 1500).map((r) => {
             if (!r || typeof r !== 'object') return r;
             const copy = { ...r };
             if (typeof copy.timeInPhoto === 'string' && copy.timeInPhoto.startsWith('data:')) {

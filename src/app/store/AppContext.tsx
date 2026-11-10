@@ -924,6 +924,47 @@ function sanitizeTimeRecords(records: TimeRecord[]): TimeRecord[] {
     });
 }
 
+// ── Cross-device self-healing sync ─────────────────────────────────────────────
+// When a device holds punches that never reached the cloud (flaky mobile data, closed tab, etc.)
+// they are re-sent in the background so the timestamps become permanent on every device.
+const pendingCloudSyncKeys = new Set<string>();
+
+function queueCloudResync(remoteId: string | undefined, localR: TimeRecord) {
+  if (!remoteId || typeof window === 'undefined') return;
+  const key = `upd_${remoteId}_${localR.amArrival || ''}_${localR.amDeparture || ''}_${localR.pmArrival || ''}_${localR.pmDeparture || ''}`;
+  if (pendingCloudSyncKeys.has(key)) return;
+  pendingCloudSyncKeys.add(key);
+  setTimeout(() => {
+    const payload: Partial<TimeRecord> = {
+      employeeId: localR.employeeId,
+      date: localR.date,
+      amArrival: localR.amArrival,
+      amDeparture: localR.amDeparture,
+      pmArrival: localR.pmArrival,
+      pmDeparture: localR.pmDeparture,
+      timeIn: localR.timeIn,
+      timeOut: localR.timeOut,
+      totalHours: localR.totalHours,
+    };
+    supabaseService.updateTimeRecord(remoteId, payload).catch(() => pendingCloudSyncKeys.delete(key));
+  }, 1500);
+}
+
+function queueCloudCreate(localR: TimeRecord) {
+  if (typeof window === 'undefined') return;
+  const id = String(localR.id || '');
+  // Give the original in-flight create request time to finish before retrying
+  const createdAt = Number(id.replace('rec-', ''));
+  if (!Number.isNaN(createdAt) && Date.now() - createdAt < 60_000) return;
+  const key = `new_${(localR.employeeId || '').toLowerCase()}_${String(localR.date || '').split('T')[0]}`;
+  if (pendingCloudSyncKeys.has(key)) return;
+  pendingCloudSyncKeys.add(key);
+  setTimeout(() => {
+    const { id: _omit, ...rest } = localR as any;
+    supabaseService.createTimeRecord(rest).catch(() => pendingCloudSyncKeys.delete(key));
+  }, 2000);
+}
+
 function mergeTimeRecords(
   remoteRecords: TimeRecord[],
   currentLocalRecords: TimeRecord[],
@@ -962,7 +1003,24 @@ function mergeTimeRecords(
     if (altEmp2) remoteEmpDateMap.set(`${altEmp2}_${datePart}`, r);
   });
 
-  const todayStr = new Date().toISOString().split('T')[0];
+  const todayStr = getDTRSessionDate(new Date());
+
+  // Slot "fingerprint" of every remote record so we can detect corrupted local copies
+  // (a previous day's punches that were re-dated locally on one device only).
+  const slotSig = (r: TimeRecord) =>
+    [r.amArrival, r.amDeparture, r.pmArrival, r.timeIn].map((v) => String(v || '').slice(0, 5)).join('|');
+  const remoteSigByEmp = new Map<string, Set<string>>();
+  sanitizedRemote.forEach((r) => {
+    const sig = slotSig(r);
+    if (sig.replace(/\|/g, '') === '') return;
+    const datePart = (r.date || '').split('T')[0].split(' ')[0];
+    const rawEmp = (r.employeeId || '').toLowerCase();
+    [rawEmp, empIdToCodeMap.get(rawEmp), empCodeToIdMap.get(rawEmp)].forEach((e) => {
+      if (!e) return;
+      if (!remoteSigByEmp.has(e)) remoteSigByEmp.set(e, new Set());
+      remoteSigByEmp.get(e)!.add(`${sig}@${datePart}`);
+    });
+  });
 
   // Keep only legitimate unsynced local records (e.g. today's live offline punch).
   // Purge obsolete past-date mock/seed records for employees who already have authentic database records.
@@ -976,7 +1034,19 @@ function mergeTimeRecords(
       const key = `${rawEmp}_${datePart}`;
       const remoteMatch = remoteEmpDateMap.get(key);
 
+      // The cloud database is the single source of truth for every past day so that all devices
+      // (phone, laptop, desktop) display exactly the same DTTR. Only today's live punches that may
+      // not have reached the server yet are allowed to fill in missing slots.
+      if (remoteMatch && datePart !== todayStr) {
+        return false;
+      }
+
       if (remoteMatch) {
+        let localHasExtra = false;
+        (['amArrival', 'amDeparture', 'pmArrival', 'pmDeparture'] as const).forEach((f) => {
+          if (!remoteMatch[f] && localR[f]) localHasExtra = true;
+        });
+        if (localHasExtra) queueCloudResync(remoteMatch.id, localR);
         if (!remoteMatch.amArrival && localR.amArrival) remoteMatch.amArrival = localR.amArrival;
         if (!remoteMatch.amDeparture && localR.amDeparture) remoteMatch.amDeparture = localR.amDeparture;
         if (!remoteMatch.pmArrival && localR.pmArrival) remoteMatch.pmArrival = localR.pmArrival;
@@ -1017,6 +1087,19 @@ function mergeTimeRecords(
       ) {
         return false;
       }
+
+      // Drop corrupted local copies: same punch times as a cloud record of a DIFFERENT day
+      const sigs = remoteSigByEmp.get(rawEmp);
+      const localSig = slotSig(localR);
+      if (sigs && localSig.replace(/\|/g, '') !== '') {
+        for (const s of sigs) {
+          const [sig, d] = s.split('@');
+          if (sig === localSig && d !== datePart) return false;
+        }
+      }
+
+      // Unsynced local record: push it to the cloud so every other device sees it too
+      if (recId.startsWith('rec-')) queueCloudCreate(localR);
 
       return true;
     })
@@ -2200,17 +2283,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const lookupId = currentUser.id || currentUser.employeeId || '';
     const altIds = [currentUser.employeeId, currentUser.id, currentUser.email].filter(Boolean) as string[];
 
-    supabaseService.fetchTimeRecordsForEmployee(lookupId, altIds)
-      .then((records) => {
-        if (Array.isArray(records) && records.length > 0) {
-          setTimeRecords((prev) => {
-            const merged = mergeTimeRecords(records, prev);
-            saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-            return merged;
-          });
-        }
-      })
-      .catch((err) => console.warn('[AppContext] Cloud attendance sync notice:', err));
+    const pullAttendance = () => {
+      supabaseService.fetchTimeRecordsForEmployee(lookupId, altIds)
+        .then((records) => {
+          if (Array.isArray(records) && records.length > 0) {
+            setTimeRecords((prev) => {
+              const merged = mergeTimeRecords(records, prev);
+              saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+              return merged;
+            });
+          }
+        })
+        .catch((err) => console.warn('[AppContext] Cloud attendance sync notice:', err));
+    };
+
+    pullAttendance();
+
+    // Re-pull whenever the app comes back to the foreground (phones suspend background tabs)
+    const onVisible = () => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      pullAttendance();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', onVisible);
+    window.addEventListener('pageshow', onVisible);
+    const interval = setInterval(onVisible, 30000);
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', onVisible);
+      window.removeEventListener('pageshow', onVisible);
+      clearInterval(interval);
+    };
   }, [currentUser?.id, currentUser?.employeeId]);
 
   // Save to localStorage only when not using Supabase
@@ -4313,6 +4416,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
     // Look up existing record to enrich employeeId and date if missing in partial updates
     const existing = timeRecords.find((r) => r.id === id);
 
+    // Safety guard: never move an existing day's record to another date (e.g. a stale tab punching
+    // today's time into yesterday's record). Save it as that date's own record instead.
+    if (existing && data.date) {
+      const cleanExistingDate = String(existing.date || '').split('T')[0].split(' ')[0].trim();
+      const cleanNewDate = String(data.date).split('T')[0].split(' ')[0].trim();
+      if (cleanExistingDate && cleanNewDate && cleanExistingDate !== cleanNewDate) {
+        console.warn('[AppContext] Prevented moving time record', id, 'from', cleanExistingDate, 'to', cleanNewDate);
+        addTimeRecord({ ...(data as any), employeeId: data.employeeId || existing.employeeId, date: cleanNewDate });
+        return;
+      }
+    }
+
     // Safety guard: If an Instructor is logged in, do not allow overriding biometric punch times or hours of a trainee
     const isInstructor = !!(currentUser && (currentUser.role === 'admin' || (currentUser.position && currentUser.position.toLowerCase().includes('instructor'))));
     if (isInstructor && existing) {
@@ -4429,7 +4544,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!empIdentifier) return null;
     const rawToday = getDTRSessionDate(new Date());
     const today = rawToday.split('T')[0].split(' ')[0].trim();
-    const todayIso = new Date().toISOString().split('T')[0];
+    // NOTE: only the local DTR session date is used. The UTC date (toISOString) is intentionally NOT
+    // accepted because between 6:00–8:00 AM (UTC+8) it still points to yesterday, which previously
+    // caused yesterday's record to be treated (and punched into) as today's.
+    const todayIso = today;
     const cleanEmpId = (empIdentifier || '').trim();
 
     // Find associated employee to resolve all possible IDs (UUID, student ID, email, name)
@@ -4536,6 +4654,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const cachedRaw = localStorage.getItem(key);
           if (cachedRaw) {
             const cached = JSON.parse(cachedRaw);
+            // The fast punch cache is only a short-lived bridge until the punch is in timeRecords / cloud.
+            // Stale or legacy (un-timestamped) caches are device-only data that made phones show
+            // different timestamps than laptops – discard them so the cloud stays the single source of truth.
+            const savedAt = Number(cached?.savedAt || 0);
+            if (!savedAt || Date.now() - savedAt > 5 * 60 * 1000) {
+              try { localStorage.removeItem(key); } catch {}
+              continue;
+            }
             if (!baseRecord) {
               baseRecord = {
                 id: `local-${cleanEmpId}-${today}`,
@@ -6072,10 +6198,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         next = [...prev, updatedRecord];
       }
       saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, next);
-      const storedTimeRecords = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
+      // Only the monthly DTTR sheet is pushed here. Time records sync through their own
+      // authoritative endpoints – pushing this device's whole local cache could spread stale,
+      // device-only punches to every other device.
       supabaseService.saveDttrStoreToStorage({
-        monthlyDttrs: next,
-        timeRecords: storedTimeRecords.length > 0 ? storedTimeRecords : undefined,
+        monthlyDttrs: [updatedRecord],
       }).catch(() => {});
       return next;
     });
@@ -6141,10 +6268,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
         next = [...prev, updated];
       }
       saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, next);
-      const storedTimeRecords = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
+      // Only the monthly DTTR sheet is pushed here. Time records sync through their own
+      // authoritative endpoints – pushing this device's whole local cache could spread stale,
+      // device-only punches to every other device.
       supabaseService.saveDttrStoreToStorage({
-        monthlyDttrs: next,
-        timeRecords: storedTimeRecords.length > 0 ? storedTimeRecords : undefined,
+        monthlyDttrs: [updated],
       }).catch(() => {});
       return next;
     });
