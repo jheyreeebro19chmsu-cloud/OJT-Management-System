@@ -17,8 +17,6 @@ import {
   User,
   GraduationCap,
   Download,
-  Search,
-  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useMemo, useState } from 'react';
@@ -26,6 +24,7 @@ import { toast } from 'sonner';
 
 import { useApp } from '../../store/AppContext';
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
+import { TraineeSearchDropdown } from '../../components/TraineeSearchDropdown';
 import { CHMSU_EVALUATION_CATEGORIES, Employee, Evaluation, HostFeedback } from '../../types';
 import { getPhotoUrl } from '../../services/config';
 
@@ -214,6 +213,14 @@ export function AdminHostFeedback() {
     return list.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
   }, [hostFeedback, evaluations, employees, settings.activeAcademicYear]);
 
+  const traineeOptions = useMemo(
+    () =>
+      employees.filter(
+        (e) => e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative'
+      ),
+    [employees]
+  );
+
   // Filter based on search query and selected toolbar dropdowns
   const filtered = useMemo(() => {
     const trimmedQuery = searchQuery.trim().toLowerCase();
@@ -394,31 +401,25 @@ export function AdminHostFeedback() {
 
       {/* Filter Toolbar */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
-        {/* Search Bar */}
-        <div className="relative w-full">
-          <Search
-            size={16}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-          />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search trainee by name, student ID, course, HTE company, or supervisor..."
-            aria-label="Search trainee feedback"
-            className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-xs sm:text-sm font-medium text-slate-700 placeholder:text-slate-400 hover:bg-slate-100/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-          />
-          {searchQuery.length > 0 && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              aria-label="Clear search"
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
-            >
-              <X size={14} />
-            </button>
-          )}
-        </div>
+        {/* Searchable Trainee Dropdown */}
+        <TraineeSearchDropdown
+          trainees={traineeOptions}
+          searchQuery={searchQuery}
+          onSearchChange={(val) => {
+            setSearchQuery(val);
+            if (employeeFilter !== 'all') setEmployeeFilter('all');
+          }}
+          selectedId={employeeFilter}
+          onSelect={(id, trainee) => {
+            setEmployeeFilter(id);
+            setSearchQuery(id === 'all' ? '' : trainee?.name || '');
+          }}
+          allowAllOption={true}
+          allLabel={`All Trainees (${traineeOptions.length})`}
+          placeholder="Search or select trainee by name, student ID, course, HTE company, or supervisor..."
+          accentColor="blue"
+          ariaLabel="Search trainee feedback"
+        />
 
         <div className="flex flex-wrap gap-3 items-center justify-between">
           <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
@@ -446,13 +447,11 @@ export function AdminHostFeedback() {
               className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-700 hover:bg-slate-100/70 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
             >
               <option value="all">All Trainees</option>
-              {employees
-                .filter((e) => e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative')
-                .map((e) => (
-                  <option key={e.id} value={e.id}>
-                    {e.name}
-                  </option>
-                ))}
+              {traineeOptions.map((e) => (
+                <option key={e.id} value={e.id}>
+                  {e.name}
+                </option>
+              ))}
             </select>
 
             <select

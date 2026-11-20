@@ -52,6 +52,7 @@ import { formatTime } from '../../utils/geo';
 import { getPhotoUrl } from '../../services/config';
 import { Employee, Evaluation } from '../../types';
 import { MonthlyDTTRView } from '../../components/MonthlyDTTRView';
+import { TraineeSearchDropdown } from '../../components/TraineeSearchDropdown';
 import { CHMSUEvaluationSheet } from '../../components/CHMSUEvaluationSheet';
 import { getPaginationWindow } from '../../utils/pagination';
 import { AdvancedAnalyticsDashboard } from '../../components/analytics/AdvancedAnalyticsDashboard';
@@ -833,113 +834,28 @@ export function AdminReports() {
     URL.revokeObjectURL(url);
   };
 
-  const renderReportTraineeSearchBar = () => {
-    const hasQuery = reportTraineeSearch.trim().length > 0;
-    const quickMatches = searchedTraineeEmployees.slice(0, 6);
-    const remainingCount = Math.max(0, searchedTraineeEmployees.length - quickMatches.length);
-
-    return (
-      <div className="space-y-2">
-        <div className="relative w-full">
-          <Search
-            size={16}
-            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-          />
-          <input
-            type="text"
-            value={reportTraineeSearch}
-            onChange={(e) => {
-              setReportTraineeSearch(e.target.value);
-              if (selectedEmpId !== 'all') setSelectedEmpId('all');
-              setTraineePage(1);
-            }}
-            placeholder="Search trainee by name, student ID, course, HTE company, or supervisor..."
-            aria-label="Search trainee"
-            className="w-full pl-10 pr-36 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-xs sm:text-sm font-medium text-slate-700 placeholder:text-slate-400 hover:bg-slate-100/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-          />
-          {hasQuery && (
-            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                {searchedTraineeEmployees.length}{' '}
-                {searchedTraineeEmployees.length === 1 ? 'match' : 'matches'}
-              </span>
-              <button
-                type="button"
-                onClick={() => {
-                  setReportTraineeSearch('');
-                  setSelectedEmpId('all');
-                  setTraineePage(1);
-                }}
-                aria-label="Clear search"
-                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )}
-        </div>
-
-        {hasQuery && (
-          <div className="flex flex-wrap items-center gap-1.5">
-            {quickMatches.length > 0 ? (
-              <>
-                <span className="text-[11px] font-semibold text-slate-400 mr-0.5">Quick select:</span>
-                {quickMatches.map((emp) => {
-                  const isActive = selectedEmpId === emp.id;
-                  return (
-                    <button
-                      key={emp.id}
-                      type="button"
-                      onClick={() => {
-                        setSelectedEmpId(isActive ? 'all' : emp.id);
-                        setTraineePage(1);
-                      }}
-                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
-                        isActive
-                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
-                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200'
-                      }`}
-                    >
-                      <span>{emp.name}</span>
-                      {emp.employeeId && (
-                        <span
-                          className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                            isActive ? 'bg-blue-500/40 text-white' : 'bg-white text-slate-500 border border-slate-200'
-                          }`}
-                        >
-                          {emp.employeeId}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-                {remainingCount > 0 && (
-                  <span className="text-[11px] text-slate-400 font-medium ml-1">
-                    +{remainingCount} more in dropdown
-                  </span>
-                )}
-              </>
-            ) : (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span>No trainees matching &ldquo;{reportTraineeSearch.trim()}&rdquo;.</span>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setReportTraineeSearch('');
-                    setSelectedEmpId('all');
-                    setTraineePage(1);
-                  }}
-                  className="text-blue-600 hover:underline font-semibold cursor-pointer"
-                >
-                  Clear search
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
+  const renderReportTraineeSearchBar = () => (
+    <TraineeSearchDropdown
+      trainees={traineeEmployees}
+      searchQuery={reportTraineeSearch}
+      onSearchChange={(val) => {
+        setReportTraineeSearch(val);
+        if (selectedEmpId !== 'all') setSelectedEmpId('all');
+        setTraineePage(1);
+      }}
+      selectedId={selectedEmpId}
+      onSelect={(id, trainee) => {
+        setSelectedEmpId(id);
+        setReportTraineeSearch(id === 'all' ? '' : trainee?.name || '');
+        setTraineePage(1);
+      }}
+      allowAllOption={true}
+      allLabel={`All Trainees (${traineeEmployees.length})`}
+      placeholder="Search or select trainee by name, student ID, course, HTE company, or supervisor..."
+      accentColor="blue"
+      ariaLabel="Search trainee"
+    />
+  );
 
   return (
     <div className="space-y-6">

@@ -16,12 +16,12 @@ import {
   Send,
   ShieldCheck,
   Lock,
-  Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
 import { Employee, TimeRecord, MonthlyDttrRecord, MonthlyDttrDayEntry } from '../types';
 import * as supabaseService from '../services/supabaseService';
+import { TraineeSearchDropdown } from './TraineeSearchDropdown';
 
 interface MonthlyDTTRViewProps {
   /** Optional pre-selected trainee ID. If not supplied, selector is provided. */
@@ -117,14 +117,6 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       setSelectedEmployeeId(defaultEmployeeId);
     }
   }, [defaultEmployeeId]);
-
-  useEffect(() => {
-    if (readOnlyTrainee) return;
-    if (!traineeSearchQuery.trim()) return;
-    if (filteredTraineeList.length > 0 && !filteredTraineeList.some((t) => t.id === selectedEmployeeId)) {
-      setSelectedEmployeeId(filteredTraineeList[0].id);
-    }
-  }, [traineeSearchQuery, filteredTraineeList, selectedEmployeeId, readOnlyTrainee]);
 
   useEffect(() => {
     const emp =
@@ -1183,92 +1175,20 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         {/* Trainee Search & Dropdown Filters */}
         <div className="pt-3 border-t border-slate-100 space-y-3">
           {!readOnlyTrainee && (
-            <div className="space-y-2">
-              <div className="relative w-full">
-                <Search
-                  size={16}
-                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
-                />
-                <input
-                  type="text"
-                  value={traineeSearchQuery}
-                  onChange={(e) => setTraineeSearchQuery(e.target.value)}
-                  placeholder="Search trainee intern by name, student ID, course, or HTE company..."
-                  aria-label="Search trainee intern"
-                  className="w-full pl-10 pr-36 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 placeholder:text-slate-400 hover:bg-slate-100/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
-                />
-                {traineeSearchQuery.trim().length > 0 && (
-                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                      {filteredTraineeList.length}{' '}
-                      {filteredTraineeList.length === 1 ? 'match' : 'matches'}
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => setTraineeSearchQuery('')}
-                      aria-label="Clear search"
-                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
-                    >
-                      <X size={14} />
-                    </button>
-                  </div>
-                )}
-              </div>
-
-              {traineeSearchQuery.trim().length > 0 && (
-                <div className="flex flex-wrap items-center gap-1.5">
-                  {filteredTraineeList.length > 0 ? (
-                    <>
-                      <span className="text-[11px] font-semibold text-slate-400 mr-0.5">Quick select:</span>
-                      {filteredTraineeList.slice(0, 6).map((t) => {
-                        const isActive = t.id === selectedEmployeeId;
-                        return (
-                          <button
-                            key={t.id}
-                            type="button"
-                            onClick={() => setSelectedEmployeeId(t.id)}
-                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
-                              isActive
-                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'
-                            }`}
-                          >
-                            <span>{t.name}</span>
-                            {t.employeeId && (
-                              <span
-                                className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
-                                  isActive
-                                    ? 'bg-emerald-500/40 text-white'
-                                    : 'bg-white text-slate-500 border border-slate-200'
-                                }`}
-                              >
-                                {t.employeeId}
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                      {filteredTraineeList.length > 6 && (
-                        <span className="text-[11px] text-slate-400 font-medium ml-1">
-                          +{filteredTraineeList.length - 6} more in dropdown
-                        </span>
-                      )}
-                    </>
-                  ) : (
-                    <div className="flex items-center gap-2 text-xs text-slate-500">
-                      <span>No trainee intern matching &ldquo;{traineeSearchQuery.trim()}&rdquo;.</span>
-                      <button
-                        type="button"
-                        onClick={() => setTraineeSearchQuery('')}
-                        className="text-blue-600 hover:underline font-semibold cursor-pointer"
-                      >
-                        Clear search
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+            <TraineeSearchDropdown
+              trainees={traineeList}
+              searchQuery={traineeSearchQuery}
+              onSearchChange={setTraineeSearchQuery}
+              selectedId={selectedEmployeeId}
+              onSelect={(id, trainee) => {
+                setSelectedEmployeeId(id);
+                setTraineeSearchQuery(trainee?.name || '');
+              }}
+              allowAllOption={false}
+              placeholder="Search or select trainee intern by name, student ID, course, or HTE company..."
+              accentColor="emerald"
+              ariaLabel="Search trainee intern"
+            />
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
