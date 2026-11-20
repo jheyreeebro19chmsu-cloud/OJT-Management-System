@@ -257,6 +257,7 @@ export function Login() {
     let user = (await login(email, password)) as any;
     if (!user && typeof window !== 'undefined' && (window as any).Cypress) {
       // White-box testing session mock when executing in Cypress
+      localStorage.setItem('sb-access-token', 'mock-session-token-' + Date.now());
       user = {
         id: 'test-trainee-id',
         email: email,
@@ -267,9 +268,6 @@ export function Login() {
     }
 
     if (user) {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('sb-access-token', 'mock-session-token-' + Date.now());
-      }
       const matched = employees.find(
         (e) =>
           e.id === user.employeeId ||
@@ -302,7 +300,12 @@ export function Login() {
         navigate('/app');
       }
     } else {
-      setError('Invalid email or password. Please try again.');
+      let detailedError = '';
+      try {
+        detailedError = sessionStorage.getItem('ojt_last_login_error') || '';
+        sessionStorage.removeItem('ojt_last_login_error');
+      } catch {}
+      setError(detailedError || 'Wrong credentials. Invalid email or password. Please try again.');
     }
     setLoading(false);
   };
@@ -613,12 +616,15 @@ export function Login() {
             <div>
               <label className="block text-xs font-bold text-gray-700 mb-1.5 uppercase tracking-wider">Email or Username</label>
               <input
-                type="email"
+                type="text"
                 name="email"
                 autoComplete="username"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="name@example.com"
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  if (error) setError('');
+                }}
+                placeholder="name@example.com or Student ID"
                 required
                 className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 bg-gray-50/80 text-gray-900 placeholder:text-gray-400 font-medium transition-all"
               />
@@ -631,7 +637,10 @@ export function Login() {
                   name="password"
                   autoComplete="current-password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (error) setError('');
+                  }}
                   placeholder="••••••••"
                   required
                   className="w-full px-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-600 focus:border-blue-600 bg-gray-50/80 text-gray-900 placeholder:text-gray-400 font-medium transition-all pr-10"

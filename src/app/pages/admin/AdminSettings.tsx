@@ -134,30 +134,9 @@ export function AdminSettings() {
   return (
     <div className="space-y-6 w-full max-w-7xl mx-auto pb-8">
       {/* Header Row */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-xl sm:text-2xl font-bold text-gray-800">System Settings</h2>
-          <p className="text-sm text-gray-500">Configure attendance rules and verification requirements</p>
-        </div>
-
-        <div className="flex items-center gap-2.5 self-start sm:self-auto">
-          <button
-            type="button"
-            onClick={handleReset}
-            className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 bg-white text-gray-600 rounded-xl font-medium text-sm hover:bg-gray-50 transition-colors cursor-pointer shadow-2xs"
-          >
-            <RotateCcw size={14} />
-            Reset
-          </button>
-          <button
-            type="button"
-            onClick={handleSave}
-            className="flex items-center gap-2 px-5 py-2.5 bg-blue-700 text-white rounded-xl font-semibold text-sm hover:bg-blue-800 transition-colors shadow-sm cursor-pointer"
-          >
-            <Save size={16} />
-            Save Settings
-          </button>
-        </div>
+      <div>
+        <h2 className="text-xl sm:text-2xl font-bold text-gray-800">System Settings</h2>
+        <p className="text-sm text-gray-500">Configure attendance rules and verification requirements</p>
       </div>
 
       {/* Balanced 2-Column Workspace Grid */}

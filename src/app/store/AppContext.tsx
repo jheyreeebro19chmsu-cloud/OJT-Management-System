@@ -2566,37 +2566,238 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const loginInternal = async (identifier: string, password: string): Promise<User | null> => {
     const rawId = (identifier || '').trim();
     const normalizedId = rawId.toLowerCase();
+    try {
+      sessionStorage.removeItem('ojt_last_login_error');
+    } catch {}
     if (!rawId || !password) return null;
 
-    let matchedEmp: Employee | undefined = undefined;
-    let matchedHost: HostSupervisor | undefined = undefined;
-    let targetEmail = normalizedId;
+    const recordLoginError = (msg: string) => {
+      try {
+        sessionStorage.setItem('ojt_last_login_error', msg);
+      } catch {}
+    };
 
-    // Step 1: Check in-memory state across email, employeeId, and ID
-    matchedEmp = employees.find(
-      (e) =>
-        (normalizeEmail(e.email) === normalizedId ||
-          (e.employeeId && e.employeeId.toLowerCase() === normalizedId) ||
-          (e.id && e.id.toLowerCase() === normalizedId) ||
-          (e.username && e.username.toLowerCase() === normalizedId))
-    );
+    const finalizeLoggedInUser = (
+      emp: Employee | undefined,
+      host: HostSupervisor | undefined,
+      authUser: any,
+      plainPassword: string
+    ): User | null => {
+      if (emp) {
+        const posLower = (emp.position || '').toLowerCase();
+        const roleLower = ((emp as any).role || '').toLowerCase();
+        const isInstructor =
+          roleLower === 'admin' ||
+          roleLower === 'instructor' ||
+          emp.position === 'OJT Instructor' ||
+          emp.position === 'Administrator' ||
+          posLower.includes('instructor') ||
+          posLower.includes('coordinator');
+        const isHTE =
+          roleLower === 'hte' ||
+          roleLower === 'host' ||
+          emp.position === 'HTE Representative' ||
+          emp.position === 'Training Supervisor' ||
+          posLower.includes('hte') ||
+          posLower.includes('supervisor') ||
+          posLower.includes('representative');
+        const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
+        const authAvatar = authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture;
+        const resolvedPhoto = emp.photo || authAvatar || '';
+        const user: User = {
+          id: emp.id,
+          name: emp.name,
+          role,
+          employeeId: emp.employeeId || emp.id,
+          email: normalizeEmail(emp.email),
+          photo: resolvedPhoto,
+          faceRegistered: emp.faceRegistered,
+          companyName: emp.companyName,
+          supervisorName: emp.supervisorName,
+        };
+        if (authAvatar && !emp.photo) {
+          emp.photo = authAvatar;
+          if (useSupabase || isSupabaseConfigured()) {
+            supabaseService.updateEmployee(emp.id, { photo: authAvatar }).catch(console.warn);
+          }
+        }
+        setEmployees((prev) => [emp, ...prev.filter((e) => e.id !== emp.id)]);
+        setCurrentUser(user);
+        saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+        try {
+          localStorage.setItem('ojt_user', JSON.stringify(user));
+          localStorage.setItem('ojt_current_user', JSON.stringify(user));
+          if (role === 'hte') {
+            localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+            if (emp.companyName) localStorage.setItem('ojt_hte_company', emp.companyName);
+          }
+        } catch {}
+        setPasswordForEmail(emp.email, plainPassword);
+        return user;
+      }
 
-    if (!matchedEmp) {
-      matchedHost = hostSupervisors.find(
-        (h) =>
-          (normalizeEmail(h.email) === normalizedId ||
-            (h.employeeId && h.employeeId.toLowerCase() === normalizedId) ||
-            (h.id && h.id.toLowerCase() === normalizedId))
-      );
+      if (host) {
+        const authAvatar = authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture;
+        const hostPhoto = host.photo || authAvatar || '';
+        const user: User = {
+          id: host.id,
+          name: host.name,
+          role: 'hte',
+          email: normalizeEmail(host.email),
+          employeeId: host.employeeId || host.id,
+          photo: hostPhoto,
+          faceRegistered: false,
+          companyName: host.companyName,
+        };
+        setHostSupervisors((prev) => [host, ...prev.filter((h) => h.id !== host.id)]);
+        setCurrentUser(user);
+        saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
+        try {
+          localStorage.setItem('ojt_user', JSON.stringify(user));
+          localStorage.setItem('ojt_hte_user', JSON.stringify(user));
+          localStorage.setItem('ojt_current_user', JSON.stringify(user));
+          if (host.companyName) localStorage.setItem('ojt_hte_company', host.companyName);
+        } catch {}
+        setPasswordForEmail(host.email, plainPassword);
+        return user;
+      }
+
+      return null;
+    };
+
+    const buildHealEmployee = (authUser: any, emailAddr: string): Employee => {
+      const userMeta = authUser?.user_metadata || {};
+      const userRole = String(userMeta.role || 'employee').toLowerCase();
+      const isHostRole = userRole === 'host' || userRole === 'hte';
+      const isInstRole = userRole === 'admin' || userRole === 'instructor';
+      return {
+        id: authUser.id,
+        name: userMeta.full_name || userMeta.name || emailAddr.split('@')[0] || 'Trainee',
+        email: emailAddr,
+        employeeId: isHostRole
+          ? `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`
+          : isInstRole
+          ? `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`
+          : `OJT-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`,
+        department: 'College of Computer Studies',
+        position: isInstRole ? 'OJT Instructor' : isHostRole ? 'HTE Representative' : 'OJT Trainee',
+        companyName: isHostRole ? 'Host Establishment' : 'N/A',
+        supervisorName: 'N/A',
+        schoolName: 'Carlos Hilado Memorial State University',
+        campus: 'Talisay Campus',
+        course: 'Information Systems',
+        startDate: new Date().toISOString().split('T')[0],
+        endDate: new Date().toISOString().split('T')[0],
+        requiredHours: isInstRole || isHostRole ? 0 : 600,
+        faceRegistered: false,
+        active: true,
+        academicYear: settings.activeAcademicYear,
+        approvalStatus: 'approved',
+        applicationStatus: 'approved',
+        createdAt: new Date().toISOString().split('T')[0],
+      };
+    };
+
+    const mapDbHost = (dbHost: any): HostSupervisor => ({
+      id: dbHost.id,
+      employeeId: dbHost.employee_id,
+      name: dbHost.name,
+      email: dbHost.email,
+      companyName: dbHost.company_name,
+      companyAddress: dbHost.company_address,
+      contactPerson: dbHost.contact_person,
+      phone: dbHost.phone,
+      academicYear: dbHost.academic_year,
+      isApproved: dbHost.is_approved ?? true,
+      active: dbHost.active ?? true,
+      photo: dbHost.photo,
+    });
+
+    const cloudEnabled = useSupabase || isSupabaseConfigured();
+
+    // Step 1: Primary server-side authentication via /api/auth-login (works across any device even on fresh load)
+    if (cloudEnabled && typeof window !== 'undefined') {
+      try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 15000);
+        const res = await fetch('/api/auth-login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: rawId, password }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        const data = await res.json().catch(() => null);
+
+        if (res.ok && data?.success && data?.authUser) {
+          if (data.session?.access_token && data.session?.refresh_token) {
+            await supabase.auth
+              .setSession({
+                access_token: data.session.access_token,
+                refresh_token: data.session.refresh_token,
+              })
+              .catch(() => {});
+          }
+
+          let matchedEmp: Employee | undefined = data.employee
+            ? supabaseService.transformSupabaseEmployee(data.employee)
+            : undefined;
+          let matchedHost: HostSupervisor | undefined = data.hostSupervisor
+            ? mapDbHost(data.hostSupervisor)
+            : undefined;
+
+          if (!matchedEmp && !matchedHost) {
+            const authEmail = normalizeEmail(data.authUser.email || rawId);
+            const healEmp = buildHealEmployee(data.authUser, authEmail);
+            try {
+              const saved = await supabaseService.createEmployee(healEmp);
+              matchedEmp = saved || healEmp;
+            } catch {
+              matchedEmp = healEmp;
+            }
+          }
+
+          return finalizeLoggedInUser(matchedEmp, matchedHost, data.authUser, password);
+        }
+
+        if (res.status === 401 || res.status === 400) {
+          recordLoginError(data?.error || 'Wrong credentials. Invalid email or password. Please try again.');
+          return null;
+        }
+      } catch (apiErr) {
+        console.warn('/api/auth-login unavailable, falling back to direct Supabase auth:', apiErr);
+      }
     }
 
-    // Step 2: If not found in memory (e.g. fresh laptop load), query Supabase directly
-    if (useSupabase && !matchedEmp && !matchedHost) {
+    // Step 2: Direct Supabase fallback (for local Vite dev where /api/auth-login is not mounted)
+    let matchedEmp: Employee | undefined = employees.find(
+      (e) =>
+        normalizeEmail(e.email) === normalizedId ||
+        (e.employeeId && e.employeeId.toLowerCase() === normalizedId) ||
+        (e.id && e.id.toLowerCase() === normalizedId) ||
+        (e.username && e.username.toLowerCase() === normalizedId)
+    );
+
+    let matchedHost: HostSupervisor | undefined = matchedEmp
+      ? undefined
+      : hostSupervisors.find(
+          (h) =>
+            normalizeEmail(h.email) === normalizedId ||
+            (h.employeeId && h.employeeId.toLowerCase() === normalizedId) ||
+            (h.id && h.id.toLowerCase() === normalizedId)
+        );
+
+    let targetEmail = normalizedId;
+
+    if (cloudEnabled && !matchedEmp && !matchedHost) {
       try {
         const { data: dbEmp } = await supabase
           .from('employees')
           .select('*')
-          .or(`email_lower.eq.${normalizedId},employee_id_lower.eq.${normalizedId}`)
+          .or(
+            `email_lower.eq.${normalizedId},email.ilike.${normalizedId},employee_id_lower.eq.${normalizedId},employee_id.ilike.${normalizedId}`
+          )
           .limit(1)
           .maybeSingle();
 
@@ -2607,24 +2808,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const { data: dbHost } = await supabase
             .from('host_supervisors')
             .select('*')
-            .or(`email_lower.eq.${normalizedId},email.eq.${normalizedId}`)
+            .or(`email_lower.eq.${normalizedId},email.ilike.${normalizedId}`)
             .limit(1)
             .maybeSingle();
 
           if (dbHost) {
-            matchedHost = {
-              id: dbHost.id,
-              employeeId: dbHost.employee_id,
-              name: dbHost.name,
-              email: dbHost.email,
-              companyName: dbHost.company_name,
-              companyAddress: dbHost.company_address,
-              contactPerson: dbHost.contact_person,
-              phone: dbHost.phone,
-              academicYear: dbHost.academic_year,
-              isApproved: dbHost.is_approved ?? true,
-              active: dbHost.active ?? true,
-            };
+            matchedHost = mapDbHost(dbHost);
             setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
           }
         }
@@ -2639,156 +2828,83 @@ export function AppProvider({ children }: { children: ReactNode }) {
       targetEmail = normalizeEmail(matchedHost.email);
     }
 
-    // Step 3: Attempt Supabase Auth
-    if (useSupabase && targetEmail.includes('@')) {
+    if (cloudEnabled) {
+      if (!targetEmail.includes('@')) {
+        recordLoginError('Wrong credentials. Invalid email or password. Please try again.');
+        return null;
+      }
+
       try {
         const authPromise = supabase.auth.signInWithPassword({
           email: targetEmail,
-          password: password,
+          password,
         });
         const { data: authData, error: authError } = await Promise.race([
           authPromise,
-          new Promise<any>((_, rej) => setTimeout(() => rej(new Error('Supabase login timeout')), 3500)),
+          new Promise<any>((_, rej) => setTimeout(() => rej(new Error('Supabase login timeout')), 15000)),
         ]);
 
-        if (!authError && authData.user) {
-          const userId = authData.user.id;
+        if (authError || !authData?.user) {
+          recordLoginError('Wrong credentials. Invalid email or password. Please try again.');
+          return null;
+        }
 
-          // Re-verify matched account with auth userId if needed
-          if (!matchedEmp && !matchedHost) {
-            const { data: dbEmp } = await supabase
-              .from('employees')
+        const userId = authData.user.id;
+
+        if (!matchedEmp && !matchedHost) {
+          try {
+            const empRes = await fetch(`/api/employees?email=${encodeURIComponent(targetEmail)}`);
+            if (empRes.ok) {
+              const items = await empRes.json();
+              if (Array.isArray(items) && items.length > 0) {
+                if (items[0].is_host_supervisor) matchedHost = mapDbHost(items[0]);
+                else matchedEmp = supabaseService.transformSupabaseEmployee(items[0]);
+              }
+            }
+          } catch {}
+        }
+
+        if (!matchedEmp && !matchedHost) {
+          const { data: dbEmp } = await supabase
+            .from('employees')
+            .select('*')
+            .or(`id.eq.${userId},email_lower.eq.${targetEmail},email.ilike.${targetEmail}`)
+            .limit(1)
+            .maybeSingle();
+
+          if (dbEmp) {
+            matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
+          } else {
+            const { data: dbHost } = await supabase
+              .from('host_supervisors')
               .select('*')
-              .or(`id.eq.${userId},email_lower.eq.${targetEmail}`)
+              .or(`id.eq.${userId},email_lower.eq.${targetEmail},email.ilike.${targetEmail}`)
               .limit(1)
               .maybeSingle();
 
-            if (dbEmp) {
-              matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
-              setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
+            if (dbHost) {
+              matchedHost = mapDbHost(dbHost);
             } else {
-              const { data: dbHost } = await supabase
-                .from('host_supervisors')
-                .select('*')
-                .or(`id.eq.${userId},email_lower.eq.${targetEmail}`)
-                .limit(1)
-                .maybeSingle();
-
-              if (dbHost) {
-                matchedHost = {
-                  id: dbHost.id,
-                  employeeId: dbHost.employee_id,
-                  name: dbHost.name,
-                  email: dbHost.email,
-                  companyName: dbHost.company_name,
-                  companyAddress: dbHost.company_address,
-                  contactPerson: dbHost.contact_person,
-                  phone: dbHost.phone,
-                  academicYear: dbHost.academic_year,
-                  isApproved: dbHost.is_approved ?? true,
-                  active: dbHost.active ?? true,
-                };
-                setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
-              } else {
-                // Auto-heal: User exists in Supabase Auth but profile was missing in employees table
-                const userMeta = authData.user.user_metadata || {};
-                const userRole = userMeta.role || 'employee';
-                const isHostRole = userRole === 'host' || userRole === 'hte';
-                const isInstRole = userRole === 'admin' || userRole === 'instructor';
-                const healEmp: Employee = {
-                  id: userId,
-                  name: userMeta.full_name || targetEmail.split('@')[0] || 'Trainee',
-                  email: targetEmail,
-                  employeeId: isHostRole ? `HTE-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}` : isInstRole ? `ADM-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}` : `OJT-${new Date().getFullYear()}-${String(Date.now()).slice(-3)}`,
-                  department: 'College of Computer Studies',
-                  position: isInstRole ? 'OJT Instructor' : isHostRole ? 'HTE Representative' : 'OJT Trainee',
-                  companyName: isHostRole ? 'Host Establishment' : 'N/A',
-                  supervisorName: 'N/A',
-                  schoolName: 'Carlos Hilado Memorial State University',
-                  campus: 'Talisay Campus',
-                  course: 'Information Systems',
-                  startDate: new Date().toISOString().split('T')[0],
-                  endDate: new Date().toISOString().split('T')[0],
-                  requiredHours: isInstRole || isHostRole ? 0 : 600,
-                  faceRegistered: false,
-                  active: true,
-                  academicYear: settings.activeAcademicYear,
-                  approvalStatus: 'approved',
-                  applicationStatus: 'approved',
-                  createdAt: new Date().toISOString().split('T')[0],
-                };
-                try {
-                  const saved = await supabaseService.createEmployee(healEmp);
-                  matchedEmp = saved || healEmp;
-                } catch {
-                  matchedEmp = healEmp;
-                }
-                setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
+              const healEmp = buildHealEmployee(authData.user, targetEmail);
+              try {
+                const saved = await supabaseService.createEmployee(healEmp);
+                matchedEmp = saved || healEmp;
+              } catch {
+                matchedEmp = healEmp;
               }
             }
-          }
-
-          if (matchedEmp) {
-            const isInstructor = matchedEmp.position === 'OJT Instructor' || matchedEmp.position === 'Administrator' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor'));
-            const isHTE = matchedEmp.position === 'HTE Representative' || matchedEmp.position === 'Training Supervisor' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('hte'));
-            const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
-            const authAvatar = authData.user.user_metadata?.avatar_url || authData.user.user_metadata?.picture;
-            const resolvedPhoto = matchedEmp.photo || authAvatar || '';
-            const user: User = {
-              id: matchedEmp.id,
-              name: matchedEmp.name,
-              role,
-              employeeId: matchedEmp.employeeId || matchedEmp.id,
-              email: normalizeEmail(matchedEmp.email),
-              photo: resolvedPhoto,
-              faceRegistered: matchedEmp.faceRegistered,
-            };
-            if (authAvatar && !matchedEmp.photo) {
-              matchedEmp.photo = authAvatar;
-              if (useSupabase) {
-                supabaseService.updateEmployee(matchedEmp.id, { photo: authAvatar }).catch(console.warn);
-              }
-            }
-            setCurrentUser(user);
-            saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
-            try {
-              localStorage.setItem('ojt_user', JSON.stringify(user));
-              localStorage.setItem('ojt_current_user', JSON.stringify(user));
-              if (role === 'hte') localStorage.setItem('ojt_hte_user', JSON.stringify(user));
-            } catch {}
-            setPasswordForEmail(matchedEmp.email, password);
-            return user;
-          }
-
-          if (matchedHost) {
-            const authAvatar = authData.user.user_metadata?.avatar_url || authData.user.user_metadata?.picture;
-            const hostPhoto = matchedHost.photo || authAvatar || '';
-            const user: User = {
-              id: matchedHost.id,
-              name: matchedHost.name,
-              role: 'hte',
-              email: normalizeEmail(matchedHost.email),
-              employeeId: matchedHost.employeeId || matchedHost.id,
-              photo: hostPhoto,
-              faceRegistered: false,
-            };
-            setCurrentUser(user);
-            saveToStorage(STORAGE_KEYS.CURRENT_USER, user);
-            try {
-              localStorage.setItem('ojt_user', JSON.stringify(user));
-              localStorage.setItem('ojt_hte_user', JSON.stringify(user));
-              localStorage.setItem('ojt_current_user', JSON.stringify(user));
-            } catch {}
-            setPasswordForEmail(matchedHost.email, password);
-            return user;
           }
         }
+
+        return finalizeLoggedInUser(matchedEmp, matchedHost, authData.user, password);
       } catch (err) {
-        console.warn('Supabase Auth attempt notice, checking database account:', err);
+        console.warn('Direct Supabase auth fallback error:', err);
+        recordLoginError('Unable to verify credentials right now. Please check your internet connection and try again.');
+        return null;
       }
     }
 
-    // Step 4: Backend API & Database Verification
+    // Step 3: Offline / Backend API fallback when cloud Supabase is not configured
     if (targetEmail.includes('@')) {
       try {
         const resp = await authAPI.login(targetEmail, password);
@@ -2797,35 +2913,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           localStorage.setItem('ojt_jwt_refresh_token', resp.data.tokens.refresh);
         }
 
-        if (matchedEmp) {
-          const isInstructor = matchedEmp.position === 'OJT Instructor' || matchedEmp.position === 'Administrator' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('instructor'));
-          const isHTE = matchedEmp.position === 'HTE Representative' || matchedEmp.position === 'Training Supervisor' || (matchedEmp.position && matchedEmp.position.toLowerCase().includes('hte'));
-          const role: User['role'] = isInstructor ? 'admin' : isHTE ? 'hte' : 'employee';
-          const user: User = {
-            id: matchedEmp.id,
-            name: matchedEmp.name,
-            role,
-            employeeId: matchedEmp.employeeId || matchedEmp.id,
-            email: normalizeEmail(matchedEmp.email),
-            photo: matchedEmp.photo,
-            faceRegistered: matchedEmp.faceRegistered,
-          };
-          setCurrentUser(user);
-          return user;
-        }
-
-        if (matchedHost) {
-          const user: User = {
-            id: matchedHost.id,
-            name: matchedHost.name,
-            role: 'hte',
-            email: normalizeEmail(matchedHost.email),
-            photo: matchedHost.photo,
-            employeeId: matchedHost.employeeId || matchedHost.id,
-            faceRegistered: false,
-          };
-          setCurrentUser(user);
-          return user;
+        if (matchedEmp || matchedHost) {
+          return finalizeLoggedInUser(matchedEmp, matchedHost, null, password);
         }
 
         if (resp?.data?.user) {
@@ -2841,18 +2930,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
           setCurrentUser(user);
           return user;
         }
-      } catch (backendAuthErr) {
+      } catch {
         // Backend DB authentication also rejected credentials
       }
     }
 
-    // Default Administrator fallback (in case offline development mode)
-    if (normalizedId === 'admin@ojt.com' && (password === 'admin123' || password === 'admin')) {
+    // Default Administrator fallback (only when Supabase is NOT configured)
+    if (!cloudEnabled && normalizedId === 'admin@ojt.com' && (password === 'admin123' || password === 'admin')) {
       const user: User = { id: 'admin', name: 'OJT Instructor', role: 'admin', email: 'admin@ojt.com' };
       setCurrentUser(user);
       return user;
     }
 
+    recordLoginError('Wrong credentials. Invalid email or password. Please try again.');
     return null;
   };
 
@@ -3296,37 +3386,57 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return { success: true, message: 'Password updated successfully (local mode).' };
     };
 
-    if (useSupabase) {
+    if (useSupabase || isSupabaseConfigured()) {
       try {
-        // 1. Verify the current password by signing in
-        const { error: verifyError } = await supabase.auth.signInWithPassword({
-          email: email,
-          password: currentPassword,
-        });
-
-        if (verifyError) {
-          console.warn('Supabase password verify failed, trying local fallback:', verifyError);
-          return checkLocalFallback();
-        }
-
-        // 2. Update to the new password in Supabase Auth
         if (!newPassword || newPassword.length < 6) {
           return { success: false, message: 'New password must be at least 6 characters.' };
         }
 
+        const { data: userData } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+        const authUser = userData?.user;
+        const providers: string[] = Array.isArray(authUser?.app_metadata?.providers)
+          ? authUser.app_metadata.providers.map((p: any) => String(p).toLowerCase())
+          : [];
+        const hasEmailPassword = !authUser || providers.includes('email');
+
+        // 1. Verify the current password against Supabase Auth when password login is enabled
+        if (hasEmailPassword) {
+          const { error: verifyError } = await supabase.auth.signInWithPassword({
+            email: email,
+            password: currentPassword,
+          });
+
+          if (verifyError) {
+            return { success: false, message: 'Current password is incorrect.' };
+          }
+          if (currentPassword === newPassword) {
+            return { success: false, message: 'New password must be different from current password.' };
+          }
+        }
+
+        // 2. Update / attach the new password in Supabase Auth so it works across all devices
         const { error: updateError } = await supabase.auth.updateUser({
           password: newPassword,
         });
 
         if (updateError) {
-          return { success: false, message: updateError.message };
+          return {
+            success: false,
+            message: updateError.message || 'Failed to update password in authentication service.',
+          };
         }
 
         setPasswordForEmail(email, newPassword);
-        return { success: true, message: 'Password updated successfully.' };
+        return {
+          success: true,
+          message: 'Password updated successfully! You can now sign in with your email and password on any device.',
+        };
       } catch (err: any) {
         console.error('changeCurrentUserPassword exception:', err);
-        return checkLocalFallback();
+        return {
+          success: false,
+          message: err?.message || 'Unable to verify or update password right now. Please try again.',
+        };
       }
     }
 
@@ -3396,24 +3506,40 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         let authId: string | undefined;
 
-        // Attempt Supabase Auth account creation if password provided
-        if (password) {
+        // Attempt Supabase Auth account creation / linking if a real password is provided
+        if (password && !String(password).startsWith('GoogleOAuth_')) {
           try {
-            const { data: authData, error: authError } = await supabase.auth.signUp({
-              email: cleanData.email.trim().toLowerCase(),
-              password: password,
-              options: {
-                data: {
-                  full_name: cleanData.name,
-                  role: isInstructor ? 'admin' : isHTE ? 'host' : 'employee',
-                }
-              }
-            });
+            const cleanRegEmail = cleanData.email.trim().toLowerCase();
+            const metaPayload = {
+              full_name: cleanData.name,
+              role: isInstructor ? 'admin' : isHTE ? 'host' : 'employee',
+            };
+            const { data: userRes } = await supabase.auth.getUser().catch(() => ({ data: { user: null } }));
+            const activeAuthUser = userRes?.user;
 
-            if (authError) {
-              console.warn('Supabase auth.signUp note (proceeding to ensure employees row is saved):', authError.message);
-            } else if (authData?.user?.id) {
-              authId = authData.user.id;
+            if (activeAuthUser && (activeAuthUser.email || '').trim().toLowerCase() === cleanRegEmail) {
+              const { error: linkErr } = await supabase.auth.updateUser({
+                password: password,
+                data: metaPayload,
+              });
+              if (linkErr) {
+                console.warn('Supabase auth.updateUser password link note:', linkErr.message);
+              }
+              authId = activeAuthUser.id;
+            } else {
+              const { data: authData, error: authError } = await supabase.auth.signUp({
+                email: cleanRegEmail,
+                password: password,
+                options: {
+                  data: metaPayload,
+                }
+              });
+
+              if (authError) {
+                console.warn('Supabase auth.signUp note (proceeding to ensure employees row is saved):', authError.message);
+              } else if (authData?.user?.id) {
+                authId = authData.user.id;
+              }
             }
           } catch (authCatchErr) {
             console.warn('Supabase auth.signUp exception (proceeding to save database record):', authCatchErr);

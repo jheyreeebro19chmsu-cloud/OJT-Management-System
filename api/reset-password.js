@@ -39,29 +39,71 @@ export default async function handler(req, res) {
       });
     }
 
-    // 1. Locate user in Supabase Auth
-    const { data: { users }, error: listError } = await supabase.auth.admin.listUsers();
-    if (listError) {
-      console.error('Error listing auth users:', listError);
-      return res.status(500).json({ success: false, error: listError.message || 'Failed to access auth service.' });
+    // 1. Locate user across all pages in Supabase Auth
+    let targetUser = null;
+    let page = 1;
+    const perPage = 1000;
+    while (!targetUser) {
+      const { data, error: listError } = await supabase.auth.admin.listUsers({ page, perPage });
+      if (listError) {
+        console.error('Error listing auth users:', listError);
+        return res.status(500).json({ success: false, error: listError.message || 'Failed to access auth service.' });
+      }
+      const batch = data?.users || [];
+      targetUser = batch.find((u) => (u.email || '').trim().toLowerCase() === cleanEmail) || null;
+      if (targetUser || batch.length < perPage) break;
+      page += 1;
     }
 
-    const targetUser = users.find((u) => (u.email || '').toLowerCase() === cleanEmail);
-    if (!targetUser) {
-      return res.status(404).json({
-        success: false,
-        error: 'User account not found in authentication service.',
+    if (targetUser) {
+      // 2a. Update existing user's password and ensure email is confirmed for password sign-in
+      const { error: updateError } = await supabase.auth.admin.updateUserById(targetUser.id, {
+        password: newPassword,
+        email_confirm: true,
       });
-    }
 
-    // 2. Update password in Supabase Auth
-    const { error: updateError } = await supabase.auth.admin.updateUserById(targetUser.id, {
-      password: newPassword,
-    });
+      if (updateError) {
+        console.error('Error updating password via admin API:', updateError);
+        return res.status(500).json({ success: false, error: updateError.message || 'Failed to update password.' });
+      }
+    } else {
+      // 2b. Check if user profile exists in employees or host_supervisors and provision Auth account
+      const [{ data: empProfile }, { data: hostProfile }] = await Promise.all([
+        supabase.from('employees').select('id, name, position').ilike('email', cleanEmail).limit(1).maybeSingle(),
+        supabase.from('host_supervisors').select('id, name').ilike('email', cleanEmail).limit(1).maybeSingle(),
+      ]);
 
-    if (updateError) {
-      console.error('Error updating password via admin API:', updateError);
-      return res.status(500).json({ success: false, error: updateError.message || 'Failed to update password.' });
+      const profile = empProfile || hostProfile;
+      if (!profile) {
+        return res.status(404).json({
+          success: false,
+          error: 'User account not found in authentication service.',
+        });
+      }
+
+      const pos = String(empProfile?.position || '').toLowerCase();
+      const role = empProfile
+        ? (pos.includes('instructor') || pos.includes('admin') || pos.includes('coordinator')
+            ? 'admin'
+            : pos.includes('hte') || pos.includes('supervisor') || pos.includes('representative')
+              ? 'host'
+              : 'employee')
+        : 'host';
+
+      const { error: createError } = await supabase.auth.admin.createUser({
+        email: cleanEmail,
+        password: newPassword,
+        email_confirm: true,
+        user_metadata: {
+          full_name: profile.name || cleanEmail.split('@')[0],
+          role,
+        },
+      });
+
+      if (createError) {
+        console.error('Error creating auth user during password reset:', createError);
+        return res.status(500).json({ success: false, error: createError.message || 'Failed to create auth credentials.' });
+      }
     }
 
     return res.status(200).json({
