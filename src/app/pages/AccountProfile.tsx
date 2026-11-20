@@ -311,7 +311,7 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
   };
 
   return (
-    <div className="max-w-3xl mx-auto space-y-6 font-sans">
+    <div className="w-full max-w-7xl mx-auto space-y-6 font-sans pb-8">
       {/* Header with Edit Button */}
       <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -339,202 +339,206 @@ export function AccountProfile({ role }: { role: 'admin' | 'hte' }) {
         </button>
       </div>
 
-      {/* Main Profile Card */}
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8 space-y-6">
-        {/* User Top Section */}
-        <div className="flex flex-col sm:flex-row sm:items-center gap-5 pb-6 border-b border-slate-100">
-          <div className="relative">
-            <UserAvatar
-              photo={employeePhoto}
-              name={name}
-              role={isHte ? 'hte' : 'admin'}
-              size="2xl"
-              className={`rounded-2xl border-2 shadow-sm ${isHte ? 'border-emerald-200' : 'border-purple-200'}`}
-            />
-            {employee && (
-              <button
-                type="button"
-                onClick={() => setShowAvatarEditor(true)}
-                className="absolute -top-1 -right-1 bg-white rounded-full p-1.5 border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
-                title="Change photo"
-              >
-                <Camera size={14} className="text-slate-600" />
-              </button>
+      {/* Main Content 2-Column Responsive Layout */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Main Profile Card */}
+        <div className="lg:col-span-7 bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8 space-y-6">
+          {/* User Top Section */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-5 pb-6 border-b border-slate-100">
+            <div className="relative">
+              <UserAvatar
+                photo={employeePhoto}
+                name={name}
+                role={isHte ? 'hte' : 'admin'}
+                size="2xl"
+                className={`rounded-2xl border-2 shadow-sm ${isHte ? 'border-emerald-200' : 'border-purple-200'}`}
+              />
+              {employee && (
+                <button
+                  type="button"
+                  onClick={() => setShowAvatarEditor(true)}
+                  className="absolute -top-1 -right-1 bg-white rounded-full p-1.5 border border-slate-200 shadow-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                  title="Change photo"
+                >
+                  <Camera size={14} className="text-slate-600" />
+                </button>
+              )}
+            </div>
+            {showAvatarEditor && employee && (
+              <AvatarEditor employeeId={String(employee.id)} onClose={() => setShowAvatarEditor(false)} />
             )}
-          </div>
-          {showAvatarEditor && employee && (
-            <AvatarEditor employeeId={String(employee.id)} onClose={() => setShowAvatarEditor(false)} />
-          )}
-          <div className="space-y-1 min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="text-xl font-extrabold text-slate-900 leading-tight">{name}</h2>
-              <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
-                isHte
-                  ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                  : 'bg-purple-50 text-purple-700 border border-purple-200'
-              }`}>
-                <CheckCircle size={12} className={isHte ? 'text-emerald-600' : 'text-purple-600'} />
-                {position}
-              </span>
-            </div>
-            <p className="text-sm text-slate-600 font-medium">{isHte ? company : school}</p>
-
-            <div className="flex items-center gap-4 text-xs pt-1">
-              <div className="flex items-center gap-1.5 text-emerald-600 font-semibold">
-                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                <span>Active Verified {isHte ? 'Partner' : 'Faculty'}</span>
+            <div className="space-y-1 min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <h2 className="text-xl font-extrabold text-slate-900 leading-tight">{name}</h2>
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold ${
+                  isHte
+                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                    : 'bg-purple-50 text-purple-700 border border-purple-200'
+                }`}>
+                  <CheckCircle size={12} className={isHte ? 'text-emerald-600' : 'text-purple-600'} />
+                  {position}
+                </span>
               </div>
-              <div className="flex items-center gap-1 text-slate-400 font-mono">
-                <Calendar size={12} />
-                <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
+              <p className="text-sm text-slate-600 font-medium">{isHte ? company : school}</p>
+
+              <div className="flex items-center gap-4 text-xs pt-1">
+                <div className="flex items-center gap-1.5 text-emerald-600 font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Active Verified {isHte ? 'Partner' : 'Faculty'}</span>
+                </div>
+                <div className="flex items-center gap-1 text-slate-400 font-mono">
+                  <Calendar size={12} />
+                  <span>AY {settings?.activeAcademicYear || '2026-2027'}</span>
+                </div>
               </div>
             </div>
           </div>
+
+          {/* Detailed Grid Info */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
+            {/* Email */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
+              <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                <Mail size={18} />
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Official Email</span>
+                <span className="font-bold text-slate-800 break-all text-xs sm:text-sm">{email}</span>
+              </div>
+            </div>
+
+            {/* Account / Employee ID */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
+              <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                <BadgeCheck size={18} />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  {isHte ? 'Partner ID' : 'Faculty ID'}
+                </span>
+                <span className="font-mono font-extrabold text-slate-800">{employeeId}</span>
+              </div>
+            </div>
+
+            {/* Contact Phone */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
+              <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                <Phone size={18} />
+              </div>
+              <div>
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Contact Number</span>
+                <span className="font-bold text-slate-800">{phone}</span>
+              </div>
+            </div>
+
+            {/* Establishment / Institution */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
+              <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                <Building2 size={18} />
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  {isHte ? 'Establishment / Company' : 'University'}
+                </span>
+                <span className="font-bold text-slate-800 text-xs sm:text-sm truncate block">
+                  {isHte ? company : school}
+                </span>
+              </div>
+            </div>
+
+            {/* Department / Division */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
+              <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                <Briefcase size={18} />
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Department / Unit</span>
+                <span className="font-bold text-slate-800 text-xs sm:text-sm truncate block">{department}</span>
+              </div>
+            </div>
+
+            {/* Campus / Location */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
+              <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                <GraduationCap size={18} />
+              </div>
+              <div className="min-w-0">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
+                  {isHte ? 'Branch / Campus Assigned' : 'Campus'}
+                </span>
+                <span className="font-bold text-slate-800 text-xs sm:text-sm truncate block">{campus}</span>
+              </div>
+            </div>
+
+            {/* Full Address */}
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 sm:col-span-2 flex items-start gap-3.5">
+              <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
+                <MapPin size={18} />
+              </div>
+              <div className="min-w-0 flex-1">
+                <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Address</span>
+                <span className="font-medium text-slate-800 text-xs sm:text-sm leading-relaxed">{address}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
-        {/* Detailed Grid Info */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm">
-          {/* Email */}
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
-            <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
-              <Mail size={18} />
+        {/* Permanent Geofence & Location */}
+        <div className="lg:col-span-5 bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8">
+          <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center shrink-0">
+                <MapPin className="text-blue-700" size={18} />
+              </div>
+              <div>
+                <h3 className="text-lg font-black text-slate-900 tracking-tight">Permanent Geofence & Location</h3>
+                <p className="text-xs text-slate-500">Registered establishment location used for attendance verification</p>
+              </div>
             </div>
-            <div className="min-w-0">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Official Email</span>
-              <span className="font-bold text-slate-800 break-all text-xs sm:text-sm">{email}</span>
-            </div>
+
+            <button
+              type="button"
+              onClick={handleSyncRealTimeLocation}
+              disabled={syncingLocation}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-2xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
+              title="Capture current live GPS and resolve address"
+            >
+              {syncingLocation ? (
+                <>
+                  <Loader2 size={13} className="animate-spin" />
+                  <span>Locking GPS...</span>
+                </>
+              ) : (
+                <>
+                  <Navigation size={13} />
+                  <span>Sync Real-Time GPS</span>
+                </>
+              )}
+            </button>
           </div>
 
-          {/* Account / Employee ID */}
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
-            <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
-              <BadgeCheck size={18} />
+          <div className="grid gap-3 grid-cols-1">
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                {isHte ? 'Registered Establishment Address' : 'Official Campus Station Geofence'}
+              </div>
+              <div className="text-sm font-semibold text-slate-800 leading-relaxed">{registrationAddress}</div>
             </div>
-            <div>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                {isHte ? 'Partner ID' : 'Faculty ID'}
-              </span>
-              <span className="font-mono font-extrabold text-slate-800">{employeeId}</span>
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">GPS Coordinates</div>
+              <div className="text-sm font-semibold text-slate-800 font-mono">{geofenceCoords}</div>
             </div>
-          </div>
-
-          {/* Contact Phone */}
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
-            <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
-              <Phone size={18} />
-            </div>
-            <div>
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Contact Number</span>
-              <span className="font-bold text-slate-800">{phone}</span>
-            </div>
-          </div>
-
-          {/* Establishment / Institution */}
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
-            <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
-              <Building2 size={18} />
-            </div>
-            <div className="min-w-0">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                {isHte ? 'Establishment / Company' : 'University'}
-              </span>
-              <span className="font-bold text-slate-800 text-xs sm:text-sm truncate block">
-                {isHte ? company : school}
-              </span>
-            </div>
-          </div>
-
-          {/* Department / Division */}
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
-            <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
-              <Briefcase size={18} />
-            </div>
-            <div className="min-w-0">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Department / Unit</span>
-              <span className="font-bold text-slate-800 text-xs sm:text-sm truncate block">{department}</span>
-            </div>
-          </div>
-
-          {/* Campus / Location */}
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 flex items-start gap-3.5">
-            <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
-              <GraduationCap size={18} />
-            </div>
-            <div className="min-w-0">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">
-                {isHte ? 'Branch / Campus Assigned' : 'Campus'}
-              </span>
-              <span className="font-bold text-slate-800 text-xs sm:text-sm truncate block">{campus}</span>
-            </div>
-          </div>
-
-          {/* Full Address */}
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 sm:col-span-2 flex items-start gap-3.5">
-            <div className="p-2 bg-blue-100/60 rounded-xl text-blue-600 shrink-0 mt-0.5">
-              <MapPin size={18} />
-            </div>
-            <div className="min-w-0 flex-1">
-              <span className="text-xs font-bold text-slate-400 uppercase tracking-wider block">Address</span>
-              <span className="font-medium text-slate-800 text-xs sm:text-sm leading-relaxed">{address}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-3xl border border-slate-200/80 shadow-sm p-6 sm:p-8">
-        <div className="flex items-center justify-between gap-3 mb-5 flex-wrap">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center">
-              <MapPin className="text-blue-700" size={18} />
-            </div>
-            <div>
-              <h3 className="text-lg font-black text-slate-900 tracking-tight">Permanent Geofence & Location</h3>
-              <p className="text-xs text-slate-500">Registered establishment location used for attendance verification</p>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={handleSyncRealTimeLocation}
-            disabled={syncingLocation}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-2xl text-xs font-bold shadow-md shadow-blue-600/20 transition-all cursor-pointer"
-            title="Capture current live GPS and resolve address"
-          >
-            {syncingLocation ? (
-              <>
-                <Loader2 size={13} className="animate-spin" />
-                <span>Locking GPS...</span>
-              </>
-            ) : (
-              <>
-                <Navigation size={13} />
-                <span>Sync Real-Time GPS</span>
-              </>
-            )}
-          </button>
-        </div>
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-              {isHte ? 'Registered Establishment Address' : 'Official Campus Station Geofence'}
-            </div>
-            <div className="text-sm font-semibold text-slate-800 leading-relaxed">{registrationAddress}</div>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">GPS Coordinates</div>
-            <div className="text-sm font-semibold text-slate-800 font-mono">{geofenceCoords}</div>
-          </div>
-          <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 sm:col-span-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Geofence Radius</div>
-            <div className="flex items-center justify-between gap-3 flex-wrap">
-              <span className="text-sm font-semibold text-slate-800">
-                {Math.max(20, Number(employee?.registrationLocation?.radius || employee?.registrationRadius || (employee as any)?.registration_radius || 40))} meters (Official Geofence Radius)
-              </span>
-              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                <CheckCircle size={12} className="text-emerald-600" />
-                Active ({settings?.activeAcademicYear || '2026-2027'})
-              </span>
+            <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 mb-1">Geofence Radius</div>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <span className="text-sm font-semibold text-slate-800">
+                  {Math.max(20, Number(employee?.registrationLocation?.radius || employee?.registrationRadius || (employee as any)?.registration_radius || 40))} meters (Official Geofence Radius)
+                </span>
+                <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <CheckCircle size={12} className="text-emerald-600" />
+                  Active ({settings?.activeAcademicYear || '2026-2027'})
+                </span>
+              </div>
             </div>
           </div>
         </div>

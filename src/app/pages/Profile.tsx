@@ -454,8 +454,15 @@ export function Profile() {
     }
   };
 
+  const showEvaluationCard = Boolean(
+    evaluation &&
+      (evaluation.status === 'final' ||
+        evaluation.status === 'submitted_to_instructor' ||
+        evaluation.status === 'reviewed_by_instructor')
+  );
+
   return (
-    <div className="space-y-4">
+    <div className="w-full max-w-7xl mx-auto space-y-6 pb-8">
       {/* Live Face Scanner Modal */}
       {faceCaptureOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
@@ -487,10 +494,10 @@ export function Profile() {
       <motion.div
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
-        className="bg-gradient-to-br from-blue-800 to-blue-900 rounded-3xl p-5 text-white"
+        className="bg-gradient-to-br from-blue-800 to-blue-900 rounded-3xl p-5 sm:p-6 text-white flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6"
       >
-        <div className="flex items-start gap-4">
-          <div className="relative">
+        <div className="flex items-start gap-4 flex-1 min-w-0">
+          <div className="relative shrink-0">
             <UserAvatar
               photo={avatarPreview || employee.photo || currentUser?.photo}
               name={employee.name}
@@ -515,8 +522,8 @@ export function Profile() {
           {showAvatarEditor && employee && (
             <AvatarEditor employeeId={String(employee.id)} onClose={() => setShowAvatarEditor(false)} />
           )}
-          <div className="flex-1">
-            <h2 className="font-bold text-lg leading-tight">{employee.name}</h2>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-bold text-lg sm:text-xl leading-tight">{employee.name}</h2>
             <p className="text-blue-200 text-sm">{employee.employeeId}</p>
             <p className="text-blue-300 text-xs mt-0.5">
               {employee.position} • {employee.department}
@@ -524,7 +531,7 @@ export function Profile() {
             {employee.faceRegistered ? (
               <button
                 onClick={() => setFaceCaptureOpen(true)}
-                className="mt-2 inline-flex items-center gap-1.5 text-xs text-green-300 hover:text-green-100 bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg transition-colors border border-green-400/30"
+                className="mt-2 inline-flex items-center gap-1.5 text-xs text-green-300 hover:text-green-100 bg-white/10 hover:bg-white/20 px-2.5 py-1 rounded-lg transition-colors border border-green-400/30 cursor-pointer"
               >
                 <Camera size={12} />
                 <span>Face Enrolled (Click to Retake)</span>
@@ -532,7 +539,7 @@ export function Profile() {
             ) : (
               <button
                 onClick={() => setFaceCaptureOpen(true)}
-                className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-200 hover:text-white bg-amber-500/30 hover:bg-amber-500/50 px-2.5 py-1 rounded-lg transition-colors border border-amber-300/30 font-semibold"
+                className="mt-2 inline-flex items-center gap-1.5 text-xs text-amber-200 hover:text-white bg-amber-500/30 hover:bg-amber-500/50 px-2.5 py-1 rounded-lg transition-colors border border-amber-300/30 font-semibold cursor-pointer"
               >
                 <Camera size={12} />
                 <span>Scan Face & Set Profile Pic</span>
@@ -541,724 +548,741 @@ export function Profile() {
           </div>
         </div>
 
-        {/* Progress */}
-        <div className="mt-4">
-          <div className="flex justify-between text-xs mb-1.5">
-            <span className="text-blue-200">OJT Progress</span>
-            <span className="text-white font-medium">
-              {totalHours.toFixed(1)} / {employee.requiredHours} hrs ({Math.round(progressPct)}%)
-            </span>
+        <div className="w-full lg:w-[380px] xl:w-[440px] shrink-0 space-y-3">
+          {/* Progress */}
+          <div>
+            <div className="flex justify-between text-xs mb-1.5">
+              <span className="text-blue-200">OJT Progress</span>
+              <span className="text-white font-medium">
+                {totalHours.toFixed(1)} / {employee.requiredHours} hrs ({Math.round(progressPct)}%)
+              </span>
+            </div>
+            <div className="h-2 bg-blue-700 rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-gradient-to-r from-sky-400 to-green-400 rounded-full"
+                initial={{ width: 0 }}
+                animate={{ width: `${progressPct}%` }}
+                transition={{ duration: 1, delay: 0.2 }}
+              />
+            </div>
           </div>
-          <div className="h-2 bg-blue-700 rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-gradient-to-r from-sky-400 to-green-400 rounded-full"
-              initial={{ width: 0 }}
-              animate={{ width: `${progressPct}%` }}
-              transition={{ duration: 1, delay: 0.2 }}
-            />
-          </div>
-        </div>
 
-        {/* Quick stats */}
-        <div className="grid grid-cols-3 gap-2 mt-4">
-          <div className="bg-white/15 rounded-xl p-2 text-center">
-            <p className="font-bold">{presentDays}</p>
-            <p className="text-blue-200 text-xs">Present</p>
-          </div>
-          <div className="bg-white/15 rounded-xl p-2 text-center">
-            <p className="font-bold">{records.filter((r) => r.status === 'late').length}</p>
-            <p className="text-blue-200 text-xs">Late Days</p>
-          </div>
-          <div className="bg-white/15 rounded-xl p-2 text-center">
-            <p className="font-bold">{totalHours.toFixed(0)}</p>
-            <p className="text-blue-200 text-xs">Total Hrs</p>
+          {/* Quick stats */}
+          <div className="grid grid-cols-3 gap-2">
+            <div className="bg-white/15 rounded-xl p-2 text-center">
+              <p className="font-bold">{presentDays}</p>
+              <p className="text-blue-200 text-xs">Present</p>
+            </div>
+            <div className="bg-white/15 rounded-xl p-2 text-center">
+              <p className="font-bold">{records.filter((r) => r.status === 'late').length}</p>
+              <p className="text-blue-200 text-xs">Late Days</p>
+            </div>
+            <div className="bg-white/15 rounded-xl p-2 text-center">
+              <p className="font-bold">{totalHours.toFixed(0)}</p>
+              <p className="text-blue-200 text-xs">Total Hrs</p>
+            </div>
           </div>
         </div>
       </motion.div>
 
-      {evaluation &&
-        (evaluation.status === 'final' ||
-          evaluation.status === 'submitted_to_instructor' ||
-          evaluation.status === 'reviewed_by_instructor') &&
-        (() => {
-          const gc = GRADE_CONFIG[evaluation.grade];
-          return (
+      {/* Primary Two-Column Workspace Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+        {/* Left Column: Personal Info & OJT Documents */}
+        <div className="space-y-6">
+          {/* Editable Personal Info */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08 }}
+            className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-gray-100"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <User size={15} className="text-blue-700" />
+                </div>
+                <h3 className="font-bold text-gray-800 text-sm">Personal Information</h3>
+              </div>
+              {!editing ? (
+                <button
+                  onClick={() => setEditing(true)}
+                  className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                >
+                  <Edit2 size={12} /> Edit
+                </button>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    onClick={handleSave}
+                    className="text-xs text-green-600 hover:text-green-800 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Check size={12} /> Save
+                  </button>
+                  <button
+                    onClick={() => setEditing(false)}
+                    className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    <X size={12} /> Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+            {editing ? (
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Full Name</label>
+                  <input
+                    value={form.name}
+                    onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Email</label>
+                  <input
+                    value={form.email}
+                    onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Contact / Telephone Number</label>
+                  <input
+                    value={form.phone}
+                    onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                    placeholder="e.g. +639123456789 or 09123456789"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-0.5">Mobile phone or landline telephone number</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Residential Address (Home)</label>
+                  <input
+                    value={form.residentialAddress}
+                    onChange={(e) => setForm((p) => ({ ...p, residentialAddress: e.target.value }))}
+                    placeholder="House No., Street, Barangay, City/Municipality, Province"
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-[11px] text-gray-400 mt-0.5">Your official home residence (not the GPS / clock-in location)</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Supervisor Name</label>
+                  <input
+                    value={form.supervisorName}
+                    onChange={(e) => setForm((p) => ({ ...p, supervisorName: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Campus</label>
+                  <select
+                    value={form.campus}
+                    onChange={(e) => setForm((p) => ({ ...p, campus: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select Campus</option>
+                    {campusOptions.map((campus) => <option key={campus} value={campus}>{campus}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Department</label>
+                  <select
+                    value={form.department}
+                    onChange={(e) => setForm((p) => ({ ...p, department: e.target.value, course: '' }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select Department</option>
+                    {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Course</label>
+                  <select
+                    value={form.course}
+                    onChange={(e) => setForm((p) => ({ ...p, course: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">Select Course</option>
+                    {getCoursesForDepartment(form.department, form.campus).map((course) => <option key={course} value={course}>{course}</option>)}
+                  </select>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <InfoRow label="Full Name" value={employee.name} />
+                <InfoRow label="Email" value={employee.email} />
+                <InfoRow
+                  label="Contact / Telephone"
+                  value={
+                    form.phone ? (
+                      <a href={`tel:${form.phone}`} className="text-blue-600 hover:underline font-semibold">
+                        {form.phone}
+                      </a>
+                    ) : (
+                      <span className="text-gray-400">Not specified</span>
+                    )
+                  }
+                />
+                <InfoRow
+                  label="Residential Address"
+                  value={form.residentialAddress || <span className="text-gray-400">Not recorded</span>}
+                />
+                <InfoRow label="Supervisor" value={employee.supervisorName} />
+                <InfoRow label="Department" value={employee.department} />
+                <InfoRow label="Campus" value={employee.campus || 'Not specified'} />
+                <InfoRow label="Course" value={employee.course} />
+                {employee.registrationAddress && (
+                  <div className="flex items-start gap-2 py-2 border-b border-gray-50">
+                    <MapPin size={12} className="text-blue-400 shrink-0 mt-0.5" />
+                    <div>
+                      <p className="text-xs text-gray-500">Registered Station (GPS)</p>
+                      <p className="text-xs font-mono text-gray-700 mt-0.5">{employee.registrationAddress}</p>
+                    </div>
+                  </div>
+                )}
+                {/* Fallback to raw GPS coordinates if address missing */}
+                {(!employee.registrationAddress && (employee as any).registrationLocation) && (
+                  <InfoRow label="Registered Location" value={`${(employee as any).registrationLocation.lat.toFixed(5)}, ${(employee as any).registrationLocation.lng.toFixed(5)}`} />
+                )}
+              </div>
+            )}
+          </motion.div>
+
+          {/* Required Documents */}
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 }}
+            className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-gray-100"
+          >
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <FileCheck size={15} className="text-blue-700" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-gray-800 text-sm">OJT Documents</h3>
+                  <p className="text-[10px] text-gray-500 mt-0.5">{uploadedDocCount}/{totalRequired} submitted</p>
+                </div>
+              </div>
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
+                uploadedDocCount === totalRequired
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                  : 'bg-amber-50 text-amber-700 border-amber-300'
+              }`}>
+                {uploadedDocCount === totalRequired ? '✓ All Submitted' : `${totalRequired - uploadedDocCount} Missing`}
+              </span>
+            </div>
+
+            {/* Progress bar */}
+            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-4">
+              <div
+                className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-700"
+                style={{ width: `${(uploadedDocCount / totalRequired) * 100}%` }}
+              />
+            </div>
+
+            <div className="space-y-2">
+              {STANDARD_REQUIRED_DOCS.map((item) => {
+                const doc = getTraineeDocItem(submittedDocs, item.key);
+                const hasFile = Boolean(doc?.dataUrl || doc?.name);
+                const isPassed = doc?.status === 'passed' && hasFile;
+                const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
+                const isUploading = docUploadingKey === item.key;
+
+                return (
+                  <div
+                    key={item.key}
+                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
+                      isPassed
+                        ? 'bg-emerald-50 border-emerald-200'
+                        : isPending
+                          ? 'bg-blue-50 border-blue-200'
+                          : 'bg-gray-50 border-gray-100'
+                    }`}
+                  >
+                    {/* Status icon */}
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+                      isPassed ? 'bg-emerald-100' : isPending ? 'bg-blue-100' : 'bg-gray-200'
+                    }`}>
+                      {isPassed ? (
+                        <Check size={13} className="text-emerald-700 stroke-[3]" />
+                      ) : isPending ? (
+                        <Clock size={13} className="text-blue-600" />
+                      ) : (
+                        <AlertCircle size={13} className="text-gray-400" />
+                      )}
+                    </div>
+
+                    {/* Doc info */}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-semibold text-gray-800 truncate">{item.title}</p>
+                      {hasFile && doc ? (
+                        <p className="text-[10px] text-gray-500 truncate">
+                          {doc.name}
+                          {isPassed && ' · Approved'}
+                          {isPending && ' · Pending Review'}
+                        </p>
+                      ) : (
+                        <p className="text-[10px] text-gray-400">Not yet submitted</p>
+                      )}
+                    </div>
+
+                    {/* Action buttons */}
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {hasFile && doc?.dataUrl && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreviewDocModal({
+                              title: item.title,
+                              fileName: doc.name,
+                              fileUrl: doc.dataUrl,
+                              date: doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : '',
+                            })
+                          }
+                          className="p-1.5 rounded-lg bg-white border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all"
+                          title="View document"
+                        >
+                          <Eye size={13} />
+                        </button>
+                      )}
+                      {hasFile && doc?.dataUrl && (
+                        <button
+                          type="button"
+                          onClick={() => downloadDocument(doc.dataUrl!, doc.name || `${item.key}_document`)}
+                          className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 transition-all"
+                          title="Download document"
+                        >
+                          <Download size={13} />
+                        </button>
+                      )}
+                      <label
+                        htmlFor={`profile-doc-${item.key}`}
+                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
+                          isUploading
+                            ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                            : hasFile
+                              ? 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'
+                              : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
+                        }`}
+                        title={hasFile ? 'Replace document' : 'Upload document'}
+                      >
+                        <Upload size={13} className={isUploading ? 'animate-spin' : ''} />
+                        <input
+                          type="file"
+                          id={`profile-doc-${item.key}`}
+                          accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                          className="hidden"
+                          disabled={isUploading}
+                          onChange={(e) => handleProfileDocUpload(item.key, e.target.files?.[0] || null)}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <p className="text-[10px] text-gray-400 mt-3 text-center">
+              Accepted formats: Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX) · Up to 10MB per file · Downloadable anytime
+            </p>
+          </motion.div>
+        </div>
+
+        {/* Right Column: Security Settings & Permanent Geofence */}
+        <div className="space-y-6">
+          {/* Security Settings */}
+          <motion.div
+            id="security-settings"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.08 }}
+            className="bg-white rounded-2xl p-4 sm:p-5 shadow-sm border border-gray-100"
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
+                <KeyRound size={15} className="text-indigo-700" />
+              </div>
+              <h3 className="font-bold text-gray-800 text-sm">Security</h3>
+            </div>
+            <form onSubmit={(e) => { e.preventDefault(); handlePasswordChange(); }} className="space-y-3">
+              <div>
+                <label className="text-xs text-gray-500 font-medium block mb-1">Current Password</label>
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  value={passwordForm.current}
+                  onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  placeholder="••••••••"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">New Password</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={passwordForm.new}
+                    onChange={(e) => setPasswordForm((p) => ({ ...p, new: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="Min 8 characters"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 font-medium block mb-1">Confirm New Password</label>
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={passwordForm.confirm}
+                    onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}
+                    className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${passwordForm.confirm && passwordForm.new !== passwordForm.confirm ? 'border-red-300' : 'border-gray-200'}`}
+                    placeholder="••••••••"
+                  />
+                </div>
+              </div>
+              <button
+                type="submit"
+                disabled={
+                  !passwordForm.current ||
+                  !passwordForm.new ||
+                  passwordForm.new !== passwordForm.confirm ||
+                  passwordForm.new.length < 8
+                }
+                className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all cursor-pointer"
+              >
+                Update Password
+              </button>
+            </form>
+          </motion.div>
+
+          {/* Permanent Registered Location & Geofence */}
+          {(() => {
+            const traineeOverride = getTraineeGeofenceOverride(employee);
+            const resolvedHte = resolveHteLocation(employee, hostSupervisors, employees, geofenceZones);
+            const activeLat = traineeOverride?.lat ?? resolvedHte?.lat ?? employee?.registrationLocation?.lat;
+            const activeLng = traineeOverride?.lng ?? resolvedHte?.lng ?? employee?.registrationLocation?.lng;
+            const activeRadius = Math.max(
+              20,
+              Number(
+                traineeOverride?.radius ||
+                resolvedHte?.radius ||
+                employee.registrationLocation?.radius ||
+                employee.registrationRadius ||
+                (employee as any)?.registration_radius ||
+                40
+              )
+            );
+            const activeAddress = resolvedGpsAddress || traineeOverride?.address || resolvedHte?.address || employee.registrationAddress || 'Assigned Establishment Location';
+
+            return (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.12 }}>
+                <Section title="Permanent Geofence & Location" icon={<MapPin size={15} className="text-blue-700" />}>
+                  <InfoRow
+                    label="Registered Address"
+                    value={activeAddress}
+                  />
+                  <InfoRow
+                    label="GPS Coordinates"
+                    value={
+                      activeLat && activeLng
+                        ? `${Number(activeLat).toFixed(6)}, ${Number(activeLng).toFixed(6)}`
+                        : 'Locked upon registration'
+                    }
+                  />
+                  <InfoRow
+                    label="Geofence Radius"
+                    value={`${activeRadius} meters (Official Geofence Radius)`}
+                  />
+                  <InfoRow
+                    label="Enrollment Status"
+                    value={
+                      <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs">
+                        <CheckCircle size={12} /> Active ({employee.academicYear || settings.activeAcademicYear})
+                      </span>
+                    }
+                  />
+                  <div className="pt-3 mt-2 border-t border-gray-100 flex items-center justify-between gap-2">
+                    <span className="text-[11px] text-gray-500 font-medium">Real-time attendance calibration</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setSyncingLocation(true);
+                        try {
+                          const position = await getCurrentLocation();
+                          const { latitude, longitude, accuracy } = position.coords;
+                          setProfileLiveGps({ lat: latitude, lng: longitude, accuracy });
+                          const resolvedAddress = await reverseGeocode(latitude, longitude);
+
+                          await updateEmployee(employee.id, {
+                            registrationLocation: { lat: latitude, lng: longitude, radius: activeRadius },
+                            registrationAddress: resolvedAddress,
+                            registrationRadius: activeRadius,
+                          });
+
+                          addGeofenceZone({
+                            id: `personal-${employee.id}`,
+                            name: `${employee.name} - ${employee.companyName || 'Assigned Workplace'}`,
+                            address: resolvedAddress,
+                            lat: latitude,
+                            lng: longitude,
+                            radius: activeRadius,
+                            active: true,
+                            academicYear: settings.activeAcademicYear,
+                          });
+
+                          toast.success(`Location calibrated to real-time GPS: ${resolvedAddress}`);
+                          if (accuracy > 100) {
+                            toast.warning(`GPS accuracy is low (±${Math.round(accuracy)}m). For optimal attendance results, calibrate outdoors or near a window.`, { duration: 6000 });
+                          }
+                          if (!isWithinNegrosOccidental(latitude, longitude)) {
+                            toast.warning('Warning: Captured coordinates are outside Negros Occidental / CHMSU region. Please verify your GPS location.', { duration: 7000 });
+                          }
+                        } catch (err) {
+                          console.error('Failed to sync location:', err);
+                          toast.error('Could not lock real-time GPS. Please allow location permissions in your browser.');
+                        } finally {
+                          setSyncingLocation(false);
+                        }
+                      }}
+                      disabled={syncingLocation}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
+                    >
+                      {syncingLocation ? (
+                        <>
+                          <Loader2 size={12} className="animate-spin" />
+                          <span>Locking GPS...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Navigation size={12} />
+                          <span>Sync Real-Time GPS</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  {activeLat != null && activeLng != null && (
+                    <div className="mt-3 rounded-2xl overflow-hidden border border-gray-200">
+                      <div className="px-3 py-2 bg-slate-50 border-b border-gray-100 flex items-center justify-between text-xs">
+                        <span className="font-semibold text-slate-800 flex items-center gap-1.5">
+                          <MapPin size={13} className="text-blue-600" />
+                          Official Workplace Geofence Perimeter
+                        </span>
+                        <span className="font-mono text-slate-500 text-[11px]">
+                          {Number(activeLat).toFixed(5)}, {Number(activeLng).toFixed(5)} (±{activeRadius}m)
+                        </span>
+                      </div>
+                      <GeofenceMap
+                        zones={[
+                          {
+                            id: `assigned-${employee.id}`,
+                            name: `${employee.name} - ${resolvedHte?.companyName || employee.companyName || 'Assigned Workplace'}`,
+                            address: activeAddress,
+                            lat: Number(activeLat),
+                            lng: Number(activeLng),
+                            radius: activeRadius,
+                            active: true,
+                          },
+                        ]}
+                        liveUser={profileLiveGps}
+                        focusCoords={{
+                          lat: Number(activeLat),
+                          lng: Number(activeLng),
+                        }}
+                        className="h-56"
+                        allowFullscreen={false}
+                        allowResize={false}
+                      />
+                    </div>
+                  )}
+                </Section>
+              </motion.div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* Bottom 3-Column Reference Info Row */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch">
+        {/* Company Info */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }} className="h-full [&>div]:h-full">
+          <Section title="Company Information" icon={<Building size={15} className="text-blue-700" />}>
+            <InfoRow label="Company" value={employee.companyName} />
+            <InfoRow label="Department" value={employee.department} />
+            <InfoRow label="Position" value={employee.position} />
+            <InfoRow label="Start Date" value={safeFormatDate(employee.startDate)} />
+            <InfoRow label="End Date" value={safeFormatDate(employee.endDate)} />
+          </Section>
+        </motion.div>
+
+        {/* School Info */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }} className="h-full [&>div]:h-full">
+          <Section title="School Information" icon={<GraduationCap size={15} className="text-blue-700" />}>
+            <InfoRow label="School" value={employee.schoolName || 'Carlos Hilado Memorial State University'} />
+            <InfoRow label="Campus" value={employee.campus || 'CHMSU Campus'} />
+            <InfoRow label="College" value={employee.department || 'College of Computer Studies'} />
+            <InfoRow label="Program" value={employee.course || 'Bachelor of Science in Information Systems'} />
+            <InfoRow label="Required Hours" value={`${employee.requiredHours} hours`} />
+          </Section>
+        </motion.div>
+
+        {/* Schedule */}
+        <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }} className="h-full [&>div]:h-full">
+          <Section title="Schedule Info" icon={<Clock size={15} className="text-blue-700" />}>
+            <InfoRow label="OJT Start" value={safeFormatDate(employee.startDate)} />
+            <InfoRow label="OJT End" value={safeFormatDate(employee.endDate)} />
+            <InfoRow
+              label="Hours Left"
+              value={`${Math.max(0, (reqHours || 0) - totalHours).toFixed(1)} hrs remaining`}
+            />
+          </Section>
+        </motion.div>
+      </div>
+
+      {/* Evaluation & Host Feedback Row */}
+      {(showEvaluationCard || hostFeedback) && (
+        <div className={`grid grid-cols-1 ${showEvaluationCard && hostFeedback ? 'lg:grid-cols-2' : ''} gap-6 items-start`}>
+          {showEvaluationCard && evaluation && (() => {
+            const gc = GRADE_CONFIG[evaluation.grade];
+            return (
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.18 }}
+                className={`rounded-2xl p-5 border ${gc.bg} shadow-sm`}
+              >
+                <div className="flex items-center gap-2 mb-4">
+                  <div className="w-8 h-8 bg-white/60 rounded-lg flex items-center justify-center">
+                    <Award size={16} className={gc.color} />
+                  </div>
+                  <h3 className={`font-bold text-sm ${gc.color}`}>OJT Evaluation Result</h3>
+                  {evaluation.status === 'reviewed_by_instructor' ? (
+                    <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                      ✓ Verified by Instructor
+                    </span>
+                  ) : (
+                    <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                      Pending Instructor Review
+                    </span>
+                  )}
+                </div>
+
+                <div className="text-center mb-4">
+                  <p className={`text-4xl font-bold ${gc.color}`}>{evaluation.overallScore}%</p>
+                  <p className={`text-lg font-semibold mt-1 ${gc.color}`}>{evaluation.grade}</p>
+                  <p className="text-xs text-gray-500 mt-1">{safeFormatDate(evaluation.evaluatedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                </div>
+
+                {/* Score breakdown */}
+                <div className="space-y-2 mb-4">
+                  {Object.entries(CRITERIA_LABELS).map(([key, label]) => {
+                    const score = evaluation[key as keyof typeof evaluation] as number;
+                    return (
+                      <div key={key}>
+                        <div className="flex justify-between text-xs mb-0.5">
+                          <span className="text-gray-600">{label}</span>
+                          <span className="font-semibold text-gray-800">{score}%</span>
+                        </div>
+                        <div className="h-1.5 bg-white/60 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${score >= 90 ? 'bg-green-500' : score >= 80 ? 'bg-blue-500' : score >= 70 ? 'bg-sky-500' : score >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                            style={{ width: `${score}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {evaluation.strengths && (
+                  <div className="bg-white/50 rounded-xl p-3 mb-2">
+                    <p className="text-xs font-semibold text-gray-500 mb-1">Strengths</p>
+                    <p className="text-sm text-gray-700">{evaluation.strengths}</p>
+                  </div>
+                )}
+                {evaluation.recommendations && (
+                  <div className="bg-white/50 rounded-xl p-3">
+                    <p className="text-xs font-semibold text-gray-500 mb-1">Recommendations</p>
+                    <p className="text-sm text-gray-700">{evaluation.recommendations}</p>
+                  </div>
+                )}
+                <div className="mt-3 pt-3 border-t border-slate-200/50 flex justify-end">
+                  <Link
+                    to="/app/evaluation"
+                    className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 bg-white/80 hover:bg-white px-3 py-1.5 rounded-xl transition-all shadow-xs"
+                  >
+                    <Award size={13} /> Open OJT Questionnaire →
+                  </Link>
+                </div>
+              </motion.div>
+            );
+          })()}
+
+          {hostFeedback && (
             <motion.div
               initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.08 }}
-              className={`rounded-2xl p-5 border ${gc.bg} shadow-sm`}
+              transition={{ delay: 0.2 }}
+              className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
             >
               <div className="flex items-center gap-2 mb-4">
-                <div className="w-8 h-8 bg-white/60 rounded-lg flex items-center justify-center">
-                  <Award size={16} className={gc.color} />
+                <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
+                  <Star size={15} className="text-amber-700" />
                 </div>
-                <h3 className={`font-bold text-sm ${gc.color}`}>OJT Evaluation Result</h3>
-                {evaluation.status === 'reviewed_by_instructor' ? (
-                  <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
-                    ✓ Verified by Instructor
-                  </span>
-                ) : (
-                  <span className="ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                    Pending Instructor Review
-                  </span>
-                )}
+                <div>
+                  <h3 className="font-bold text-gray-800 text-sm">Host Establishment Feedback</h3>
+                  <p className="text-xs text-gray-500">
+                    {hostFeedback.hostCompany} - {hostFeedback.hostName}
+                  </p>
+                </div>
+                <span className="ml-auto text-xs text-gray-400">{safeFormatDate(hostFeedback.submittedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
               </div>
 
-              <div className="text-center mb-4">
-                <p className={`text-4xl font-bold ${gc.color}`}>{evaluation.overallScore}%</p>
-                <p className={`text-lg font-semibold mt-1 ${gc.color}`}>{evaluation.grade}</p>
-                <p className="text-xs text-gray-500 mt-1">{safeFormatDate(evaluation.evaluatedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div className="bg-amber-50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-amber-700">Overall Score</p>
+                  <p className="text-xl font-bold text-amber-800">{hostFeedback.overallScore}%</p>
+                </div>
+                <div className="bg-amber-50 rounded-xl p-3 text-center">
+                  <p className="text-xs text-amber-700">Recommendation</p>
+                  <p className="text-sm font-semibold text-amber-800">{hostFeedback.recommendation}</p>
+                </div>
               </div>
 
-              {/* Score breakdown */}
-              <div className="space-y-2 mb-4">
-                {Object.entries(CRITERIA_LABELS).map(([key, label]) => {
-                  const score = evaluation[key as keyof typeof evaluation] as number;
-                  return (
-                    <div key={key}>
-                      <div className="flex justify-between text-xs mb-0.5">
-                        <span className="text-gray-600">{label}</span>
-                        <span className="font-semibold text-gray-800">{score}%</span>
-                      </div>
-                      <div className="h-1.5 bg-white/60 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${score >= 90 ? 'bg-green-500' : score >= 80 ? 'bg-blue-500' : score >= 70 ? 'bg-sky-500' : score >= 60 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                          style={{ width: `${score}%` }}
-                        />
-                      </div>
-                    </div>
-                  );
-                })}
+              <div className="grid gap-2 sm:grid-cols-2 text-xs mb-4">
+                <div className="bg-gray-50 rounded-xl p-2 text-center">
+                  Attendance: <span className="font-semibold">{hostFeedback.attendanceScore}%</span>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2 text-center">
+                  Performance: <span className="font-semibold">{hostFeedback.performanceScore}%</span>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2 text-center">
+                  Attitude: <span className="font-semibold">{hostFeedback.attitudeScore}%</span>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2 text-center">
+                  Communication: <span className="font-semibold">{hostFeedback.communicationScore}%</span>
+                </div>
+                <div className="bg-gray-50 rounded-xl p-2 text-center">
+                  Teamwork: <span className="font-semibold">{hostFeedback.teamworkScore}%</span>
+                </div>
               </div>
 
-              {evaluation.strengths && (
-                <div className="bg-white/50 rounded-xl p-3 mb-2">
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="bg-gray-50 rounded-xl p-3">
                   <p className="text-xs font-semibold text-gray-500 mb-1">Strengths</p>
-                  <p className="text-sm text-gray-700">{evaluation.strengths}</p>
+                  <p className="text-sm text-gray-700">{hostFeedback.strengths || '-'}</p>
                 </div>
-              )}
-              {evaluation.recommendations && (
-                <div className="bg-white/50 rounded-xl p-3">
-                  <p className="text-xs font-semibold text-gray-500 mb-1">Recommendations</p>
-                  <p className="text-sm text-gray-700">{evaluation.recommendations}</p>
+                <div className="bg-gray-50 rounded-xl p-3">
+                  <p className="text-xs font-semibold text-gray-500 mb-1">Areas for Improvement</p>
+                  <p className="text-sm text-gray-700">{hostFeedback.areasForImprovement || '-'}</p>
                 </div>
-              )}
-              <div className="mt-3 pt-3 border-t border-slate-200/50 flex justify-end">
-                <Link
-                  to="/app/evaluation"
-                  className="inline-flex items-center gap-1.5 text-xs font-bold text-blue-700 hover:text-blue-900 bg-white/80 hover:bg-white px-3 py-1.5 rounded-xl transition-all shadow-xs"
-                >
-                  <Award size={13} /> Open OJT Questionnaire →
-                </Link>
               </div>
             </motion.div>
-          );
-        })()}
-
-      {hostFeedback && (
-        <motion.div
-          initial={{ opacity: 0, y: 10 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.12 }}
-          className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100"
-        >
-          <div className="flex items-center gap-2 mb-4">
-            <div className="w-8 h-8 bg-amber-100 rounded-lg flex items-center justify-center">
-              <Star size={15} className="text-amber-700" />
-            </div>
-            <div>
-              <h3 className="font-bold text-gray-800 text-sm">Host Establishment Feedback</h3>
-              <p className="text-xs text-gray-500">
-                {hostFeedback.hostCompany} - {hostFeedback.hostName}
-              </p>
-            </div>
-            <span className="ml-auto text-xs text-gray-400">{safeFormatDate(hostFeedback.submittedAt, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3 mb-4">
-            <div className="bg-amber-50 rounded-xl p-3 text-center">
-              <p className="text-xs text-amber-700">Overall Score</p>
-              <p className="text-xl font-bold text-amber-800">{hostFeedback.overallScore}%</p>
-            </div>
-            <div className="bg-amber-50 rounded-xl p-3 text-center">
-              <p className="text-xs text-amber-700">Recommendation</p>
-              <p className="text-sm font-semibold text-amber-800">{hostFeedback.recommendation}</p>
-            </div>
-          </div>
-
-          <div className="grid gap-2 sm:grid-cols-2 text-xs mb-4">
-            <div className="bg-gray-50 rounded-xl p-2 text-center">
-              Attendance: <span className="font-semibold">{hostFeedback.attendanceScore}%</span>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-2 text-center">
-              Performance: <span className="font-semibold">{hostFeedback.performanceScore}%</span>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-2 text-center">
-              Attitude: <span className="font-semibold">{hostFeedback.attitudeScore}%</span>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-2 text-center">
-              Communication: <span className="font-semibold">{hostFeedback.communicationScore}%</span>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-2 text-center">
-              Teamwork: <span className="font-semibold">{hostFeedback.teamworkScore}%</span>
-            </div>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="bg-gray-50 rounded-xl p-3">
-              <p className="text-xs font-semibold text-gray-500 mb-1">Strengths</p>
-              <p className="text-sm text-gray-700">{hostFeedback.strengths || '-'}</p>
-            </div>
-            <div className="bg-gray-50 rounded-xl p-3">
-              <p className="text-xs font-semibold text-gray-500 mb-1">Areas for Improvement</p>
-              <p className="text-sm text-gray-700">{hostFeedback.areasForImprovement || '-'}</p>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* Required Documents */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.09 }}
-        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <FileCheck size={15} className="text-blue-700" />
-            </div>
-            <div>
-              <h3 className="font-bold text-gray-800 text-sm">OJT Documents</h3>
-              <p className="text-[10px] text-gray-500 mt-0.5">{uploadedDocCount}/{totalRequired} submitted</p>
-            </div>
-          </div>
-          <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-            uploadedDocCount === totalRequired
-              ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-              : 'bg-amber-50 text-amber-700 border-amber-300'
-          }`}>
-            {uploadedDocCount === totalRequired ? '✓ All Submitted' : `${totalRequired - uploadedDocCount} Missing`}
-          </span>
-        </div>
-
-        {/* Progress bar */}
-        <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-4">
-          <div
-            className="h-full bg-gradient-to-r from-blue-500 to-blue-600 rounded-full transition-all duration-700"
-            style={{ width: `${(uploadedDocCount / totalRequired) * 100}%` }}
-          />
-        </div>
-
-        <div className="space-y-2">
-          {STANDARD_REQUIRED_DOCS.map((item) => {
-            const doc = getTraineeDocItem(submittedDocs, item.key);
-            const hasFile = Boolean(doc?.dataUrl || doc?.name);
-            const isPassed = doc?.status === 'passed' && hasFile;
-            const isPending = (doc?.status === 'pending' || !doc?.status) && hasFile;
-            const isUploading = docUploadingKey === item.key;
-
-            return (
-              <div
-                key={item.key}
-                className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                  isPassed
-                    ? 'bg-emerald-50 border-emerald-200'
-                    : isPending
-                      ? 'bg-blue-50 border-blue-200'
-                      : 'bg-gray-50 border-gray-100'
-                }`}
-              >
-                {/* Status icon */}
-                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                  isPassed ? 'bg-emerald-100' : isPending ? 'bg-blue-100' : 'bg-gray-200'
-                }`}>
-                  {isPassed ? (
-                    <Check size={13} className="text-emerald-700 stroke-[3]" />
-                  ) : isPending ? (
-                    <Clock size={13} className="text-blue-600" />
-                  ) : (
-                    <AlertCircle size={13} className="text-gray-400" />
-                  )}
-                </div>
-
-                {/* Doc info */}
-                <div className="flex-1 min-w-0">
-                  <p className="text-xs font-semibold text-gray-800 truncate">{item.title}</p>
-                  {hasFile && doc ? (
-                    <p className="text-[10px] text-gray-500 truncate">
-                      {doc.name}
-                      {isPassed && ' · Approved'}
-                      {isPending && ' · Pending Review'}
-                    </p>
-                  ) : (
-                    <p className="text-[10px] text-gray-400">Not yet submitted</p>
-                  )}
-                </div>
-
-                {/* Action buttons */}
-                <div className="flex items-center gap-1.5 shrink-0">
-                  {hasFile && doc?.dataUrl && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        setPreviewDocModal({
-                          title: item.title,
-                          fileName: doc.name,
-                          fileUrl: doc.dataUrl,
-                          date: doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : '',
-                        })
-                      }
-                      className="p-1.5 rounded-lg bg-white border border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300 transition-all"
-                      title="View document"
-                    >
-                      <Eye size={13} />
-                    </button>
-                  )}
-                  {hasFile && doc?.dataUrl && (
-                    <button
-                      type="button"
-                      onClick={() => downloadDocument(doc.dataUrl!, doc.name || `${item.key}_document`)}
-                      className="p-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-600 hover:bg-emerald-100 transition-all"
-                      title="Download document"
-                    >
-                      <Download size={13} />
-                    </button>
-                  )}
-                  <label
-                    htmlFor={`profile-doc-${item.key}`}
-                    className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
-                      isUploading
-                        ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                        : hasFile
-                          ? 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'
-                          : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
-                    }`}
-                    title={hasFile ? 'Replace document' : 'Upload document'}
-                  >
-                    <Upload size={13} className={isUploading ? 'animate-spin' : ''} />
-                    <input
-                      type="file"
-                      id={`profile-doc-${item.key}`}
-                      accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
-                      className="hidden"
-                      disabled={isUploading}
-                      onChange={(e) => handleProfileDocUpload(item.key, e.target.files?.[0] || null)}
-                    />
-                  </label>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <p className="text-[10px] text-gray-400 mt-3 text-center">
-          Accepted formats: Pictures (JPG, PNG, WEBP), PDF, Word (DOC, DOCX) · Up to 10MB per file · Downloadable anytime
-        </p>
-      </motion.div>
-
-      {/* Editable Personal Info */}
-      <motion.div
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.1 }}
-        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
-      >
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-blue-100 rounded-lg flex items-center justify-center">
-              <User size={15} className="text-blue-700" />
-            </div>
-            <h3 className="font-bold text-gray-800 text-sm">Personal Information</h3>
-          </div>
-          {!editing ? (
-            <button
-              onClick={() => setEditing(true)}
-              className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-            >
-              <Edit2 size={12} /> Edit
-            </button>
-          ) : (
-            <div className="flex gap-2">
-              <button
-                onClick={handleSave}
-                className="text-xs text-green-600 hover:text-green-800 flex items-center gap-1"
-              >
-                <Check size={12} /> Save
-              </button>
-              <button
-                onClick={() => setEditing(false)}
-                className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1"
-              >
-                <X size={12} /> Cancel
-              </button>
-            </div>
           )}
         </div>
-        {editing ? (
-          <div className="space-y-3">
-            <div>
-              <label className="text-xs text-gray-500 font-medium block mb-1">Full Name</label>
-              <input
-                value={form.name}
-                onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium block mb-1">Email</label>
-              <input
-                value={form.email}
-                onChange={(e) => setForm((p) => ({ ...p, email: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium block mb-1">Contact / Telephone Number</label>
-              <input
-                value={form.phone}
-                onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-                placeholder="e.g. +639123456789 or 09123456789"
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
-              />
-              <p className="text-[11px] text-gray-400 mt-0.5">Mobile phone or landline telephone number</p>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium block mb-1">Residential Address (Home)</label>
-              <input
-                value={form.residentialAddress}
-                onChange={(e) => setForm((p) => ({ ...p, residentialAddress: e.target.value }))}
-                placeholder="House No., Street, Barangay, City/Municipality, Province"
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-              <p className="text-[11px] text-gray-400 mt-0.5">Your official home residence (not the GPS / clock-in location)</p>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium block mb-1">Supervisor Name</label>
-              <input
-                value={form.supervisorName}
-                onChange={(e) => setForm((p) => ({ ...p, supervisorName: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium block mb-1">Campus</label>
-              <select
-                value={form.campus}
-                onChange={(e) => setForm((p) => ({ ...p, campus: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select Campus</option>
-                {campusOptions.map((campus) => <option key={campus} value={campus}>{campus}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium block mb-1">Department</label>
-              <select
-                value={form.department}
-                onChange={(e) => setForm((p) => ({ ...p, department: e.target.value, course: '' }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select Department</option>
-                {departmentOptions.map((department) => <option key={department} value={department}>{department}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 font-medium block mb-1">Course</label>
-              <select
-                value={form.course}
-                onChange={(e) => setForm((p) => ({ ...p, course: e.target.value }))}
-                className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <option value="">Select Course</option>
-                {getCoursesForDepartment(form.department, form.campus).map((course) => <option key={course} value={course}>{course}</option>)}
-              </select>
-            </div>
-          </div>
-        ) : (
-          <div>
-            <InfoRow label="Full Name" value={employee.name} />
-            <InfoRow label="Email" value={employee.email} />
-            <InfoRow
-              label="Contact / Telephone"
-              value={
-                form.phone ? (
-                  <a href={`tel:${form.phone}`} className="text-blue-600 hover:underline font-semibold">
-                    {form.phone}
-                  </a>
-                ) : (
-                  <span className="text-gray-400">Not specified</span>
-                )
-              }
-            />
-            <InfoRow
-              label="Residential Address"
-              value={form.residentialAddress || <span className="text-gray-400">Not recorded</span>}
-            />
-            <InfoRow label="Supervisor" value={employee.supervisorName} />
-            <InfoRow label="Department" value={employee.department} />
-            <InfoRow label="Campus" value={employee.campus || 'Not specified'} />
-            <InfoRow label="Course" value={employee.course} />
-            {employee.registrationAddress && (
-              <div className="flex items-start gap-2 py-2 border-b border-gray-50">
-                <MapPin size={12} className="text-blue-400 shrink-0 mt-0.5" />
-                <div>
-                  <p className="text-xs text-gray-500">Registered Station (GPS)</p>
-                  <p className="text-xs font-mono text-gray-700 mt-0.5">{employee.registrationAddress}</p>
-                </div>
-              </div>
-            )}
-            {/* Fallback to raw GPS coordinates if address missing */}
-            {(!employee.registrationAddress && (employee as any).registrationLocation) && (
-              <InfoRow label="Registered Location" value={`${(employee as any).registrationLocation.lat.toFixed(5)}, ${(employee as any).registrationLocation.lng.toFixed(5)}`} />
-            )}
-          </div>
-        )}
-      </motion.div>
-
-      {/* Security Settings */}
-      <motion.div
-        id="security-settings"
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.12 }}
-        className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100"
-      >
-        <div className="flex items-center gap-2 mb-4">
-          <div className="w-8 h-8 bg-indigo-100 rounded-lg flex items-center justify-center">
-            <KeyRound size={15} className="text-indigo-700" />
-          </div>
-          <h3 className="font-bold text-gray-800 text-sm">Security</h3>
-        </div>
-        <form onSubmit={(e) => { e.preventDefault(); handlePasswordChange(); }} className="space-y-3">
-          <div>
-            <label className="text-xs text-gray-500 font-medium block mb-1">Current Password</label>
-            <input
-              type="password"
-              autoComplete="current-password"
-              value={passwordForm.current}
-              onChange={(e) => setPasswordForm((p) => ({ ...p, current: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder="••••••••"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 font-medium block mb-1">New Password</label>
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={passwordForm.new}
-              onChange={(e) => setPasswordForm((p) => ({ ...p, new: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-              placeholder="Min 8 characters"
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 font-medium block mb-1">Confirm New Password</label>
-            <input
-              type="password"
-              autoComplete="new-password"
-              value={passwordForm.confirm}
-              onChange={(e) => setPasswordForm((p) => ({ ...p, confirm: e.target.value }))}
-              className={`w-full px-3 py-2 border rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 ${passwordForm.confirm && passwordForm.new !== passwordForm.confirm ? 'border-red-300' : 'border-gray-200'}`}
-              placeholder="••••••••"
-            />
-          </div>
-          <button
-            type="submit"
-            disabled={
-              !passwordForm.current ||
-              !passwordForm.new ||
-              passwordForm.new !== passwordForm.confirm ||
-              passwordForm.new.length < 8
-            }
-            className="w-full py-2.5 bg-indigo-600 text-white rounded-xl text-sm font-bold hover:bg-indigo-700 disabled:opacity-50 transition-all"
-          >
-            Update Password
-          </button>
-        </form>
-      </motion.div>
-
-      {/* Permanent Registered Location & Geofence */}
-      {(() => {
-        const traineeOverride = getTraineeGeofenceOverride(employee);
-        const resolvedHte = resolveHteLocation(employee, hostSupervisors, employees, geofenceZones);
-        const activeLat = traineeOverride?.lat ?? resolvedHte?.lat ?? employee?.registrationLocation?.lat;
-        const activeLng = traineeOverride?.lng ?? resolvedHte?.lng ?? employee?.registrationLocation?.lng;
-        const activeRadius = Math.max(
-          20,
-          Number(
-            traineeOverride?.radius ||
-            resolvedHte?.radius ||
-            employee.registrationLocation?.radius ||
-            employee.registrationRadius ||
-            (employee as any)?.registration_radius ||
-            40
-          )
-        );
-        const activeAddress = resolvedGpsAddress || traineeOverride?.address || resolvedHte?.address || employee.registrationAddress || 'Assigned Establishment Location';
-
-        return (
-          <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
-            <Section title="Permanent Geofence & Location" icon={<MapPin size={15} className="text-blue-700" />}>
-              <InfoRow
-                label="Registered Address"
-                value={activeAddress}
-              />
-              <InfoRow
-                label="GPS Coordinates"
-                value={
-                  activeLat && activeLng
-                    ? `${Number(activeLat).toFixed(6)}, ${Number(activeLng).toFixed(6)}`
-                    : 'Locked upon registration'
-                }
-              />
-              <InfoRow
-                label="Geofence Radius"
-                value={`${activeRadius} meters (Official Geofence Radius)`}
-              />
-              <InfoRow
-                label="Enrollment Status"
-                value={
-                  <span className="inline-flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full text-xs">
-                    <CheckCircle size={12} /> Active ({employee.academicYear || settings.activeAcademicYear})
-                  </span>
-                }
-              />
-              <div className="pt-3 mt-2 border-t border-gray-100 flex items-center justify-between gap-2">
-                <span className="text-[11px] text-gray-500 font-medium">Real-time attendance calibration</span>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setSyncingLocation(true);
-                    try {
-                      const position = await getCurrentLocation();
-                      const { latitude, longitude, accuracy } = position.coords;
-                      setProfileLiveGps({ lat: latitude, lng: longitude, accuracy });
-                      const resolvedAddress = await reverseGeocode(latitude, longitude);
-
-                      await updateEmployee(employee.id, {
-                        registrationLocation: { lat: latitude, lng: longitude, radius: activeRadius },
-                        registrationAddress: resolvedAddress,
-                        registrationRadius: activeRadius,
-                      });
-
-                      addGeofenceZone({
-                        id: `personal-${employee.id}`,
-                        name: `${employee.name} - ${employee.companyName || 'Assigned Workplace'}`,
-                        address: resolvedAddress,
-                        lat: latitude,
-                        lng: longitude,
-                        radius: activeRadius,
-                        active: true,
-                        academicYear: settings.activeAcademicYear,
-                      });
-
-                      toast.success(`Location calibrated to real-time GPS: ${resolvedAddress}`);
-                      if (accuracy > 100) {
-                        toast.warning(`GPS accuracy is low (±${Math.round(accuracy)}m). For optimal attendance results, calibrate outdoors or near a window.`, { duration: 6000 });
-                      }
-                      if (!isWithinNegrosOccidental(latitude, longitude)) {
-                        toast.warning('Warning: Captured coordinates are outside Negros Occidental / CHMSU region. Please verify your GPS location.', { duration: 7000 });
-                      }
-                    } catch (err) {
-                      console.error('Failed to sync location:', err);
-                      toast.error('Could not lock real-time GPS. Please allow location permissions in your browser.');
-                    } finally {
-                      setSyncingLocation(false);
-                    }
-                  }}
-                  disabled={syncingLocation}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold shadow-sm transition-all cursor-pointer"
-                >
-                  {syncingLocation ? (
-                    <>
-                      <Loader2 size={12} className="animate-spin" />
-                      <span>Locking GPS...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Navigation size={12} />
-                      <span>Sync Real-Time GPS</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-              {activeLat != null && activeLng != null && (
-                <div className="mt-3 rounded-2xl overflow-hidden border border-gray-200">
-                  <div className="px-3 py-2 bg-slate-50 border-b border-gray-100 flex items-center justify-between text-xs">
-                    <span className="font-semibold text-slate-800 flex items-center gap-1.5">
-                      <MapPin size={13} className="text-blue-600" />
-                      Official Workplace Geofence Perimeter
-                    </span>
-                    <span className="font-mono text-slate-500 text-[11px]">
-                      {Number(activeLat).toFixed(5)}, {Number(activeLng).toFixed(5)} (±{activeRadius}m)
-                    </span>
-                  </div>
-                  <GeofenceMap
-                    zones={[
-                      {
-                        id: `assigned-${employee.id}`,
-                        name: `${employee.name} - ${resolvedHte?.companyName || employee.companyName || 'Assigned Workplace'}`,
-                        address: activeAddress,
-                        lat: Number(activeLat),
-                        lng: Number(activeLng),
-                        radius: activeRadius,
-                        active: true,
-                      },
-                    ]}
-                    liveUser={profileLiveGps}
-                    focusCoords={{
-                      lat: Number(activeLat),
-                      lng: Number(activeLng),
-                    }}
-                    className="h-56"
-                    allowFullscreen={false}
-                    allowResize={false}
-                  />
-                </div>
-              )}
-            </Section>
-          </motion.div>
-        );
-      })()}
-
-      {/* Company Info */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-        <Section title="Company Information" icon={<Building size={15} className="text-blue-700" />}>
-          <InfoRow label="Company" value={employee.companyName} />
-          <InfoRow label="Department" value={employee.department} />
-          <InfoRow label="Position" value={employee.position} />
-          <InfoRow label="Start Date" value={safeFormatDate(employee.startDate)} />
-          <InfoRow label="End Date" value={safeFormatDate(employee.endDate)} />
-        </Section>
-      </motion.div>
-
-      {/* School Info */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2 }}>
-        <Section title="School Information" icon={<GraduationCap size={15} className="text-blue-700" />}>
-          <InfoRow label="School" value={employee.schoolName || 'Carlos Hilado Memorial State University'} />
-          <InfoRow label="Campus" value={employee.campus || 'CHMSU Campus'} />
-          <InfoRow label="College" value={employee.department || 'College of Computer Studies'} />
-          <InfoRow label="Program" value={employee.course || 'Bachelor of Science in Information Systems'} />
-          <InfoRow label="Required Hours" value={`${employee.requiredHours} hours`} />
-        </Section>
-      </motion.div>
-
-      {/* Schedule */}
-      <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-        <Section title="Schedule Info" icon={<Clock size={15} className="text-blue-700" />}>
-          <InfoRow label="OJT Start" value={safeFormatDate(employee.startDate)} />
-          <InfoRow label="OJT End" value={safeFormatDate(employee.endDate)} />
-          <InfoRow
-            label="Hours Left"
-            value={`${Math.max(0, (reqHours || 0) - totalHours).toFixed(1)} hrs remaining`}
-          />
-        </Section>
-      </motion.div>
+      )}
 
       {/* Individual Document Preview & Print Modal */}
       {previewDocModal && (
