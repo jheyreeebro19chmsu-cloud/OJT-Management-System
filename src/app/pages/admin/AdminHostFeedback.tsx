@@ -17,6 +17,8 @@ import {
   User,
   GraduationCap,
   Download,
+  Search,
+  X,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useMemo, useState } from 'react';
@@ -83,6 +85,7 @@ export function AdminHostFeedback() {
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(settings?.activeAcademicYear || 'all');
   const [employeeFilter, setEmployeeFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedItemForView, setSelectedItemForView] = useState<UnifiedFeedbackItem | null>(null);
 
   // Helper to ensure supervisor strictly matches the official HTE supervisors: Jhey Ree (Printing Services) & Jhey Ree C Ebro (Concentrix)
@@ -211,19 +214,39 @@ export function AdminHostFeedback() {
     return list.sort((a, b) => new Date(b.submittedAt).getTime() - new Date(a.submittedAt).getTime());
   }, [hostFeedback, evaluations, employees, settings.activeAcademicYear]);
 
-  // Filter based on selected toolbar dropdowns
+  // Filter based on search query and selected toolbar dropdowns
   const filtered = useMemo(() => {
+    const trimmedQuery = searchQuery.trim().toLowerCase();
+    const tokens = trimmedQuery ? trimmedQuery.split(/\s+/).filter(Boolean) : [];
+
     return unifiedItems.filter((item) => {
-      const trainee = employees.find((e) => e.id === item.employeeId);
+      const trainee = employees.find((e) => e.id === item.employeeId || e.employeeId === item.employeeId);
       if (selectedAcademicYear !== 'all') {
         const itemYear = item.academicYear || trainee?.academicYear || settings.activeAcademicYear;
         if (itemYear && itemYear !== selectedAcademicYear) return false;
       }
-      if (employeeFilter !== 'all' && item.employeeId !== employeeFilter) return false;
+      if (employeeFilter !== 'all' && item.employeeId !== employeeFilter && trainee?.id !== employeeFilter) return false;
       if (statusFilter !== 'all' && item.status !== statusFilter) return false;
+
+      if (tokens.length > 0) {
+        const haystack = [
+          trainee?.name,
+          trainee?.employeeId,
+          trainee?.course,
+          trainee?.email,
+          item.employeeId,
+          item.hostCompany,
+          item.hostName,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase();
+        if (!tokens.every((tok) => haystack.includes(tok))) return false;
+      }
+
       return true;
     });
-  }, [unifiedItems, employeeFilter, statusFilter, selectedAcademicYear, employees, settings.activeAcademicYear]);
+  }, [unifiedItems, employeeFilter, statusFilter, selectedAcademicYear, searchQuery, employees, settings.activeAcademicYear]);
 
   // Dynamic KPI summary calculations
   const summary = useMemo(() => {
@@ -370,112 +393,140 @@ export function AdminHostFeedback() {
       </div>
 
       {/* Filter Toolbar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm flex flex-wrap gap-3 items-center justify-between">
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-          <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 mr-1">
-            <Filter size={14} className="text-blue-600" />
-            Filters
-          </div>
-
-          <select
-            value={selectedAcademicYear}
-            onChange={(e) => setSelectedAcademicYear(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-700 hover:bg-slate-100/70 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-          >
-            <option value="all">All Academic Years</option>
-            {settings.academicYears.map((ay) => (
-              <option key={ay} value={ay}>
-                A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
-              </option>
-            ))}
-          </select>
-
-          <select
-            value={employeeFilter}
-            onChange={(e) => setEmployeeFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-700 hover:bg-slate-100/70 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-          >
-            <option value="all">All Trainees</option>
-            {employees
-              .filter((e) => e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative')
-              .map((e) => (
-                <option key={e.id} value={e.id}>
-                  {e.name}
-                </option>
-              ))}
-          </select>
-
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-700 hover:bg-slate-100/70 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
-          >
-            <option value="all">All Status</option>
-            <option value="submitted">Needs Review</option>
-            <option value="reviewed">Reviewed</option>
-            <option value="archived">Archived</option>
-          </select>
+      <div className="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-sm space-y-3">
+        {/* Search Bar */}
+        <div className="relative w-full">
+          <Search
+            size={16}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+          />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Search trainee by name, student ID, course, HTE company, or supervisor..."
+            aria-label="Search trainee feedback"
+            className="w-full pl-10 pr-9 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-xs sm:text-sm font-medium text-slate-700 placeholder:text-slate-400 hover:bg-slate-100/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+          />
+          {searchQuery.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              aria-label="Clear search"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+            >
+              <X size={14} />
+            </button>
+          )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              const csvRows = [
-                [
-                  'Trainee Name',
-                  'Student ID',
-                  'HTE Company',
-                  'HTE Supervisor',
-                  'Attendance Score',
-                  'Performance Score',
-                  'Attitude Score',
-                  'Communication Score',
-                  'Teamwork Score',
-                  'Overall Score',
-                  'Grade',
-                  'Status',
-                  'Submitted At',
-                ],
-              ];
-              filtered.forEach((item) => {
-                const tr = getTrainee(item.employeeId);
-                csvRows.push([
-                  tr?.name || 'Trainee',
-                  tr?.employeeId || '',
-                  item.hostCompany,
-                  item.hostName,
-                  `${item.attendanceScore}%`,
-                  `${item.performanceScore}%`,
-                  `${item.attitudeScore}%`,
-                  `${item.communicationScore}%`,
-                  `${item.teamworkScore}%`,
-                  `${item.overallScore}%`,
-                  item.grade,
-                  item.status,
-                  item.submittedAt,
-                ]);
-              });
-              const csvContent = csvRows.map((e) => e.join(',')).join('\n');
-              const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
-              const link = document.createElement('a');
-              link.href = url;
-              link.download = `HTE_Feedback_Summary_${new Date().toISOString().split('T')[0]}.csv`;
-              document.body.appendChild(link);
-              link.click();
-              document.body.removeChild(link);
-              URL.revokeObjectURL(url);
-              toast.success('HTE feedback exported to CSV!');
-            }}
-            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
-          >
-            <Download size={13} />
-            Export CSV
-          </button>
+        <div className="flex flex-wrap gap-3 items-center justify-between">
+          <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+            <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-slate-500 mr-1">
+              <Filter size={14} className="text-blue-600" />
+              Filters
+            </div>
 
-          <span className="text-xs text-slate-500 font-medium">
-            Showing <strong className="text-slate-800">{filtered.length}</strong> submission
-            {filtered.length === 1 ? '' : 's'}
-          </span>
+            <select
+              value={selectedAcademicYear}
+              onChange={(e) => setSelectedAcademicYear(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-700 hover:bg-slate-100/70 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value="all">All Academic Years</option>
+              {settings.academicYears.map((ay) => (
+                <option key={ay} value={ay}>
+                  A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+                </option>
+              ))}
+            </select>
+
+            <select
+              value={employeeFilter}
+              onChange={(e) => setEmployeeFilter(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-700 hover:bg-slate-100/70 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value="all">All Trainees</option>
+              {employees
+                .filter((e) => e.active && e.position !== 'OJT Instructor' && e.position !== 'HTE Representative')
+                .map((e) => (
+                  <option key={e.id} value={e.id}>
+                    {e.name}
+                  </option>
+                ))}
+            </select>
+
+            <select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50/70 text-xs font-semibold text-slate-700 hover:bg-slate-100/70 focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
+            >
+              <option value="all">All Status</option>
+              <option value="submitted">Needs Review</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="archived">Archived</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                const csvRows = [
+                  [
+                    'Trainee Name',
+                    'Student ID',
+                    'HTE Company',
+                    'HTE Supervisor',
+                    'Attendance Score',
+                    'Performance Score',
+                    'Attitude Score',
+                    'Communication Score',
+                    'Teamwork Score',
+                    'Overall Score',
+                    'Grade',
+                    'Status',
+                    'Submitted At',
+                  ],
+                ];
+                filtered.forEach((item) => {
+                  const tr = getTrainee(item.employeeId);
+                  csvRows.push([
+                    tr?.name || 'Trainee',
+                    tr?.employeeId || '',
+                    item.hostCompany,
+                    item.hostName,
+                    `${item.attendanceScore}%`,
+                    `${item.performanceScore}%`,
+                    `${item.attitudeScore}%`,
+                    `${item.communicationScore}%`,
+                    `${item.teamworkScore}%`,
+                    `${item.overallScore}%`,
+                    item.grade,
+                    item.status,
+                    item.submittedAt,
+                  ]);
+                });
+                const csvContent = csvRows.map((e) => e.join(',')).join('\n');
+                const url = URL.createObjectURL(new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' }));
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `HTE_Feedback_Summary_${new Date().toISOString().split('T')[0]}.csv`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                toast.success('HTE feedback exported to CSV!');
+              }}
+              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer"
+            >
+              <Download size={13} />
+              Export CSV
+            </button>
+
+            <span className="text-xs text-slate-500 font-medium">
+              Showing <strong className="text-slate-800">{filtered.length}</strong> submission
+              {filtered.length === 1 ? '' : 's'}
+            </span>
+          </div>
         </div>
       </div>
 
@@ -495,6 +546,19 @@ export function AdminHostFeedback() {
               <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
                 There are currently no trainee feedback or evaluation submissions matching the selected filters.
               </p>
+              {(searchQuery.trim() || employeeFilter !== 'all' || statusFilter !== 'all') && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('');
+                    setEmployeeFilter('all');
+                    setStatusFilter('all');
+                  }}
+                  className="mt-4 px-4 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors cursor-pointer"
+                >
+                  Clear Filters
+                </button>
+              )}
             </motion.div>
           ) : (
             filtered.map((item) => {

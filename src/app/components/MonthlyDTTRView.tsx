@@ -16,6 +16,7 @@ import {
   Send,
   ShieldCheck,
   Lock,
+  Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useApp } from '../store/AppContext';
@@ -71,6 +72,28 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     );
   }, [employees]);
 
+  const [traineeSearchQuery, setTraineeSearchQuery] = useState('');
+
+  const filteredTraineeList = useMemo(() => {
+    const trimmed = traineeSearchQuery.trim().toLowerCase();
+    if (!trimmed) return traineeList;
+    const tokens = trimmed.split(/\s+/).filter(Boolean);
+    return traineeList.filter((t) => {
+      const haystack = [
+        t.name,
+        t.employeeId,
+        t.email,
+        t.course,
+        t.companyName,
+        (t as any).company,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return tokens.every((tok) => haystack.includes(tok));
+    });
+  }, [traineeList, traineeSearchQuery]);
+
   const [selectedEmployeeId, setSelectedEmployeeId] = useState<string>(() => {
     if (defaultEmployeeId) return defaultEmployeeId;
     if (viewerRole === 'employee' && currentUser?.id) return currentUser.id;
@@ -90,10 +113,18 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
   const [hasSyncedCloudDttr, setHasSyncedCloudDttr] = useState(false);
 
   useEffect(() => {
-    if (defaultEmployeeId && defaultEmployeeId !== selectedEmployeeId) {
+    if (defaultEmployeeId) {
       setSelectedEmployeeId(defaultEmployeeId);
     }
-  }, [defaultEmployeeId, selectedEmployeeId]);
+  }, [defaultEmployeeId]);
+
+  useEffect(() => {
+    if (readOnlyTrainee) return;
+    if (!traineeSearchQuery.trim()) return;
+    if (filteredTraineeList.length > 0 && !filteredTraineeList.some((t) => t.id === selectedEmployeeId)) {
+      setSelectedEmployeeId(filteredTraineeList[0].id);
+    }
+  }, [traineeSearchQuery, filteredTraineeList, selectedEmployeeId, readOnlyTrainee]);
 
   useEffect(() => {
     const emp =
@@ -1149,62 +1180,160 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           </div>
         )}
 
-        {/* Dropdown Filters */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-3 border-t border-slate-100">
+        {/* Trainee Search & Dropdown Filters */}
+        <div className="pt-3 border-t border-slate-100 space-y-3">
           {!readOnlyTrainee && (
-            <div>
-              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                Select Trainee Intern
-              </label>
-              <div className="relative">
-                <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
-                <select
-                  value={selectedEmployeeId}
-                  onChange={(e) => setSelectedEmployeeId(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  {traineeList.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.name} ({t.employeeId || 'No ID'}) - {t.companyName || (t as any).company || 'Unassigned'}
-                    </option>
-                  ))}
-                </select>
+            <div className="space-y-2">
+              <div className="relative w-full">
+                <Search
+                  size={16}
+                  className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+                />
+                <input
+                  type="text"
+                  value={traineeSearchQuery}
+                  onChange={(e) => setTraineeSearchQuery(e.target.value)}
+                  placeholder="Search trainee intern by name, student ID, course, or HTE company..."
+                  aria-label="Search trainee intern"
+                  className="w-full pl-10 pr-36 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs sm:text-sm font-medium text-slate-800 placeholder:text-slate-400 hover:bg-slate-100/60 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+                />
+                {traineeSearchQuery.trim().length > 0 && (
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+                    <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      {filteredTraineeList.length}{' '}
+                      {filteredTraineeList.length === 1 ? 'match' : 'matches'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setTraineeSearchQuery('')}
+                      aria-label="Clear search"
+                      className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                )}
               </div>
+
+              {traineeSearchQuery.trim().length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {filteredTraineeList.length > 0 ? (
+                    <>
+                      <span className="text-[11px] font-semibold text-slate-400 mr-0.5">Quick select:</span>
+                      {filteredTraineeList.slice(0, 6).map((t) => {
+                        const isActive = t.id === selectedEmployeeId;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => setSelectedEmployeeId(t.id)}
+                            className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                              isActive
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
+                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'
+                            }`}
+                          >
+                            <span>{t.name}</span>
+                            {t.employeeId && (
+                              <span
+                                className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
+                                  isActive
+                                    ? 'bg-emerald-500/40 text-white'
+                                    : 'bg-white text-slate-500 border border-slate-200'
+                                }`}
+                              >
+                                {t.employeeId}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                      {filteredTraineeList.length > 6 && (
+                        <span className="text-[11px] text-slate-400 font-medium ml-1">
+                          +{filteredTraineeList.length - 6} more in dropdown
+                        </span>
+                      )}
+                    </>
+                  ) : (
+                    <div className="flex items-center gap-2 text-xs text-slate-500">
+                      <span>No trainee intern matching &ldquo;{traineeSearchQuery.trim()}&rdquo;.</span>
+                      <button
+                        type="button"
+                        onClick={() => setTraineeSearchQuery('')}
+                        className="text-blue-600 hover:underline font-semibold cursor-pointer"
+                      >
+                        Clear search
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           )}
 
-          <div>
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-              Month
-            </label>
-            <select
-              value={selectedMonth}
-              onChange={(e) => setSelectedMonth(Number(e.target.value))}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {MONTH_NAMES.map((name, idx) => (
-                <option key={name} value={idx + 1}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            {!readOnlyTrainee && (
+              <div>
+                <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                  Select Trainee Intern
+                  {traineeSearchQuery.trim() ? ` (${filteredTraineeList.length} of ${traineeList.length})` : ''}
+                </label>
+                <div className="relative">
+                  <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+                  <select
+                    value={filteredTraineeList.length > 0 ? selectedEmployeeId : ''}
+                    onChange={(e) => setSelectedEmployeeId(e.target.value)}
+                    className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    {filteredTraineeList.length === 0 ? (
+                      <option value="" disabled>
+                        No matching trainees
+                      </option>
+                    ) : (
+                      filteredTraineeList.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name} ({t.employeeId || 'No ID'}) - {t.companyName || (t as any).company || 'Unassigned'}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </div>
+              </div>
+            )}
 
-          <div>
-            <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-              Year
-            </label>
-            <select
-              value={selectedYear}
-              onChange={(e) => setSelectedYear(Number(e.target.value))}
-              className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
-            >
-              {[2024, 2025, 2026, 2027, 2028].map((yr) => (
-                <option key={yr} value={yr}>
-                  {yr}
-                </option>
-              ))}
-            </select>
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                Month
+              </label>
+              <select
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {MONTH_NAMES.map((name, idx) => (
+                  <option key={name} value={idx + 1}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                Year
+              </label>
+              <select
+                value={selectedYear}
+                onChange={(e) => setSelectedYear(Number(e.target.value))}
+                className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                {[2024, 2025, 2026, 2027, 2028].map((yr) => (
+                  <option key={yr} value={yr}>
+                    {yr}
+                  </option>
+                ))}
+              </select>
+            </div>
           </div>
         </div>
 

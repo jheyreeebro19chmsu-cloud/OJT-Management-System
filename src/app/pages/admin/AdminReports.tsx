@@ -268,6 +268,7 @@ export function AdminReports() {
   };
   const [selectedApprovalStatus, setSelectedApprovalStatus] = useState<'all' | 'pending' | 'approved' | 'disapproved'>('all');
   const [approvalNotice, setApprovalNotice] = useState<string | null>(null);
+  const [reportTraineeSearch, setReportTraineeSearch] = useState('');
 
   // Trainee Rendering Progress Data Table State
   const [traineeSearch, setTraineeSearch] = useState('');
@@ -345,6 +346,53 @@ export function AdminReports() {
     return set;
   }, [traineeEmployees]);
 
+  const searchedTraineeEmployees = useMemo(() => {
+    const trimmed = reportTraineeSearch.trim().toLowerCase();
+    if (!trimmed) return traineeEmployees;
+    const tokens = trimmed.split(/\s+/).filter(Boolean);
+    return traineeEmployees.filter((emp) => {
+      const haystack = [
+        emp.name,
+        emp.employeeId,
+        emp.email,
+        emp.course,
+        emp.department,
+        emp.companyName,
+        emp.supervisorName,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+      return tokens.every((tok) => haystack.includes(tok));
+    });
+  }, [traineeEmployees, reportTraineeSearch]);
+
+  const searchedTraineeIds = useMemo(() => {
+    const set = new Set<string>();
+    searchedTraineeEmployees.forEach((e) => {
+      if (e.id) set.add(e.id);
+      if (e.employeeId) set.add(e.employeeId);
+      if (e.email) set.add(e.email.toLowerCase());
+    });
+    return set;
+  }, [searchedTraineeEmployees]);
+
+  const activeScopeTrainees = useMemo(() => {
+    if (selectedEmpId === 'all') return searchedTraineeEmployees;
+    return traineeEmployees.filter((e) => e.id === selectedEmpId || e.employeeId === selectedEmpId);
+  }, [selectedEmpId, searchedTraineeEmployees, traineeEmployees]);
+
+  const dropdownTraineeOptions = useMemo(() => {
+    if (
+      selectedEmpId === 'all' ||
+      searchedTraineeEmployees.some((e) => e.id === selectedEmpId)
+    ) {
+      return searchedTraineeEmployees;
+    }
+    const selectedEmp = traineeEmployees.find((e) => e.id === selectedEmpId);
+    return selectedEmp ? [selectedEmp, ...searchedTraineeEmployees] : searchedTraineeEmployees;
+  }, [selectedEmpId, searchedTraineeEmployees, traineeEmployees]);
+
   // Attendance records filtered
   const filteredRecords = useMemo(() => {
     const defaultAY = settings?.academicYears?.[0] || '2025-2026';
@@ -379,12 +427,31 @@ export function AdminReports() {
         traineeEmployees.find((e) => e.id === selectedEmpId)?.employeeId === r.employeeId ||
         traineeEmployees.find((e) => e.id === selectedEmpId)?.email?.toLowerCase() === empIdStr;
 
+      const matchSearch =
+        selectedEmpId !== 'all' ||
+        !reportTraineeSearch.trim() ||
+        searchedTraineeIds.has(r.employeeId) ||
+        searchedTraineeIds.has(empIdStr) ||
+        Boolean(emp && searchedTraineeEmployees.some((e) => e.id === emp.id));
+
       const recAY = r.academicYear || emp?.academicYear || activeAY || defaultAY;
       const matchYear = selectedAcademicYear === 'all' || recAY === selectedAcademicYear;
 
-      return matchMonth && matchEmp && matchYear;
+      return matchMonth && matchEmp && matchSearch && matchYear;
     });
-  }, [timeRecords, selectedMonth, selectedEmpId, selectedAcademicYear, settings, traineeIds, traineeEmployees, employees]);
+  }, [
+    timeRecords,
+    selectedMonth,
+    selectedEmpId,
+    selectedAcademicYear,
+    settings,
+    traineeIds,
+    traineeEmployees,
+    employees,
+    reportTraineeSearch,
+    searchedTraineeIds,
+    searchedTraineeEmployees,
+  ]);
 
   // Daily chart data for attendance
   const dailyData = useMemo(() => {
@@ -412,10 +479,7 @@ export function AdminReports() {
 
   // Per-employee attendance summary with accurate record matching and lifetime/monthly breakdown
   const employeeSummary = useMemo(() => {
-    const activeTrainees =
-      selectedEmpId === 'all'
-        ? traineeEmployees
-        : traineeEmployees.filter((e) => e.id === selectedEmpId);
+    const activeTrainees = activeScopeTrainees;
 
     return activeTrainees
       .map((emp) => {
@@ -481,7 +545,7 @@ export function AdminReports() {
         };
       })
       .sort((a, b) => b.allTotalHours - a.allTotalHours || b.monthTotalHours - a.monthTotalHours);
-  }, [filteredRecords, timeRecords, traineeEmployees, selectedEmpId, selectedAcademicYear, settings]);
+  }, [filteredRecords, timeRecords, activeScopeTrainees, selectedAcademicYear, settings]);
 
   const filteredEmployeeSummary = useMemo(() => {
     let list = employeeSummary;
@@ -769,6 +833,114 @@ export function AdminReports() {
     URL.revokeObjectURL(url);
   };
 
+  const renderReportTraineeSearchBar = () => {
+    const hasQuery = reportTraineeSearch.trim().length > 0;
+    const quickMatches = searchedTraineeEmployees.slice(0, 6);
+    const remainingCount = Math.max(0, searchedTraineeEmployees.length - quickMatches.length);
+
+    return (
+      <div className="space-y-2">
+        <div className="relative w-full">
+          <Search
+            size={16}
+            className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"
+          />
+          <input
+            type="text"
+            value={reportTraineeSearch}
+            onChange={(e) => {
+              setReportTraineeSearch(e.target.value);
+              if (selectedEmpId !== 'all') setSelectedEmpId('all');
+              setTraineePage(1);
+            }}
+            placeholder="Search trainee by name, student ID, course, HTE company, or supervisor..."
+            aria-label="Search trainee"
+            className="w-full pl-10 pr-36 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 text-xs sm:text-sm font-medium text-slate-700 placeholder:text-slate-400 hover:bg-slate-100/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+          />
+          {hasQuery && (
+            <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                {searchedTraineeEmployees.length}{' '}
+                {searchedTraineeEmployees.length === 1 ? 'match' : 'matches'}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setReportTraineeSearch('');
+                  setSelectedEmpId('all');
+                  setTraineePage(1);
+                }}
+                aria-label="Clear search"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition-colors cursor-pointer"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          )}
+        </div>
+
+        {hasQuery && (
+          <div className="flex flex-wrap items-center gap-1.5">
+            {quickMatches.length > 0 ? (
+              <>
+                <span className="text-[11px] font-semibold text-slate-400 mr-0.5">Quick select:</span>
+                {quickMatches.map((emp) => {
+                  const isActive = selectedEmpId === emp.id;
+                  return (
+                    <button
+                      key={emp.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedEmpId(isActive ? 'all' : emp.id);
+                        setTraineePage(1);
+                      }}
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition-colors cursor-pointer ${
+                        isActive
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                          : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-blue-50 hover:text-blue-700 hover:border-blue-200'
+                      }`}
+                    >
+                      <span>{emp.name}</span>
+                      {emp.employeeId && (
+                        <span
+                          className={`text-[10px] font-mono px-1.5 py-0.2 rounded ${
+                            isActive ? 'bg-blue-500/40 text-white' : 'bg-white text-slate-500 border border-slate-200'
+                          }`}
+                        >
+                          {emp.employeeId}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+                {remainingCount > 0 && (
+                  <span className="text-[11px] text-slate-400 font-medium ml-1">
+                    +{remainingCount} more in dropdown
+                  </span>
+                )}
+              </>
+            ) : (
+              <div className="flex items-center gap-2 text-xs text-slate-500">
+                <span>No trainees matching &ldquo;{reportTraineeSearch.trim()}&rdquo;.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReportTraineeSearch('');
+                    setSelectedEmpId('all');
+                    setTraineePage(1);
+                  }}
+                  className="text-blue-600 hover:underline font-semibold cursor-pointer"
+                >
+                  Clear search
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="space-y-6">
       {/* Official Print-Only Header (CHMSU) */}
@@ -884,58 +1056,66 @@ export function AdminReports() {
       {activeTab === 'analytics' && (
         <div className="space-y-6">
           {/* Analytics Filter Toolbar */}
-          <div className="flex flex-wrap gap-3 no-print bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm items-center justify-between">
-            <div className="flex flex-wrap items-center gap-2.5">
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
-                <span className="text-xs font-semibold text-slate-500">AY:</span>
-                <select
-                  value={selectedAcademicYear}
-                  onChange={(e) => setSelectedAcademicYear(e.target.value)}
-                  className="text-xs font-bold text-blue-700 bg-transparent focus:outline-none"
-                >
-                  <option value="all">All Academic Years</option>
-                  {settings.academicYears.map((ay) => (
-                    <option key={ay} value={ay}>
-                      A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+          <div className="no-print bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm space-y-3">
+            {renderReportTraineeSearchBar()}
+
+            <div className="flex flex-wrap gap-3 items-center justify-between">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                  <span className="text-xs font-semibold text-slate-500">AY:</span>
+                  <select
+                    value={selectedAcademicYear}
+                    onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                    className="text-xs font-bold text-blue-700 bg-transparent focus:outline-none"
+                  >
+                    <option value="all">All Academic Years</option>
+                    {settings.academicYears.map((ay) => (
+                      <option key={ay} value={ay}>
+                        A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                  <Calendar size={13} className="text-slate-400" />
+                  <select
+                    value={selectedMonth}
+                    onChange={(e) => setSelectedMonth(e.target.value)}
+                    className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
+                  >
+                    {monthOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
+                  <Users size={13} className="text-slate-400" />
+                  <select
+                    value={selectedEmpId}
+                    onChange={(e) => setSelectedEmpId(e.target.value)}
+                    className="text-xs font-semibold text-slate-700 bg-transparent focus:outline-none"
+                  >
+                    <option value="all">
+                      {reportTraineeSearch.trim()
+                        ? `Matching Trainees (${searchedTraineeEmployees.length})`
+                        : `All Trainees (${traineeEmployees.length})`}
                     </option>
-                  ))}
-                </select>
+                    {dropdownTraineeOptions.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
-                <Calendar size={13} className="text-slate-400" />
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="text-xs font-bold text-slate-800 bg-transparent focus:outline-none"
-                >
-                  {monthOptions.map((opt) => (
-                    <option key={opt.value} value={opt.value}>
-                      {opt.label}
-                    </option>
-                  ))}
-                </select>
+              <div className="text-xs text-slate-500 font-medium">
+                Analyzing <strong className="text-slate-800">{filteredRecords.length}</strong> attendance records
               </div>
-
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5">
-                <Users size={13} className="text-slate-400" />
-                <select
-                  value={selectedEmpId}
-                  onChange={(e) => setSelectedEmpId(e.target.value)}
-                  className="text-xs font-semibold text-slate-700 bg-transparent focus:outline-none"
-                >
-                  <option value="all">All Trainees ({traineeEmployees.length})</option>
-                  {traineeEmployees.map((emp) => (
-                    <option key={emp.id} value={emp.id}>
-                      {emp.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div className="text-xs text-slate-500 font-medium">
-              Analyzing <strong className="text-slate-800">{filteredRecords.length}</strong> attendance records
             </div>
           </div>
 
@@ -943,7 +1123,7 @@ export function AdminReports() {
           <AdvancedAnalyticsDashboard
             records={filteredRecords}
             allRecords={timeRecords}
-            trainees={selectedEmpId === 'all' ? traineeEmployees : traineeEmployees.filter((e) => e.id === selectedEmpId)}
+            trainees={activeScopeTrainees}
             selectedMonth={selectedMonth}
             selectedAcademicYear={selectedAcademicYear}
           />
@@ -1327,65 +1507,73 @@ export function AdminReports() {
       {activeTab === 'attendance' && (
         <>
           {/* Filters */}
-          <div className="flex flex-wrap gap-3 no-print">
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
-              <span className="text-xs font-semibold text-gray-500">AY:</span>
-              <select
-                value={selectedAcademicYear}
-                onChange={(e) => setSelectedAcademicYear(e.target.value)}
-                className="text-sm font-semibold text-blue-700 bg-transparent focus:outline-none"
-              >
-                <option value="all">All Academic Years</option>
-                {settings.academicYears.map((ay) => (
-                  <option key={ay} value={ay}>
-                    A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
-              <Calendar size={14} className="text-gray-400" />
-              <select
-                value={selectedMonth}
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="text-sm text-gray-700 bg-transparent focus:outline-none"
-              >
-                {monthOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+          <div className="bg-white p-4 rounded-3xl border border-slate-200/80 shadow-sm space-y-3 no-print">
+            {renderReportTraineeSearchBar()}
 
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
-              <Filter size={14} className="text-gray-400" />
-              <select
-                value={selectedEmpId}
-                onChange={(e) => setSelectedEmpId(e.target.value)}
-                className="text-sm text-gray-700 bg-transparent focus:outline-none"
-              >
-                <option value="all">All Trainees</option>
-                {traineeEmployees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <div className="flex flex-wrap gap-3">
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                <span className="text-xs font-semibold text-gray-500">AY:</span>
+                <select
+                  value={selectedAcademicYear}
+                  onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                  className="text-sm font-semibold text-blue-700 bg-transparent focus:outline-none"
+                >
+                  <option value="all">All Academic Years</option>
+                  {settings.academicYears.map((ay) => (
+                    <option key={ay} value={ay}>
+                      A.Y. {ay} {ay === settings.activeAcademicYear ? '(Active)' : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                <Calendar size={14} className="text-gray-400" />
+                <select
+                  value={selectedMonth}
+                  onChange={(e) => setSelectedMonth(e.target.value)}
+                  className="text-sm text-gray-700 bg-transparent focus:outline-none"
+                >
+                  {monthOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-xl px-3 py-2">
-              <span className="text-xs font-semibold text-gray-500">DTR Status:</span>
-              <select
-                value={selectedApprovalStatus}
-                onChange={(e) => setSelectedApprovalStatus(e.target.value as any)}
-                className="text-sm font-semibold text-blue-700 bg-transparent focus:outline-none"
-              >
-                <option value="all">All Approval Statuses ({filteredRecords.length})</option>
-                <option value="pending">Pending Approval ({pendingApprovalCount})</option>
-                <option value="approved">Approved ({approvedCount})</option>
-                <option value="disapproved">Disapproved ({disapprovedCount})</option>
-              </select>
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                <Filter size={14} className="text-gray-400" />
+                <select
+                  value={selectedEmpId}
+                  onChange={(e) => setSelectedEmpId(e.target.value)}
+                  className="text-sm text-gray-700 bg-transparent focus:outline-none"
+                >
+                  <option value="all">
+                    {reportTraineeSearch.trim()
+                      ? `Matching Trainees (${searchedTraineeEmployees.length})`
+                      : 'All Trainees'}
+                  </option>
+                  {dropdownTraineeOptions.map((emp) => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2">
+                <span className="text-xs font-semibold text-gray-500">DTR Status:</span>
+                <select
+                  value={selectedApprovalStatus}
+                  onChange={(e) => setSelectedApprovalStatus(e.target.value as any)}
+                  className="text-sm font-semibold text-blue-700 bg-transparent focus:outline-none"
+                >
+                  <option value="all">All Approval Statuses ({filteredRecords.length})</option>
+                  <option value="pending">Pending Approval ({pendingApprovalCount})</option>
+                  <option value="approved">Approved ({approvedCount})</option>
+                  <option value="disapproved">Disapproved ({disapprovedCount})</option>
+                </select>
+              </div>
             </div>
           </div>
 
@@ -1448,7 +1636,7 @@ export function AdminReports() {
           <AdvancedAnalyticsDashboard
             records={filteredRecords}
             allRecords={timeRecords}
-            trainees={selectedEmpId === 'all' ? traineeEmployees : traineeEmployees.filter((e) => e.id === selectedEmpId)}
+            trainees={activeScopeTrainees}
             selectedMonth={selectedMonth}
             selectedAcademicYear={selectedAcademicYear}
           />
