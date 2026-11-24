@@ -66,11 +66,58 @@ export default function FaceScanner({
   const [deepFaceModel, setDeepFaceModel] = useState<DeepFaceModel>('VGG-Face');
   const [deepFaceResult, setDeepFaceResult] = useState<DeepFaceVerifyResult | null>(null);
 
-  // Blink Liveness Anti-Spoof Detection State
+  // Strict 3D Live-Face Challenge Anti-Spoof State
   const [livenessVerified, setLivenessVerified] = useState(false);
   const livenessVerifiedRef = useRef(false);
-  const blinkStateRef = useRef<'looking' | 'eyes_closed' | 'verified'>('looking');
+  const [livenessStepText, setLivenessStepText] = useState('🛡️ Live Check: Look straight ahead');
+  const blinkStateRef = useRef<'calibrating' | 'turn_head' | 'blink_or_smile' | 'verified'>('calibrating');
   const blinkFrameRef = useRef<string | null>(null);
+  const livenessStatsRef = useRef({
+    calibFrames: 0,
+    sumYaw: 0,
+    sumEAR: 0,
+    sumPitch: 0,
+    sumMouthToJaw: 0,
+    sumMAR: 0,
+    baselineYaw: 0.5,
+    baselineEAR: 0.28,
+    baselinePitch: 0.52,
+    baselineMouthToJaw: 0.42,
+    baselineMAR: 0.04,
+    baselineWidth: 0.35,
+    sawBlinkDrop: false,
+    prevCx: -1,
+    prevCy: -1,
+    prevWidth: 0,
+    missedFrames: 0,
+  });
+
+  const resetMobileLiveness = useCallback((badgeMsg = '🛡️ Live Check: Look straight ahead') => {
+    livenessVerifiedRef.current = false;
+    setLivenessVerified(false);
+    blinkStateRef.current = 'calibrating';
+    blinkFrameRef.current = null;
+    setLivenessStepText(badgeMsg);
+    livenessStatsRef.current = {
+      calibFrames: 0,
+      sumYaw: 0,
+      sumEAR: 0,
+      sumPitch: 0,
+      sumMouthToJaw: 0,
+      sumMAR: 0,
+      baselineYaw: 0.5,
+      baselineEAR: 0.28,
+      baselinePitch: 0.52,
+      baselineMouthToJaw: 0.42,
+      baselineMAR: 0.04,
+      baselineWidth: 0.35,
+      sawBlinkDrop: false,
+      prevCx: -1,
+      prevCy: -1,
+      prevWidth: 0,
+      missedFrames: 0,
+    };
+  }, []);
 
   const cameraRef = useRef<CameraView | null>(null);
   const isScanningRef = useRef(false);
@@ -211,11 +258,13 @@ export default function FaceScanner({
           return;
         }
 
-        // Fast lightweight snapshot for real-time analysis (reduces frame time by 90%)
+        // Fast silent snapshot for real-time 3D liveness & landmark analysis
         const photo = await cameraRef.current.takePictureAsync({
           quality: 0.35,
           base64: true,
-        });
+          shutterSound: false,
+          skipProcessing: true,
+        } as any);
 
         if (!photo || !photo.base64 || !isMountedRef.current || hasFinishedRef.current) {
           return;
@@ -223,10 +272,29 @@ export default function FaceScanner({
 
         const dataUrl = `data:image/jpeg;base64,${photo.base64}`;
 
-        // 1. Quality & Lighting Inspection
+        // 1. Quality, 68-Landmark 3D Geometry & Anti-Spoof Inspection
         const quality: BiometricQualityResult = await biometricService.inspectQuality(dataUrl);
 
         if (!isMountedRef.current || hasFinishedRef.current) return;
+
+        if (quality.screenSpoofSuspected) {
+          consecutiveStable = 0;
+          setStableCount(0);
+          resetMobileLiveness('🚨 Spoof Blocked: Show Live Face');
+          setScanStatus('failed');
+          setStatusMessage(quality.spoofReason || '🚨 Phone screen / photo detected! Live face required.');
+          triggerAlarmHaptic();
+          return;
+        }
+
+        if (quality.multipleFaces) {
+          consecutiveStable = 0;
+          setStableCount(0);
+          resetMobileLiveness('⚠️ Only one live face allowed');
+          setScanStatus('aligning');
+          setStatusMessage('⚠️ Multiple faces detected. Ensure only you are in view.');
+          return;
+        }
 
         // Severe pitch dark check only
         if (quality.tooDark) {
@@ -251,7 +319,7 @@ export default function FaceScanner({
           return;
         }
 
-        // Soft advisory cues — never block scanning
+        // Soft advisory cues
         if (quality.glassesDetected) {
           setStatusMessage('⚠️ Warning: Glasses detected. Please remove glasses');
         } else if (quality.capDetected) {
@@ -263,45 +331,158 @@ export default function FaceScanner({
         if (!quality.hasFace) {
           consecutiveStable = 0;
           setStableCount(0);
+          livenessStatsRef.current.missedFrames++;
+          if (livenessStatsRef.current.missedFrames >= 2) {
+            resetMobileLiveness('🛡️ Live Check: Center live face');
+          }
           setScanStatus('aligning');
-          setStatusMessage('Position face inside the oval');
-          Animated.timing(progressAnim, { toValue: 0.25, duration: 150, useNativeDriver: false }).start();
+          setStatusMessage('Position your live face inside the oval');
+          Animated.timing(progressAnim, { toValue: 0.15, duration: 150, useNativeDriver: false }).start();
           return;
+        }
+
+        livenessStatsRef.current.missedFrames = 0;
+
+        // 2. Mandatory 3D Live-Face Challenge (Blocks static photos & screen replays)
+        const stats = livenessStatsRef.current;
+        const yaw = quality.yawRatio ?? 0.5;
+        const ear = quality.ear ?? 0.28;
+        const pitch = quality.pitchRatio ?? 0.52;
+        const mouthToJaw = quality.mouthToJaw ?? 0.42;
+        const mar = quality.mar ?? 0.04;
+        const fw = quality.faceWidth ?? 0.35;
+        const cx = quality.faceCx ?? 0.5;
+        const cy = quality.faceCy ?? 0.5;
+
+        // Continuity check: reset if photo was swapped or jumped abruptly
+        if (stats.prevCx >= 0 && stats.prevWidth > 0) {
+          const jump = Math.hypot(cx - stats.prevCx, cy - stats.prevCy);
+          const scaleRatio = fw / Math.max(0.05, stats.prevWidth);
+          if (jump > 0.22 || scaleRatio > 1.38 || scaleRatio < 0.68) {
+            resetMobileLiveness('🛡️ Hold steady — Restarting live check');
+          }
+        }
+        stats.prevCx = cx;
+        stats.prevCy = cy;
+        stats.prevWidth = fw;
+
+        if (!livenessVerifiedRef.current) {
+          setScanStatus('analyzing');
+
+          if (blinkStateRef.current === 'calibrating') {
+            if (quality.faceCentered === false) {
+              setStatusMessage('Center face inside the oval guide');
+              return;
+            }
+            if (yaw >= 0.36 && yaw <= 0.64 && ear >= 0.175) {
+              stats.calibFrames++;
+              stats.sumYaw += yaw;
+              stats.sumEAR += ear;
+              stats.sumPitch += pitch;
+              stats.sumMouthToJaw += mouthToJaw;
+              stats.sumMAR += mar;
+              stats.baselineWidth = fw;
+
+              setLivenessStepText('🛡️ Calibrating 3D Face Mesh...');
+              setStatusMessage('Look straight ahead with eyes open...');
+              Animated.timing(progressAnim, { toValue: 0.30, duration: 150, useNativeDriver: false }).start();
+
+              if (stats.calibFrames >= 2) {
+                const n = stats.calibFrames;
+                stats.baselineYaw = stats.sumYaw / n;
+                stats.baselineEAR = stats.sumEAR / n;
+                stats.baselinePitch = stats.sumPitch / n;
+                stats.baselineMouthToJaw = stats.sumMouthToJaw / n;
+                stats.baselineMAR = stats.sumMAR / n;
+                blinkStateRef.current = 'turn_head';
+                setLivenessStepText('🛡️ Step 1/2: Turn Head Slightly Left or Right');
+                setStatusMessage('Turn your head slightly left or right');
+                Animated.timing(progressAnim, { toValue: 0.45, duration: 150, useNativeDriver: false }).start();
+              }
+            } else {
+              setStatusMessage('Look straight at the camera with eyes open');
+            }
+            return;
+          }
+
+          if (blinkStateRef.current === 'turn_head') {
+            // Flat 2D photos on another phone preserve nose-to-jaw collinear ratio (~0.50) when tilted!
+            const yawDelta = Math.abs(yaw - stats.baselineYaw);
+            const scaleOk = fw > stats.baselineWidth * 0.62 && fw < stats.baselineWidth * 1.48;
+            if (yawDelta >= 0.11 && scaleOk) {
+              blinkStateRef.current = 'blink_or_smile';
+              setLivenessStepText('🛡️ Step 2/2: Face Forward & Smile or Blink');
+              setStatusMessage('Now look straight ahead and smile or blink slowly');
+              Animated.timing(progressAnim, { toValue: 0.72, duration: 150, useNativeDriver: false }).start();
+            } else {
+              setStatusMessage('Step 1/2: Slowly turn your head left or right');
+            }
+            return;
+          }
+
+          if (blinkStateRef.current === 'blink_or_smile') {
+            const backToCenter = Math.abs(yaw - stats.baselineYaw) <= 0.115;
+            const pitchSteady =
+              Math.abs(pitch - stats.baselinePitch) / Math.max(0.15, stats.baselinePitch) <= 0.15;
+
+            if (!backToCenter) {
+              setStatusMessage('Return face to center, then smile or blink');
+              return;
+            }
+
+            if (pitchSteady) {
+              const blinkThresh = Math.min(stats.baselineEAR * 0.79, stats.baselineEAR - 0.042);
+              if (ear <= blinkThresh) {
+                stats.sawBlinkDrop = true;
+                blinkFrameRef.current = dataUrl;
+                setStatusMessage('Good! Now open eyes & look straight ahead...');
+                Animated.timing(progressAnim, { toValue: 0.88, duration: 120, useNativeDriver: false }).start();
+                return;
+              }
+
+              const blinkCompleted = stats.sawBlinkDrop && ear >= stats.baselineEAR * 0.87;
+              const smileCompleted =
+                ear >= 0.18 &&
+                (mouthToJaw >= stats.baselineMouthToJaw * 1.12 || mar >= stats.baselineMAR + 0.14);
+
+              if (blinkCompleted || smileCompleted) {
+                blinkStateRef.current = 'verified';
+                livenessVerifiedRef.current = true;
+                setLivenessVerified(true);
+                setLivenessStepText('✓ Live 3D Face Verified');
+                Animated.timing(progressAnim, { toValue: 0.92, duration: 150, useNativeDriver: false }).start();
+              } else {
+                setStatusMessage('Step 2/2: Blink slowly or smile at the camera');
+                return;
+              }
+            } else {
+              setStatusMessage('Keep phone level and blink or smile');
+              return;
+            }
+          }
         }
 
         if (quality.faceCentered === false) {
-          consecutiveStable = 0;
-          setStableCount(0);
-          setScanStatus('aligning');
-          setStatusMessage('Center face inside the oval guide');
-          Animated.timing(progressAnim, { toValue: 0.35, duration: 150, useNativeDriver: false }).start();
+          setStatusMessage('Center your live face inside the oval');
           return;
         }
 
-        // 3. Mode-Specific Evaluation
+        // 3. Mode-Specific Evaluation (Reached ONLY after 3D live-face verification passes!)
         if (mode === 'enroll') {
-          // Fast Face Enrollment: 2 stable frames
           consecutiveStable++;
           setStableCount(consecutiveStable);
           setScanStatus('analyzing');
 
-          const progressTarget = Math.min(0.50 + consecutiveStable * 0.25, 0.95);
-          Animated.timing(progressAnim, { toValue: progressTarget, duration: 150, useNativeDriver: false }).start();
-
-          if (consecutiveStable < 2) {
-            setStatusMessage(`Scanning face biometrics... Hold steady (${consecutiveStable}/2)`);
-          } else {
-            // Take high-quality capture for database profile photo
-            try {
-              const finalPhoto = await cameraRef.current.takePictureAsync({
-                quality: 0.85,
-                base64: true,
-              });
-              const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : dataUrl;
-              handleSuccess(finalDataUrl);
-            } catch {
-              handleSuccess(dataUrl);
-            }
+          try {
+            const finalPhoto = await cameraRef.current.takePictureAsync({
+              quality: 0.85,
+              base64: true,
+              shutterSound: false,
+            } as any);
+            const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : dataUrl;
+            handleSuccess(finalDataUrl);
+          } catch {
+            handleSuccess(dataUrl);
           }
         } else if (mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') {
           if (!enrolledPhoto) {
@@ -314,17 +495,18 @@ export default function FaceScanner({
           }
 
           setScanStatus('verifying');
-          setStatusMessage('Verifying face biometrics...');
-          Animated.timing(progressAnim, { toValue: 0.65, duration: 150, useNativeDriver: false }).start();
+          setStatusMessage('Live face verified! Matching identity...');
+          Animated.timing(progressAnim, { toValue: 0.95, duration: 150, useNativeDriver: false }).start();
 
-          // Step A: Fast On-Device Biometric Verification (instant, ~50ms, zero lag!)
-          const localBio = await biometricService.verifyBiometrics(enrolledPhoto, dataUrl, 0.58).catch(() => null);
+          // Step A: On-Device Neural 128-D Biometric Verification (strict 0.56 threshold)
+          const localBio = await biometricService.verifyBiometrics(enrolledPhoto, dataUrl, 0.56).catch(() => null);
           if (localBio && localBio.matched) {
             try {
               const finalPhoto = await cameraRef.current.takePictureAsync({
                 quality: 0.85,
                 base64: true,
-              });
+                shutterSound: false,
+              } as any);
               const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : dataUrl;
               handleSuccess(finalDataUrl, localBio.confidence, localBio.distance);
             } catch {
@@ -333,7 +515,7 @@ export default function FaceScanner({
             return;
           }
 
-          // Step B: Server DeepFace AI Verification (fallback with tight 2.5s timeout)
+          // Step B: Server DeepFace AI Verification (fallback)
           const dfRes: DeepFaceVerifyResult = await deepfaceService.verifyFace(
             enrolledPhoto,
             dataUrl,
@@ -348,16 +530,21 @@ export default function FaceScanner({
               const finalPhoto = await cameraRef.current.takePictureAsync({
                 quality: 0.85,
                 base64: true,
-              });
+                shutterSound: false,
+              } as any);
               const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : dataUrl;
               handleSuccess(finalDataUrl, dfRes.similarity_percent, dfRes.distance);
             } catch {
               handleSuccess(dataUrl, dfRes.similarity_percent, dfRes.distance);
             }
           } else {
-            consecutiveStable = 0;
-            setStableCount(0);
-            setStatusMessage(`Hold steady... Aligning biometrics (${dfRes.similarity_percent}% sim)`);
+            resetMobileLiveness('🛡️ Mismatch — Repeat Live Check');
+            setScanStatus('failed');
+            setStatusMessage('❌ Identity mismatch against enrolled face');
+            setErrorMessage(
+              localBio?.error ||
+                `Face does not match enrolled template for ${employeeName || 'this trainee'}.`
+            );
           }
         }
       } catch (err: any) {
@@ -367,21 +554,31 @@ export default function FaceScanner({
       }
     };
 
-    // Run auto-scan cycle every 550ms smoothly
-    scanTimer = setInterval(runAutoScan, 550);
+    // Run auto-scan cycle every 340ms for responsive 3D head-turn & blink/smile detection
+    scanTimer = setInterval(runAutoScan, 340);
 
     return () => {
       if (scanTimer) clearInterval(scanTimer);
     };
-  }, [cameraReady, mode, enrolledPhoto, handleSuccess, progressAnim]);
+  }, [cameraReady, mode, enrolledPhoto, handleSuccess, progressAnim, resetMobileLiveness, triggerAlarmHaptic, deepFaceModel, employeeName]);
 
-  // Manual shutter trigger fallback
+  // Manual shutter trigger fallback (Strictly gated by 3D live-face verification!)
   async function handleManualCapture() {
     if (!cameraRef.current || isCapturing || hasFinishedRef.current) return;
+
+    if (!livenessVerifiedRef.current) {
+      triggerAlarmHaptic();
+      setStatusMessage('🛡️ Complete Live Check First (Turn Head & Smile/Blink)');
+      setErrorMessage(
+        'Static photos and phone screens are blocked. Please complete Step 1 (turn head slightly) and Step 2 (smile or blink) before capturing.'
+      );
+      return;
+    }
+
     setIsCapturing(true);
     setErrorMessage(null);
     setScanStatus('verifying');
-    setStatusMessage('Capturing & analyzing biometrics...');
+    setStatusMessage('Capturing & analyzing live biometrics...');
 
     try {
       if (typeof cameraRef.current.takePictureAsync !== 'function') {
@@ -391,23 +588,28 @@ export default function FaceScanner({
       const photo = await cameraRef.current.takePictureAsync({
         quality: 0.88,
         base64: true,
-      });
+        shutterSound: false,
+      } as any);
 
       if (!photo || !photo.base64) {
         throw new Error('No image captured. Please try again.');
       }
 
       const base64Data = `data:image/jpeg;base64,${photo.base64}`;
-
-      // Enforce fail-closed bare-face obstruction and lighting checks FIRST
       const quality = await biometricService.inspectQuality(base64Data);
 
-      // Soft advisory checks — only fail if image is completely dark or washed out with glare
+      if (quality.screenSpoofSuspected) {
+        resetMobileLiveness('🚨 Spoof Blocked: Show Live Face');
+        setScanStatus('failed');
+        setErrorMessage(quality.spoofReason || 'Device screen or photo spoof detected. Only live faces are allowed.');
+        setStatusMessage('🚨 Photo / Screen Blocked');
+        setIsCapturing(false);
+        return;
+      }
+
       if ((quality.tooDark && quality.brightness < 20) || (quality.tooBright && quality.brightness > 248)) {
         setScanStatus('failed');
-        try {
-          Vibration.vibrate([0, 400, 150, 400]);
-        } catch {}
+        triggerAlarmHaptic();
         const reason = quality.tooDark ? '🚨 Lighting too dark! Please move to a well-lit area.' : '🚨 Harsh glare! Please adjust camera away from direct lights.';
         setErrorMessage(reason);
         setStatusMessage(quality.tooDark ? '⚠️ Too Dark' : '⚠️ Harsh Glare');
@@ -417,20 +619,17 @@ export default function FaceScanner({
 
       if (!quality.hasFace) {
         setScanStatus('failed');
-        setErrorMessage('No face detected in capture. Please position face clearly inside the oval.');
+        setErrorMessage('No clear live face detected in capture. Please position face clearly inside the oval.');
         setStatusMessage('⚠️ No face detected');
         setIsCapturing(false);
         return;
       }
 
-      // If in enrollment mode, successful clear bare face capture
       if (mode === 'enroll') {
         handleSuccess(base64Data);
         return;
       }
 
-
-      // If in DTR verification mode, check against enrolled photo with DeepFace AI
       if (mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') {
         if (!enrolledPhoto) {
           setScanStatus('failed');
@@ -440,7 +639,13 @@ export default function FaceScanner({
           return;
         }
 
-        setStatusMessage('Verifying facial template...');
+        setStatusMessage('Verifying live facial template...');
+        const localBio = await biometricService.verifyBiometrics(enrolledPhoto, base64Data, 0.56).catch(() => null);
+        if (localBio && localBio.matched) {
+          handleSuccess(base64Data, localBio.confidence, localBio.distance);
+          return;
+        }
+
         const dfRes = await deepfaceService.verifyFace(enrolledPhoto, base64Data, {
           modelName: deepFaceModel,
           blinkImage: blinkFrameRef.current || undefined,
@@ -450,9 +655,11 @@ export default function FaceScanner({
           handleSuccess(base64Data, dfRes.similarity_percent, dfRes.distance);
           return;
         } else {
+          resetMobileLiveness('🛡️ Mismatch — Repeat Live Check');
           setScanStatus('failed');
           setErrorMessage(
-            `Facial Mismatch: Does not match enrolled template for ${employeeName || 'this student'} (${dfRes.similarity_percent}% similarity, distance ${dfRes.distance.toFixed(2)} >= ${dfRes.threshold}). Please center face and ensure bright lighting.`
+            localBio?.error ||
+              `Facial Mismatch: Does not match enrolled template for ${employeeName || 'this student'}.`
           );
           setStatusMessage('⚠️ Verification failed. Please retake.');
           setIsCapturing(false);
@@ -470,17 +677,15 @@ export default function FaceScanner({
   }
 
   function toggleFacing() {
+    resetMobileLiveness();
     setFacing((prev) => (prev === 'front' ? 'back' : 'front'));
   }
 
   function handleResetScan() {
     hasFinishedRef.current = false;
-    livenessVerifiedRef.current = false;
-    setLivenessVerified(false);
-    blinkStateRef.current = 'looking';
-    blinkFrameRef.current = null;
+    resetMobileLiveness();
     setScanStatus('aligning');
-    setStatusMessage('Position face inside the oval');
+    setStatusMessage('Position your live face inside the oval');
     setErrorMessage(null);
     setCapturedPhoto(null);
     setStableCount(0);
@@ -620,17 +825,17 @@ export default function FaceScanner({
           <View
             style={[
               styles.livenessBadge,
-              styles.livenessBadgeVerified,
+              livenessVerified ? styles.livenessBadgeVerified : styles.livenessBadgePending,
             ]}
           >
-            <Eye size={12} color="#4ade80" />
+            <Eye size={12} color={livenessVerified ? '#4ade80' : '#facc15'} />
             <Text
               style={[
                 styles.livenessBadgeText,
-                { color: '#4ade80' },
+                { color: livenessVerified ? '#4ade80' : '#fef08a' },
               ]}
             >
-              {mode === 'enroll' ? '📷 Scanning Face for Enrollment' : '🔍 Scanning Face Biometrics'}
+              {livenessStepText}
             </Text>
           </View>
 
@@ -719,7 +924,7 @@ export default function FaceScanner({
             <TouchableOpacity
               style={[
                 styles.captureShutterBtn,
-                (isCapturing || scanStatus === 'success') && { opacity: 0.6 },
+                (isCapturing || scanStatus === 'success' || !livenessVerified) && { opacity: 0.45 },
                 { borderColor: getBorderColor() },
               ]}
               onPress={handleManualCapture}
@@ -731,7 +936,7 @@ export default function FaceScanner({
                 ) : scanStatus === 'success' ? (
                   <Check size={26} color="#16a34a" />
                 ) : (
-                  <Camera size={26} color="#0284c7" />
+                  <Camera size={26} color={livenessVerified ? '#16a34a' : '#64748b'} />
                 )}
               </View>
             </TouchableOpacity>
@@ -739,8 +944,10 @@ export default function FaceScanner({
 
           <Text style={styles.hudInstructionText}>
             {scanStatus === 'success'
-              ? '✓ Authentication complete. Finalizing...'
-              : 'Automatic continuous scan active • Or tap button to capture'}
+              ? '✓ Live face authenticated. Finalizing...'
+              : livenessVerified
+                ? '✓ Live 3D face verified • Auto-matching or tap button'
+                : 'Live 3D anti-spoofing active • Photos from other devices are blocked'}
           </Text>
         </View>
       </View>

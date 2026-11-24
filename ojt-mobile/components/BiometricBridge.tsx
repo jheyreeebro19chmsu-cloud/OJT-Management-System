@@ -130,49 +130,87 @@ const BRIDGE_HTML = `
       }
     }
 
+    function flipImageToCanvas(img) {
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth || img.width || 320;
+      c.height = img.naturalHeight || img.height || 240;
+      const ctx = c.getContext('2d');
+      ctx.translate(c.width, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      return c;
+    }
+
+    async function extractNeuralDescriptor(source) {
+      const opts320 = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.22, inputSize: 320 });
+      const opts224 = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.18, inputSize: 224 });
+      let det = await faceapi.detectSingleFace(source, opts320).withFaceLandmarks().withFaceDescriptor();
+      if (!det || !det.descriptor) {
+        det = await faceapi.detectSingleFace(source, opts224).withFaceLandmarks().withFaceDescriptor();
+      }
+      return det && det.descriptor ? det.descriptor : null;
+    }
+
     async function handleVerify(req) {
-      const { id, registered, live, threshold = 0.52 } = req;
+      const { id, registered, live, threshold = 0.56 } = req;
       try {
+        if (!modelsReady) {
+          sendToNative({
+            id,
+            success: false,
+            matched: false,
+            distance: Infinity,
+            confidence: 0,
+            error: 'Neural biometric models are still initializing'
+          });
+          return;
+        }
+
         const [img1, img2] = await Promise.all([loadImage(registered), loadImage(live)]);
-        let d1Desc = null;
-        let d2Desc = null;
-        let isPerceptual = false;
+        const [d1Desc, d2Desc] = await Promise.all([
+          extractNeuralDescriptor(img1),
+          extractNeuralDescriptor(img2)
+        ]);
 
-        if (modelsReady) {
-          try {
-            const detectorOpts = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.15, inputSize: 320 });
-            const [d1, d2] = await Promise.all([
-              faceapi.detectSingleFace(img1, detectorOpts).withFaceLandmarks().withFaceDescriptor(),
-              faceapi.detectSingleFace(img2, detectorOpts).withFaceLandmarks().withFaceDescriptor()
-            ]);
-            if (d1?.descriptor && d2?.descriptor) {
-              d1Desc = d1.descriptor;
-              d2Desc = d2.descriptor;
-            }
-          } catch (e) {
-            console.warn('face-api detection notice, fallback to perceptual:', e);
-          }
-        }
-
+        // SECURITY: Strictly require neural 68-landmark face descriptors on BOTH images (no perceptual RGB fallback)
         if (!d1Desc || !d2Desc) {
-          d1Desc = computePerceptualDescriptor(img1);
-          d2Desc = computePerceptualDescriptor(img2);
-          isPerceptual = true;
+          sendToNative({
+            id,
+            success: false,
+            matched: false,
+            distance: Infinity,
+            confidence: 0,
+            error: !d1Desc
+              ? 'Registered photo lacks clear neural facial landmarks. Please re-enroll your live face.'
+              : 'No clear live human face detected in camera frame.'
+          });
+          return;
         }
 
-        const distance = calculateEuclideanDistance(d1Desc, d2Desc);
-        const effectiveThreshold = isPerceptual ? Math.min(threshold, 0.35) : threshold;
-        const matched = distance <= effectiveThreshold;
-        const confidence = Math.max(0, Math.min(100, Math.round((1 - distance / effectiveThreshold) * 100)));
+        let bestDistance = calculateEuclideanDistance(d1Desc, d2Desc);
+        if (bestDistance > 0.38) {
+          try {
+            const flippedCanvas = flipImageToCanvas(img2);
+            const d2Flipped = await extractNeuralDescriptor(flippedCanvas);
+            if (d2Flipped) {
+              const flippedDist = calculateEuclideanDistance(d1Desc, d2Flipped);
+              if (flippedDist < bestDistance) bestDistance = flippedDist;
+            }
+          } catch (e) {}
+        }
+
+        const effectiveThreshold = Math.min(threshold, 0.56);
+        const matched = bestDistance <= effectiveThreshold;
+        const confidence = Math.max(0, Math.min(100, Math.round((1 - bestDistance / effectiveThreshold) * 100)));
 
         sendToNative({
           id,
           success: true,
           matched,
-          distance: parseFloat(distance.toFixed(3)),
+          distance: parseFloat(bestDistance.toFixed(3)),
           confidence,
           threshold: effectiveThreshold,
-          perceptual: isPerceptual
+          perceptual: false
         });
       } catch (err) {
         sendToNative({
@@ -241,25 +279,46 @@ const BRIDGE_HTML = `
         let maskDetected = false;
         let glassesDetected = false;
         let capDetected = false;
+        let poorBackgroundLighting = false;
+        let multipleFaces = false;
+        let screenSpoofSuspected = false;
+        let spoofReason = '';
+        let ear = 0.30;
+        let eyesClosed = false;
+        let yawRatio = 0.50;
+        let pitchRatio = 0.52;
+        let mouthToJaw = 0.42;
+        let mar = 0.04;
+        let faceWidth = 0;
+        let faceCx = 0.50;
+        let faceCy = 0.48;
 
         if (modelsReady) {
-          const detectorOpts = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.14, inputSize: 224 });
-          let det = null;
+          const detectorOpts = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.25, inputSize: 224 });
+          let detections = [];
           try {
-            det = await faceapi.detectSingleFace(img, detectorOpts).withFaceLandmarks();
+            detections = await faceapi.detectAllFaces(canvas, detectorOpts).withFaceLandmarks();
+            if (!detections || detections.length === 0) {
+              const opts320 = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.22, inputSize: 320 });
+              detections = await faceapi.detectAllFaces(canvas, opts320).withFaceLandmarks();
+            }
           } catch (e) {
-            det = await faceapi.detectSingleFace(img, detectorOpts);
+            detections = [];
           }
 
-          if (det) {
-            hasFace = true;
+          if (detections && detections.length > 1) {
+            multipleFaces = true;
+            hasFace = false;
+          } else if (detections && detections.length === 1) {
+            const det = detections[0];
             const box = det.box || (det.detection ? det.detection.box : null) || { x: 40, y: 30, width: 240, height: 180 };
             const landmarks = det.landmarks ? det.landmarks.positions : null;
+            hasFace = Boolean(landmarks && landmarks.length >= 68);
 
-            const faceCx = (box.x + box.width / 2) / canvas.width;
-            const faceCy = (box.y + box.height / 2) / canvas.height;
+            faceCx = (box.x + box.width / 2) / canvas.width;
+            faceCy = (box.y + box.height / 2) / canvas.height;
             // Face should be roughly centered within oval guide
-            if (Math.abs(faceCx - 0.50) > 0.22 || Math.abs(faceCy - 0.48) > 0.25) {
+            if (Math.abs(faceCx - 0.50) > 0.26 || Math.abs(faceCy - 0.48) > 0.28) {
               faceCentered = false;
             }
 
@@ -276,7 +335,7 @@ const BRIDGE_HTML = `
               }
             }
             const bgLum = bgSamples > 0 ? Math.round(bgLumSum / bgSamples) : avgLum;
-            const poorBackgroundLighting = bgLum < 45 || avgLum < 38;
+            poorBackgroundLighting = bgLum < 30 || avgLum < 28;
 
             // 1. Cheek Skin Tone Baseline Sampling
             let cx1, cy1, cx2, cy2;
@@ -518,19 +577,72 @@ const BRIDGE_HTML = `
               }
             }
 
-            // 5. EAR Liveness Anti-Spoof Detection
-            let ear = 0.30;
-            let eyesClosed = false;
+            // 5. 3D Perspective & Non-Rigid Liveness Metrics + Screen Anti-Spoofing
             if (landmarks && landmarks.length >= 68) {
               const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
               const rEAR = (dist(landmarks[37], landmarks[41]) + dist(landmarks[38], landmarks[40])) / (2.0 * Math.max(1, dist(landmarks[36], landmarks[39])));
               const lEAR = (dist(landmarks[43], landmarks[47]) + dist(landmarks[44], landmarks[46])) / (2.0 * Math.max(1, dist(landmarks[42], landmarks[45])));
               ear = (rEAR + lEAR) / 2.0;
-              eyesClosed = ear < 0.20;
+              eyesClosed = ear < 0.21;
+
+              const jawSpanX = Math.max(1, landmarks[16].x - landmarks[0].x);
+              yawRatio = (landmarks[30].x - landmarks[0].x) / jawSpanX;
+              const outerEyeSpan = Math.max(1, dist(landmarks[36], landmarks[45]));
+              pitchRatio = dist(landmarks[27], landmarks[33]) / outerEyeSpan;
+              mouthToJaw = dist(landmarks[48], landmarks[54]) / Math.max(1, dist(landmarks[3], landmarks[13]));
+              const innerMouthW = Math.max(1, dist(landmarks[60], landmarks[64]));
+              const innerMouthH = (dist(landmarks[61], landmarks[67]) + dist(landmarks[62], landmarks[66]) + dist(landmarks[63], landmarks[65])) / 3.0;
+              mar = innerMouthH / innerMouthW;
+              faceWidth = dist(landmarks[0], landmarks[16]) / canvas.width;
+              faceCx = landmarks[30].x / canvas.width;
+              faceCy = landmarks[30].y / canvas.height;
+
+              // Passive LCD/OLED blue-cast & rectangular phone bezel border anti-spoofing
+              if (cheek1.b > cheek1.r + 26 && cheek2.b > cheek2.r + 26 && cheek1.lum > 60 && cheek2.lum > 60) {
+                screenSpoofSuspected = true;
+                spoofReason = 'Digital screen backlight detected — Only live faces are allowed.';
+              } else {
+                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+                for (let k = 0; k < landmarks.length; k++) {
+                  if (landmarks[k].x < minX) minX = landmarks[k].x;
+                  if (landmarks[k].x > maxX) maxX = landmarks[k].x;
+                  if (landmarks[k].y < minY) minY = landmarks[k].y;
+                  if (landmarks[k].y > maxY) maxY = landmarks[k].y;
+                }
+                const fw = maxX - minX;
+                const fh = maxY - minY;
+                if (minX > 18 && maxX < canvas.width - 18 && fw < canvas.width * 0.68) {
+                  const hasBezelRay = (startX, dirX, y) => {
+                    let prevLum = getPixel(imgData, canvas.width, canvas.height, startX, y).lum;
+                    let sawScreen = prevLum > 75;
+                    for (let step = 3; step <= 60; step += 3) {
+                      const x = startX + dirX * step;
+                      if (x <= 3 || x >= canvas.width - 4) break;
+                      const curLum = getPixel(imgData, canvas.width, canvas.height, x, y).lum;
+                      if (curLum > 85) sawScreen = true;
+                      if (sawScreen && prevLum - curLum > 48 && curLum < 22) {
+                        const outerLum = getPixel(imgData, canvas.width, canvas.height, x + dirX * 12, y).lum;
+                        if (outerLum > curLum + 24) return true;
+                      }
+                      prevLum = curLum;
+                    }
+                    return false;
+                  };
+                  const y1 = minY + fh * 0.35;
+                  const y2 = minY + fh * 0.65;
+                  if (
+                    hasBezelRay(minX, -1, y1) &&
+                    hasBezelRay(minX, -1, y2) &&
+                    hasBezelRay(maxX, 1, y1) &&
+                    hasBezelRay(maxX, 1, y2)
+                  ) {
+                    screenSpoofSuspected = true;
+                    spoofReason = 'Phone bezel / photo screen detected — Present your live face.';
+                  }
+                }
+              }
             }
           }
-        } else {
-          hasFace = true;
         }
 
         const faceObscured = Boolean(avgLum < 20 || avgLum > 248);
@@ -547,14 +659,24 @@ const BRIDGE_HTML = `
           tooDark: avgLum < 22,
           tooBright: avgLum > 248,
           brightness: avgLum,
-          ear: typeof ear !== 'undefined' ? parseFloat(ear.toFixed(3)) : 0.30,
-          eyesClosed: Boolean(eyesClosed)
+          ear: parseFloat(ear.toFixed(4)),
+          eyesClosed: Boolean(eyesClosed),
+          yawRatio: parseFloat(yawRatio.toFixed(4)),
+          pitchRatio: parseFloat(pitchRatio.toFixed(4)),
+          mouthToJaw: parseFloat(mouthToJaw.toFixed(4)),
+          mar: parseFloat(mar.toFixed(4)),
+          faceWidth: parseFloat(faceWidth.toFixed(4)),
+          faceCx: parseFloat(faceCx.toFixed(4)),
+          faceCy: parseFloat(faceCy.toFixed(4)),
+          multipleFaces: Boolean(multipleFaces),
+          screenSpoofSuspected: Boolean(screenSpoofSuspected),
+          spoofReason
         });
       } catch (err) {
         sendToNative({
           id,
-          hasFace: true,
-          faceCentered: true,
+          hasFace: false,
+          faceCentered: false,
           capDetected: false,
           glassesDetected: false,
           maskDetected: false,

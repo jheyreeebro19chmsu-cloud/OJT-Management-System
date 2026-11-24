@@ -25,6 +25,16 @@ export interface BiometricQualityResult {
   faceObscured?: boolean;
   ear?: number;
   eyesClosed?: boolean;
+  yawRatio?: number;
+  pitchRatio?: number;
+  mouthToJaw?: number;
+  mar?: number;
+  faceWidth?: number;
+  faceCx?: number;
+  faceCy?: number;
+  multipleFaces?: boolean;
+  screenSpoofSuspected?: boolean;
+  spoofReason?: string;
   error?: string;
 }
 
@@ -184,10 +194,11 @@ class BiometricService {
     const ready = await this.waitForReady();
     if (!ready || !this.sender) {
       return {
-        hasFace: true,
+        hasFace: false,
         tooDark: false,
         tooBright: false,
         brightness: 128,
+        error: 'Biometric engine still loading',
       };
     }
 
@@ -197,10 +208,11 @@ class BiometricService {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(id);
         resolve({
-          hasFace: true,
+          hasFace: false,
           tooDark: false,
           tooBright: false,
           brightness: 128,
+          error: 'Inspection timed out',
         });
       }, 8000);
 

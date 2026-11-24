@@ -144,12 +144,12 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
 
     let dynamicRadius = 50; // default 50 meters small perimeter
     let matchedHteZone: any = null;
+    const pName = (profile?.name || '').trim().toLowerCase();
+    const pCompany = (profile?.companyName || '').trim().toLowerCase();
+    const hasCompany = Boolean(pCompany && pCompany !== 'n/a' && pCompany !== 'pending');
     try {
       const zones = await mobileDb.getGeofenceZones();
       const empId = profile?.id || profile?.employeeId || '';
-      const pName = (profile?.name || '').trim().toLowerCase();
-      const pCompany = (profile?.companyName || '').trim().toLowerCase();
-      const hasCompany = pCompany && pCompany !== 'n/a' && pCompany !== 'pending';
 
       matchedHteZone = zones.find((z) => {
         const zName = (z.name || '').toLowerCase();
@@ -187,6 +187,8 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
         radius: 40,
       });
     }
+
+    if (targetCoords.length === 0) {
       // 2. Geofence zones from Supabase fallback only if no registered account location
       try {
         const zones = await mobileDb.getGeofenceZones();

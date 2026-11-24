@@ -769,16 +769,229 @@ async function flipDataUrlHorizontally(dataUrl: string): Promise<string> {
   return canvas.toDataURL('image/jpeg', 0.85);
 }
 
+export interface LandmarkLivenessMetrics {
+  ear: number;
+  yawRatio: number;
+  eyeWidthAsymmetry: number;
+  pitchRatio: number;
+  mouthToJaw: number;
+  mar: number;
+  faceWidth: number;
+  faceHeight: number;
+  faceCx: number;
+  faceCy: number;
+}
+
+/**
+ * Computes 3D perspective & non-rigid facial expression metrics from 68 landmarks.
+ * - `yawRatio`: (p30.x - p0.x) / (p16.x - p0.x). On a flat 2D photo/phone screen, p0, p30, p16
+ *   are coplanar, so tilting/rotating the phone preserves this ratio (~0.50). Only a genuine 3D
+ *   human head with nasal protrusion shifts yawRatio significantly (< 0.38 or > 0.62).
+ * - `pitchRatio`: noseLength / outerEyeSpan. Stays constant during real blinks/smiles, whereas
+ *   tilting a flat photo vertically foreshortens pitchRatio proportionally with EAR.
+ * - `mouthToJaw` & `mar`: Non-rigid mouth movement invariants that cannot change on a static photo.
+ */
+export function computeLandmarkLivenessMetrics(
+  pts: Array<{ x: number; y: number }>
+): LandmarkLivenessMetrics | null {
+  if (!pts || pts.length < 68) return null;
+
+  const dist = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+    Math.hypot(a.x - b.x, a.y - b.y);
+
+  // Eye Aspect Ratio (EAR) - Right (36..41) & Left (42..47)
+  const rEAR =
+    (dist(pts[37], pts[41]) + dist(pts[38], pts[40])) /
+    (2.0 * Math.max(1, dist(pts[36], pts[39])));
+  const lEAR =
+    (dist(pts[43], pts[47]) + dist(pts[44], pts[46])) /
+    (2.0 * Math.max(1, dist(pts[42], pts[45])));
+  const ear = (rEAR + lEAR) / 2.0;
+
+  // 3D Horizontal Yaw Parallax Ratio (Nose tip 30 relative to jaw contour 0..16)
+  const jawSpanX = Math.max(1, pts[16].x - pts[0].x);
+  const yawRatio = (pts[30].x - pts[0].x) / jawSpanX;
+
+  // 3D Eye Foreshortening Asymmetry
+  const rEyeW = dist(pts[36], pts[39]);
+  const lEyeW = Math.max(1, dist(pts[42], pts[45]));
+  const eyeWidthAsymmetry = rEyeW / lEyeW;
+
+  // Vertical Rigid Midface Ratio (Nose bridge 27 -> base 33 vs outer eye span 36..45)
+  const outerEyeSpan = Math.max(1, dist(pts[36], pts[45]));
+  const noseLength = dist(pts[27], pts[33]);
+  const pitchRatio = noseLength / outerEyeSpan;
+
+  // Non-rigid Smile & Inner-Lip Mouth Aspect Ratio (MAR)
+  const lowerJawWidth = Math.max(1, dist(pts[3], pts[13]));
+  const mouthWidth = dist(pts[48], pts[54]);
+  const mouthToJaw = mouthWidth / lowerJawWidth;
+
+  const innerMouthW = Math.max(1, dist(pts[60], pts[64]));
+  const innerMouthH =
+    (dist(pts[61], pts[67]) + dist(pts[62], pts[66]) + dist(pts[63], pts[65])) / 3.0;
+  const mar = innerMouthH / innerMouthW;
+
+  const faceWidth = Math.max(1, dist(pts[0], pts[16]));
+  const faceHeight = Math.max(1, dist(pts[27], pts[8]));
+
+  return {
+    ear: Number(ear.toFixed(4)),
+    yawRatio: Number(yawRatio.toFixed(4)),
+    eyeWidthAsymmetry: Number(eyeWidthAsymmetry.toFixed(4)),
+    pitchRatio: Number(pitchRatio.toFixed(4)),
+    mouthToJaw: Number(mouthToJaw.toFixed(4)),
+    mar: Number(mar.toFixed(4)),
+    faceWidth,
+    faceHeight,
+    faceCx: pts[30].x,
+    faceCy: pts[30].y,
+  };
+}
+
+let _spoofProbeCanvas: HTMLCanvasElement | null = null;
+
+/**
+ * Passive anti-spoofing check for 2D phone/tablet screen replay or printed/framed photo borders:
+ * 1. Detects sharp rectangular device bezel step-edges surrounding the face inside the camera frame.
+ * 2. Detects unnatural LCD/OLED backlight blue-channel dominance / clipped specular screen washout on skin.
+ */
+export function detectScreenSpoofArtifacts(
+  source: HTMLVideoElement | HTMLImageElement,
+  pts: Array<{ x: number; y: number }>
+): { suspected: boolean; reason?: string } {
+  if (!pts || pts.length < 68 || typeof document === 'undefined') {
+    return { suspected: false };
+  }
+
+  const srcW =
+    source instanceof HTMLVideoElement ? source.videoWidth : source.naturalWidth || source.width;
+  const srcH =
+    source instanceof HTMLVideoElement ? source.videoHeight : source.naturalHeight || source.height;
+  if (!srcW || !srcH) return { suspected: false };
+
+  try {
+    if (!_spoofProbeCanvas) {
+      _spoofProbeCanvas = document.createElement('canvas');
+    }
+    const W = 160;
+    const H = Math.max(120, Math.round((srcH / srcW) * W));
+    if (_spoofProbeCanvas.width !== W || _spoofProbeCanvas.height !== H) {
+      _spoofProbeCanvas.width = W;
+      _spoofProbeCanvas.height = H;
+    }
+    const ctx = _spoofProbeCanvas.getContext('2d', { willReadFrequently: true });
+    if (!ctx) return { suspected: false };
+
+    ctx.drawImage(source, 0, 0, W, H);
+    const data = ctx.getImageData(0, 0, W, H).data;
+    const sx = W / srcW;
+    const sy = H / srcH;
+
+    const getPx = (x: number, y: number) => {
+      const cx = Math.max(0, Math.min(W - 1, Math.round(x)));
+      const cy = Math.max(0, Math.min(H - 1, Math.round(y)));
+      const idx = (cy * W + cx) * 4;
+      const r = data[idx];
+      const g = data[idx + 1];
+      const b = data[idx + 2];
+      return { r, g, b, lum: 0.299 * r + 0.587 * g + 0.114 * b };
+    };
+
+    // Sample left & right cheek patches + forehead for biological skin reflectance vs OLED/LCD emission
+    const cheek1 = getPx(((pts[30].x + pts[3].x) / 2) * sx, ((pts[30].y + pts[3].y) / 2) * sy);
+    const cheek2 = getPx(((pts[30].x + pts[13].x) / 2) * sx, ((pts[30].y + pts[13].y) / 2) * sy);
+    const foreY = Math.max(2, ((pts[21].y + pts[22].y) / 2 - (pts[33].y - pts[27].y) * 0.45) * sy);
+    const fore = getPx(pts[27].x * sx, foreY);
+
+    // Biological human skin always has hemoglobin red >= blue under normal illumination.
+    // Uncalibrated LCD/OLED screens held to a camera frequently exhibit strong blue backlight excess.
+    const strongScreenBlueCast =
+      cheek1.b > cheek1.r + 26 &&
+      cheek2.b > cheek2.r + 26 &&
+      fore.b > fore.r + 22 &&
+      cheek1.lum > 60 &&
+      cheek2.lum > 60;
+
+    if (strongScreenBlueCast) {
+      return {
+        suspected: true,
+        reason: 'Digital screen backlight detected — Only live faces are allowed.',
+      };
+    }
+
+    // Check for dark rectangular phone bezel framing the face inside the viewport
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const p of pts) {
+      const px = p.x * sx;
+      const py = p.y * sy;
+      if (px < minX) minX = px;
+      if (px > maxX) maxX = px;
+      if (py < minY) minY = py;
+      if (py > maxY) maxY = py;
+    }
+
+    const faceW = maxX - minX;
+    const faceH = maxY - minY;
+    // Only check bezel if there is margin around the face where a held-up phone border would appear
+    if (minX > 14 && maxX < W - 14 && faceW < W * 0.68) {
+      const midY1 = minY + faceH * 0.35;
+      const midY2 = minY + faceH * 0.65;
+
+      const hasSharpDarkBezelRay = (startX: number, dirX: -1 | 1, y: number): boolean => {
+        let prevLum = getPx(startX, y).lum;
+        let sawBrightScreenEdge = prevLum > 75;
+        let hitDarkBezelBand = false;
+        for (let step = 2; step <= 42; step += 2) {
+          const x = startX + dirX * step;
+          if (x <= 2 || x >= W - 3) break;
+          const curLum = getPx(x, y).lum;
+          if (curLum > 85) sawBrightScreenEdge = true;
+          // Sharp drop from backlit screen (>80) into black glass phone bezel (<22)
+          if (sawBrightScreenEdge && prevLum - curLum > 48 && curLum < 22) {
+            // Confirm bezel band has finite thickness and transitions to outer background
+            const outerLum = getPx(x + dirX * 8, y).lum;
+            if (outerLum > curLum + 24) {
+              hitDarkBezelBand = true;
+              break;
+            }
+          }
+          prevLum = curLum;
+        }
+        return hitDarkBezelBand;
+      };
+
+      const leftBezelTop = hasSharpDarkBezelRay(minX, -1, midY1);
+      const leftBezelBot = hasSharpDarkBezelRay(minX, -1, midY2);
+      const rightBezelTop = hasSharpDarkBezelRay(maxX, 1, midY1);
+      const rightBezelBot = hasSharpDarkBezelRay(maxX, 1, midY2);
+
+      // Vertical alignment check: phone bezels form straight vertical lines on both left & right sides
+      if (leftBezelTop && leftBezelBot && rightBezelTop && rightBezelBot) {
+        return {
+          suspected: true,
+          reason: 'Device screen border detected — Do not scan a photo from another phone.',
+        };
+      }
+    }
+  } catch {
+    // non-fatal
+  }
+
+  return { suspected: false };
+}
+
 /**
  * Strict Biometric Verification matching algorithm:
- * Uses 128-D embedding Euclidean distance with optimal 0.58 threshold for justadudewhohacks/face-api.js.
- * Fails closed whenever face-api models are unavailable or biometrics cannot be verified.
+ * Uses 128-D neural embedding Euclidean distance with optimal 0.58 threshold for face-api.js.
+ * Strictly requires neural 68-landmark face descriptors on BOTH registered and live frames
+ * (never falls back to perceptual RGB block matching) and fails closed if models are unavailable.
  */
 export async function strictBiometricVerify(
   registeredDataUrl: string,
   liveDataUrl: string,
   threshold = 0.58,
-  skipQualityCheck = false
+  _skipQualityCheck = false
 ): Promise<{ matched: boolean; distance: number; confidence: number; error?: string }> {
   if (!registeredDataUrl || !liveDataUrl) {
     return {
@@ -791,52 +1004,34 @@ export async function strictBiometricVerify(
     };
   }
 
-  const modelsAvailable = _modelsLoaded;
+  const modelsAvailable = _modelsLoaded || (await loadFaceModels().catch(() => false));
+  if (!modelsAvailable) {
+    return {
+      matched: false,
+      distance: Infinity,
+      confidence: 0,
+      error: 'Biometric AI models not ready. Please wait for facial recognition models to initialize.',
+    };
+  }
 
   const [t1, t2] = await Promise.all([
     computeTypedDescriptorFromDataUrl(registeredDataUrl),
     computeTypedDescriptorFromDataUrl(liveDataUrl),
   ]);
 
-  if (!t1 || !t2) {
-    if (!modelsAvailable) {
-      return {
-        matched: false,
-        distance: Infinity,
-        confidence: 0,
-        error: 'Biometric AI models not ready. Please wait for facial recognition models to initialize.',
-      };
-    }
+  if (!t1 || !t2 || t1.type !== 'neural' || t2.type !== 'neural') {
     return {
       matched: false,
       distance: Infinity,
       confidence: 0,
-      error: !t1
-        ? 'Could not extract 128-D facial descriptor from registered profile photo.'
-        : 'No face detected or could not extract facial descriptor from live camera frame.',
+      error: !t1 || t1.type !== 'neural'
+        ? 'Could not extract neural 128-D facial landmarks from registered profile photo. Please re-enroll your live face.'
+        : 'No clear live human face detected in camera frame.',
     };
   }
 
-  let d1 = t1.descriptor;
-  let d2 = t2.descriptor;
-  let isPerceptual = false;
-
-  // If one is neural and the other is perceptual, project both into the exact same perceptual feature space
-  if (t1.type !== t2.type) {
-    try {
-      const [img1, img2] = await Promise.all([
-        createImageElement(registeredDataUrl),
-        createImageElement(liveDataUrl),
-      ]);
-      d1 = computePerceptualDescriptor(img1);
-      d2 = computePerceptualDescriptor(img2);
-      isPerceptual = true;
-    } catch {
-      isPerceptual = true;
-    }
-  } else if (t1.type === 'perceptual') {
-    isPerceptual = true;
-  }
+  const d1 = t1.descriptor;
+  const d2 = t2.descriptor;
 
   const dist = descriptorDistance(d1, d2);
 
@@ -846,16 +1041,8 @@ export async function strictBiometricVerify(
     try {
       const flippedLiveUrl = await flipDataUrlHorizontally(liveDataUrl);
       const t2Flipped = await computeTypedDescriptorFromDataUrl(flippedLiveUrl);
-      if (t2Flipped) {
-        let d2Flipped = t2Flipped.descriptor;
-        if (t1.type !== t2Flipped.type) {
-          const [img1, img2F] = await Promise.all([
-            createImageElement(registeredDataUrl),
-            createImageElement(flippedLiveUrl),
-          ]);
-          d2Flipped = computePerceptualDescriptor(img2F);
-        }
-        const flippedDist = descriptorDistance(d1, d2Flipped);
+      if (t2Flipped && t2Flipped.type === 'neural') {
+        const flippedDist = descriptorDistance(d1, t2Flipped.descriptor);
         if (flippedDist < bestDist) {
           bestDist = flippedDist;
         }
@@ -865,10 +1052,7 @@ export async function strictBiometricVerify(
     }
   }
 
-  // Neural embedding strict threshold is 0.62 (justadudewhohacks face-api standard).
-  // Perceptual space strict threshold is 0.35 to strictly block different people.
-  const effectiveThreshold = isPerceptual ? Math.min(threshold, 0.35) : threshold;
-
+  const effectiveThreshold = Math.min(threshold, 0.58);
   const matched = bestDist <= effectiveThreshold;
   const confidence = Math.max(0, Math.min(100, Math.round((1 - bestDist / effectiveThreshold) * 100)));
 
