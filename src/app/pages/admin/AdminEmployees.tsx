@@ -293,108 +293,6 @@ export function AdminEmployees() {
     };
   };
 
-  const handleInstructorUploadTraineeDoc = async (
-    targetTrainee: Employee,
-    docKey: string,
-    docTitle: string,
-    fileList: FileList | null,
-    append: boolean = true
-  ) => {
-    if (!fileList || fileList.length === 0) return;
-    const rawFiles = Array.from(fileList);
-    try {
-      const currentDocs = targetTrainee.submittedDocuments || {};
-      const existingDoc = (currentDocs as any)[docKey];
-      const existingFiles = append ? resolveTraineeDocFiles(targetTrainee.id, docKey, existingDoc) : [];
-
-      const newlyProcessed: TraineeDocumentFile[] = [];
-      for (let i = 0; i < rawFiles.length; i++) {
-        const file = rawFiles[i];
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(file);
-        });
-        let remoteUrl = '';
-        try {
-          const u = await uploadDocumentToStorage(targetTrainee.id, `${docKey}_inst_${Date.now()}_${i}`, file, file.name);
-          if (u && u.startsWith('http')) remoteUrl = u;
-        } catch {}
-        const finalUrl = remoteUrl || dataUrl;
-        newlyProcessed.push({
-          id: `inst-up-${Date.now()}-${i}`,
-          name: file.name,
-          size: file.size,
-          dataUrl: finalUrl,
-          fileUrl: finalUrl,
-          fileType: file.type || 'application/pdf',
-          uploadedAt: new Date().toISOString(),
-        });
-      }
-
-      const allFiles = [...existingFiles, ...newlyProcessed];
-      const primary = allFiles[0];
-      const totalBytes = allFiles.reduce((s, f) => s + (Number(f.size) || 0), 0);
-      const displayName = allFiles.length > 1 ? `${allFiles.length} Files (${primary.name})` : primary.name;
-
-      try {
-        const serialized = JSON.stringify(allFiles);
-        localStorage.setItem(`ojt_shared_doc_files_${targetTrainee.id}_${docKey}`, serialized);
-        localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serialized);
-        if (targetTrainee.employeeId) {
-          localStorage.setItem(`ojt_shared_doc_files_${targetTrainee.employeeId}_${docKey}`, serialized);
-        }
-      } catch {}
-
-      const updatedDocItem = {
-        ...(existingDoc || {}),
-        name: displayName,
-        size: totalBytes,
-        dataUrl: primary.dataUrl,
-        fileUrl: primary.fileUrl,
-        fileType: primary.fileType,
-        uploadedAt: new Date().toISOString(),
-        status: existingDoc?.status === 'passed' ? 'passed' : 'submitted',
-        notes: existingDoc?.notes || `Uploaded by ${currentUser?.name || 'Instructor'}`,
-        source: 'portal' as const,
-        files: allFiles,
-      };
-
-      const updatedDocs: TraineeDocuments = {
-        ...currentDocs,
-        [docKey]: updatedDocItem,
-      };
-
-      await updateEmployee(targetTrainee.id, {
-        submittedDocuments: updatedDocs,
-        documentsStatus: targetTrainee.documentsStatus === 'passed' ? 'passed' : 'submitted',
-      });
-      saveDocumentPassStatus(targetTrainee.id, {
-        docKey,
-        status: updatedDocItem.status,
-        submittedDocuments: updatedDocs,
-        documentItem: updatedDocItem,
-      }).catch(console.warn);
-
-      if (selectedEmp && selectedEmp.id === targetTrainee.id) {
-        setSelectedEmp({
-          ...selectedEmp,
-          submittedDocuments: updatedDocs,
-        });
-      }
-      try {
-        window.dispatchEvent(new CustomEvent('ojt_employee_documents_updated'));
-      } catch {}
-      toast.success(
-        `Uploaded ${newlyProcessed.length} file${newlyProcessed.length > 1 ? 's' : ''} to "${docTitle}" for ${targetTrainee.name}! Both accounts can now review.`
-      );
-    } catch (err: any) {
-      console.error('Instructor upload to trainee doc error:', err);
-      toast.error('Failed to upload file(s): ' + (err?.message || 'Error'));
-    }
-  };
-
   const handleAddDocSubmit = async () => {
     const filesToProcess = addDocFiles.length > 0 ? addDocFiles : addDocFile ? [addDocFile] : [];
     const effectiveTitle =
@@ -6036,32 +5934,6 @@ export function AdminEmployees() {
                                 </button>
                               )}
 
-                              {/* Instructor Direct Upload File(s) to Trainee Account */}
-                              <label
-                                className="py-1.5 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                title="Upload 1 or multiple files directly to this trainee's document record"
-                              >
-                                <Upload size={13} /> {hasFile ? '+ Add File(s)' : 'Upload File(s)'}
-                                <input
-                                  type="file"
-                                  multiple
-                                  accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
-                                  className="hidden"
-                                  onChange={(e) => {
-                                    if (e.target.files && e.target.files.length > 0) {
-                                      handleInstructorUploadTraineeDoc(
-                                        selectedEmp,
-                                        docItem.key,
-                                        docItem.title,
-                                        e.target.files,
-                                        hasFile
-                                      );
-                                      e.target.value = '';
-                                    }
-                                  }}
-                                />
-                              </label>
-
                               <button
                                 type="button"
                                 onClick={async () => {
@@ -6328,32 +6200,6 @@ export function AdminEmployees() {
                                       <Download size={13} /> {resolvedCustomFiles.length > 1 ? `Download (${resolvedCustomFiles.length})` : 'Download'}
                                     </button>
                                   )}
-
-                                  {/* Instructor Direct Upload File(s) to Trainee Custom Requirement */}
-                                  <label
-                                    className="py-1.5 px-3 rounded-xl bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 text-xs font-semibold inline-flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-2xs"
-                                    title="Upload 1 or multiple files directly to this trainee's custom requirement"
-                                  >
-                                    <Upload size={13} /> {hasFile ? '+ Add File(s)' : 'Upload File(s)'}
-                                    <input
-                                      type="file"
-                                      multiple
-                                      accept=".pdf,.doc,.docx,.png,.jpg,.jpeg,.webp"
-                                      className="hidden"
-                                      onChange={(e) => {
-                                        if (e.target.files && e.target.files.length > 0) {
-                                          handleInstructorUploadTraineeDoc(
-                                            selectedEmp,
-                                            cReq.id,
-                                            cReq.title,
-                                            e.target.files,
-                                            hasFile
-                                          );
-                                          e.target.value = '';
-                                        }
-                                      }}
-                                    />
-                                  </label>
 
                                   {/* Approve / Revoke */}
                                   <button
