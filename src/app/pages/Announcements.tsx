@@ -1361,70 +1361,74 @@ export function Announcements() {
                     </div>
                   )}
 
-                  {/* Upload single or multiple files + message */}
-                  <textarea
-                    value={messageDrafts[announcement.id] || ''}
-                    onChange={(e) => setMessageDrafts((prev) => ({ ...prev, [announcement.id]: e.target.value }))}
-                    rows={2}
-                    placeholder="Type a note or response (optional if attaching files)..."
-                    className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-
-                  {(filesDrafts[announcement.id] || []).length > 0 && (
-                    <div className="flex flex-wrap gap-1.5">
-                      {(filesDrafts[announcement.id] || []).map((f, idx) => (
-                        <div
-                          key={`${f.name}-${idx}`}
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900"
-                        >
-                          <FileText size={12} className="text-blue-600 shrink-0" />
-                          <span className="font-semibold truncate max-w-[160px]">{idx + 1}. {f.name}</span>
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setFilesDrafts((prev) => ({
-                                ...prev,
-                                [announcement.id]: (prev[announcement.id] || []).filter((_, i) => i !== idx),
-                              }))
-                            }
-                            className="text-rose-500 hover:text-rose-700 cursor-pointer"
-                          >
-                            <X size={11} />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <label className="text-xs font-semibold flex items-center gap-1.5 px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer transition-colors">
-                      <Upload size={13} />
-                      <span>{(filesDrafts[announcement.id] || []).length > 0 ? '+ Add More Files' : 'Upload File(s) (Single or Multiple)'}</span>
-                      <input
-                        type="file"
-                        multiple
-                        accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
-                        className="hidden"
-                        onChange={(e) => {
-                          onPickFiles(announcement.id, e.target.files);
-                          e.target.value = '';
-                        }}
+                  {/* Trainee-only: Upload single or multiple files + message */}
+                  {!isInstructor && (
+                    <>
+                      <textarea
+                        value={messageDrafts[announcement.id] || ''}
+                        onChange={(e) => setMessageDrafts((prev) => ({ ...prev, [announcement.id]: e.target.value }))}
+                        rows={2}
+                        placeholder="Type a note or response (optional if attaching files)..."
+                        className="w-full px-3 py-2 text-xs sm:text-sm bg-white border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                       />
-                    </label>
-                    {(filesDrafts[announcement.id] || []).length > 0 && (
-                      <span className="text-[11px] font-bold text-emerald-700">
-                        {(filesDrafts[announcement.id] || []).length} file(s) ready
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => submit(announcement)}
-                      className="ml-auto px-4 py-2 rounded-xl bg-blue-600 text-white text-xs sm:text-sm font-bold hover:bg-blue-700 transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <CheckCircle size={15} />
-                      <span>{submission ? 'Update Submission' : 'Turn In File(s)'}</span>
-                    </button>
-                  </div>
+
+                      {(filesDrafts[announcement.id] || []).length > 0 && (
+                        <div className="flex flex-wrap gap-1.5">
+                          {(filesDrafts[announcement.id] || []).map((f, idx) => (
+                            <div
+                              key={`${f.name}-${idx}`}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-blue-50 border border-blue-200 text-xs text-blue-900"
+                            >
+                              <FileText size={12} className="text-blue-600 shrink-0" />
+                              <span className="font-semibold truncate max-w-[160px]">{idx + 1}. {f.name}</span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setFilesDrafts((prev) => ({
+                                    ...prev,
+                                    [announcement.id]: (prev[announcement.id] || []).filter((_, i) => i !== idx),
+                                  }))
+                                }
+                                className="text-rose-500 hover:text-rose-700 cursor-pointer"
+                              >
+                                <X size={11} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <label className="text-xs font-semibold flex items-center gap-1.5 px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700 hover:bg-blue-100 cursor-pointer transition-colors">
+                          <Upload size={13} />
+                          <span>{(filesDrafts[announcement.id] || []).length > 0 ? '+ Add More Files' : 'Upload File(s) (Single or Multiple)'}</span>
+                          <input
+                            type="file"
+                            multiple
+                            accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
+                            className="hidden"
+                            onChange={(e) => {
+                              onPickFiles(announcement.id, e.target.files);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                        {(filesDrafts[announcement.id] || []).length > 0 && (
+                          <span className="text-[11px] font-bold text-emerald-700">
+                            {(filesDrafts[announcement.id] || []).length} file(s) ready
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => submit(announcement)}
+                          className="ml-auto px-4 py-2 rounded-xl bg-blue-600 text-white text-xs sm:text-sm font-bold hover:bg-blue-700 transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <CheckCircle size={15} />
+                          <span>{submission ? 'Update Submission' : 'Turn In File(s)'}</span>
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               )}
 
