@@ -1386,7 +1386,7 @@ export function Documents() {
   };
 
   return (
-    <div className="space-y-6 pb-12 max-w-5xl mx-auto">
+    <div className="space-y-6 pb-12 max-w-6xl mx-auto">
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
         <div>
@@ -1718,122 +1718,200 @@ export function Documents() {
                       : 'hover:bg-slate-50/60'
                   }`}
                 >
-                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                    {/* Left Column: Requirement Information */}
-                    <div className="flex items-start gap-3 min-w-0 lg:max-w-[36%]">
-                      <div
-                        className={`w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs bg-gradient-to-br ${
-                          item.color || 'from-blue-600 to-indigo-600'
-                        }`}
-                      >
-                        <Icon size={18} />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
-                            DOC #{item.num}
-                          </span>
-                          {item.custom && (
-                            <span className="text-[9px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.2 rounded border border-purple-200">
-                              Custom
-                            </span>
-                          )}
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            • {item.allowedFileTypes?.length
-                                ? item.allowedFileTypes.map((t: string) => t.replace('.', '').toUpperCase()).join(', ')
-                                : 'PDF, DOCX, Pictures'} (Max {item.maxFileSize ? Math.round(item.maxFileSize / (1024 * 1024)) : 10}MB)
-                          </span>
+                  <div className="flex flex-col gap-3.5">
+                    {/* Top Row: Requirement Information & Status Badge */}
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
+                      {/* Left: Requirement Information */}
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div
+                          className={`w-10 h-10 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs bg-gradient-to-br ${
+                            item.color || 'from-blue-600 to-indigo-600'
+                          }`}
+                        >
+                          <Icon size={18} />
                         </div>
-                        <h3 className="text-sm font-bold text-slate-900 leading-snug">{item.title}</h3>
-                        <p className="text-xs text-slate-500 leading-relaxed mt-0.5 line-clamp-2" title={item.desc}>
-                          {item.desc}
-                        </p>
-
-                        {/* Instructor Template Chip if provided */}
-                        {(item as any).instructorDoc && (
-                          <div className="mt-2 flex flex-col gap-1">
-                            <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200/80 text-violet-900 text-[11px] w-fit max-w-full">
-                              <FileText size={13} className="text-violet-600 shrink-0" />
-                              <span className="font-semibold truncate max-w-[170px]" title={(item as any).instructorDoc.fileName}>
-                                Template: {(item as any).instructorDoc.fileName}
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">
+                              DOC #{item.num}
+                            </span>
+                            {item.custom && (
+                              <span className="text-[9px] font-bold bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded border border-purple-200">
+                                Custom
                               </span>
-                              {(item as any).instructorDoc.files && (item as any).instructorDoc.files.length > 1 && (
-                                <span className="px-1.5 py-0.5 rounded bg-violet-200/80 text-violet-900 font-extrabold text-[9px] shrink-0">
-                                  {(item as any).instructorDoc.files.length} Files
+                            )}
+                            <span className="text-[10px] text-slate-400 font-medium">
+                              • {item.allowedFileTypes?.length
+                                  ? item.allowedFileTypes.map((t: string) => t.replace('.', '').toUpperCase()).join(', ')
+                                  : 'PDF, DOCX, Pictures'} (Max {item.maxFileSize ? Math.round(item.maxFileSize / (1024 * 1024)) : 10}MB)
+                            </span>
+                          </div>
+                          <h3 className="text-sm font-bold text-slate-900 leading-snug mt-0.5">{item.title}</h3>
+                          <p className="text-xs text-slate-500 leading-relaxed mt-0.5" title={item.desc}>
+                            {item.desc}
+                          </p>
+
+                          {/* Instructor Template Chip if provided */}
+                          {(item as any).instructorDoc && (
+                            <div className="mt-2 flex flex-col gap-1">
+                              <div className="inline-flex items-center gap-2 px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200/80 text-violet-900 text-[11px] w-fit max-w-full flex-wrap">
+                                <FileText size={13} className="text-violet-600 shrink-0" />
+                                <span className="font-semibold truncate max-w-[220px]" title={(item as any).instructorDoc.fileName}>
+                                  Template: {(item as any).instructorDoc.fileName}
                                 </span>
-                              )}
-                              <div className="flex items-center gap-1 shrink-0">
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const docInfo = (item as any).instructorDoc;
-                                    const instFiles: TraineeDocumentFile[] =
-                                      docInfo.files && docInfo.files.length > 0
-                                        ? docInfo.files.map((f: TraineeDocumentFile) => ({
-                                            ...f,
-                                            dataUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || ''),
-                                            fileUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || ''),
-                                          }))
-                                        : [
-                                            {
-                                              id: 'inst-file-0',
-                                              name: docInfo.fileName || `${item.key}_template.pdf`,
-                                              size: docInfo.fileSize,
-                                              dataUrl: resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || ''),
-                                              fileUrl: resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || ''),
-                                            },
-                                          ];
-                                    const firstInst = instFiles[0];
-                                    setPreviewDoc({
-                                      key: item.key,
-                                      title: `Instructor Document: ${item.title}`,
-                                      subtitle: firstInst.name,
-                                      fileName: firstInst.name || `${item.key}_template.pdf`,
-                                      dataUrl: firstInst.fileUrl || firstInst.dataUrl || '',
-                                      fileSize: firstInst.size || docInfo.fileSize,
-                                      status: 'passed',
-                                      description: item.desc,
-                                      notes: docInfo.notes,
-                                      files: instFiles,
-                                      activeFileIndex: 0,
-                                    });
-                                  }}
-                                  className="text-violet-700 hover:text-violet-900 font-bold hover:underline cursor-pointer"
-                                >
-                                  View{(item as any).instructorDoc.files?.length > 1 ? ` (${(item as any).instructorDoc.files.length})` : ''}
-                                </button>
-                                <span>•</span>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    const docInfo = (item as any).instructorDoc;
-                                    if (docInfo.files && docInfo.files.length > 1) {
-                                      docInfo.files.forEach((f: TraineeDocumentFile) => {
-                                        const u = resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || '');
-                                        if (u) downloadDocument(u, f.name);
+                                {(item as any).instructorDoc.files && (item as any).instructorDoc.files.length > 1 && (
+                                  <span className="px-1.5 py-0.5 rounded bg-violet-200/80 text-violet-900 font-extrabold text-[9px] shrink-0">
+                                    {(item as any).instructorDoc.files.length} Files
+                                  </span>
+                                )}
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const docInfo = (item as any).instructorDoc;
+                                      const instFiles: TraineeDocumentFile[] =
+                                        docInfo.files && docInfo.files.length > 0
+                                          ? docInfo.files.map((f: TraineeDocumentFile) => ({
+                                              ...f,
+                                              dataUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || ''),
+                                              fileUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || ''),
+                                            }))
+                                          : [
+                                              {
+                                                id: 'inst-file-0',
+                                                name: docInfo.fileName || `${item.key}_template.pdf`,
+                                                size: docInfo.fileSize,
+                                                dataUrl: resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || ''),
+                                                fileUrl: resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || ''),
+                                              },
+                                            ];
+                                      const firstInst = instFiles[0];
+                                      setPreviewDoc({
+                                        key: item.key,
+                                        title: `Instructor Document: ${item.title}`,
+                                        subtitle: firstInst.name,
+                                        fileName: firstInst.name || `${item.key}_template.pdf`,
+                                        dataUrl: firstInst.fileUrl || firstInst.dataUrl || '',
+                                        fileSize: firstInst.size || docInfo.fileSize,
+                                        status: 'passed',
+                                        description: item.desc,
+                                        notes: docInfo.notes,
+                                        files: instFiles,
+                                        activeFileIndex: 0,
                                       });
-                                    } else {
-                                      const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
-                                      downloadDocument(url, docInfo.fileName || `${item.key}_instructor_doc`);
-                                    }
-                                  }}
-                                  className="text-violet-700 hover:text-violet-900 font-bold hover:underline cursor-pointer"
-                                >
-                                  Download{(item as any).instructorDoc.files?.length > 1 ? ' All' : ''}
-                                </button>
+                                    }}
+                                    className="text-violet-700 hover:text-violet-900 font-bold hover:underline cursor-pointer"
+                                  >
+                                    View{(item as any).instructorDoc.files?.length > 1 ? ` (${(item as any).instructorDoc.files.length})` : ''}
+                                  </button>
+                                  <span>•</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const docInfo = (item as any).instructorDoc;
+                                      if (docInfo.files && docInfo.files.length > 1) {
+                                        docInfo.files.forEach((f: TraineeDocumentFile) => {
+                                          const u = resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || '');
+                                          if (u) downloadDocument(u, f.name);
+                                        });
+                                      } else {
+                                        const url = resolveSafeDocumentViewUrl(docInfo.fileUrl || docInfo.dataUrl || '');
+                                        downloadDocument(url, docInfo.fileName || `${item.key}_instructor_doc`);
+                                      }
+                                    }}
+                                    className="text-violet-700 hover:text-violet-900 font-bold hover:underline cursor-pointer"
+                                  >
+                                    Download{(item as any).instructorDoc.files?.length > 1 ? ' All' : ''}
+                                  </button>
+                                </div>
                               </div>
                             </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right: Clean Status Badge & Empty-State Actions */}
+                      <div className="flex items-center gap-2 flex-wrap sm:justify-end shrink-0 self-start">
+                        <span
+                          className={`h-7 text-[11px] font-extrabold px-3 rounded-full border inline-flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                            isPassed
+                              ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                              : isPending
+                              ? 'bg-blue-100 text-blue-800 border-blue-300'
+                              : 'bg-amber-100 text-amber-800 border-amber-300'
+                          }`}
+                        >
+                          {isPassed ? (
+                            <>
+                              <Check size={12} className="stroke-[3]" /> APPROVED BY INSTRUCTOR
+                            </>
+                          ) : isPending ? (
+                            <>
+                              <Clock size={11} className="animate-pulse" /> SUBMITTED TO INSTRUCTOR
+                            </>
+                          ) : (
+                            <>
+                              <AlertTriangle size={11} /> PENDING SUBMISSION
+                            </>
+                          )}
+                        </span>
+
+                        {!hasFile && (
+                          <div className="flex items-center gap-1.5">
+                            {(item.custom || item.traineeAdded) && (
+                              <>
+                                <button
+                                  type="button"
+                                  onClick={() => openEditDocDialog(item)}
+                                  className="h-8 px-2.5 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer border border-slate-200 whitespace-nowrap"
+                                  title="Edit document title or description"
+                                >
+                                  <Edit2 size={12} /> Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRemoveDoc(item.key)}
+                                  className="h-8 w-8 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 inline-flex items-center justify-center transition-colors cursor-pointer border border-slate-200"
+                                  title="Delete this document requirement"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
+                            )}
+                            <label
+                              htmlFor={`attach-doc-btn-${item.key}`}
+                              className={`h-8 px-3.5 rounded-lg text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-xs whitespace-nowrap ${
+                                isUploading
+                                  ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
+                                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                              }`}
+                            >
+                              <Paperclip size={13} className={isUploading ? 'animate-spin' : ''} />
+                              {isUploading ? 'Uploading...' : 'Attach File(s)'}
+                              <input
+                                type="file"
+                                multiple
+                                id={`attach-doc-btn-${item.key}`}
+                                accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                                onChange={(e) => {
+                                  onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
+                                  e.target.value = '';
+                                }}
+                                className="hidden"
+                                disabled={isUploading}
+                              />
+                            </label>
                           </div>
                         )}
                       </div>
                     </div>
 
-                    {/* Middle Column: Attachment Slot ("Attach a File" / Attached File Preview) */}
-                    <div className="flex-1 min-w-0">
+                    {/* Bottom Full-Width Attachment Slot / Unified Action Toolbar */}
+                    <div className="w-full min-w-0">
                       {hasFile && doc ? (
-                        /* Attached File Chip */
-                        <div className="p-2.5 sm:p-3 rounded-xl bg-slate-50/95 border border-slate-200/90 flex flex-col xl:flex-row xl:items-center justify-between gap-3 min-w-0">
-                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                        <div className="p-3 sm:px-4 sm:py-3 rounded-xl bg-slate-50/95 border border-slate-200/90 flex flex-col md:flex-row md:items-center justify-between gap-3 min-w-0 overflow-hidden">
+                          {/* Attached File Info */}
+                          <div className="flex items-center gap-3 min-w-0 flex-1">
                             <div
                               className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${
                                 doc.files && doc.files.length > 1
@@ -1857,7 +1935,7 @@ export function Documents() {
                             </div>
                             <div className="min-w-0 flex-1">
                               <div className="flex items-center gap-2 min-w-0">
-                                <p className="text-xs font-bold text-slate-800 truncate" title={doc.name}>
+                                <p className="text-xs sm:text-sm font-bold text-slate-800 truncate" title={doc.name}>
                                   {doc.name}
                                 </p>
                                 {doc.files && doc.files.length > 1 && (
@@ -1866,22 +1944,22 @@ export function Documents() {
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-0.5 flex-wrap">
+                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 flex-wrap">
                                 <span className="shrink-0">{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Attached'}</span>
                                 {doc.size ? <span className="shrink-0">• {formatFileSize(doc.size)}</span> : null}
-                                <span className="uppercase font-semibold text-slate-500 shrink-0">
-                                  ({doc.files && doc.files.length > 1 ? 'Multi-File' : docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'})
+                                <span className="uppercase font-bold text-[10px] text-slate-600 bg-slate-200/70 px-1.5 py-0.2 rounded shrink-0">
+                                  {doc.files && doc.files.length > 1 ? 'Multi-File' : docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'}
                                 </span>
                               </div>
                               {(doc.description || doc.notes) && (
-                                <p className="text-[11px] text-slate-600 truncate mt-0.5" title={`${doc.description ? `Desc: ${doc.description}` : ''} ${doc.notes ? `| Note: ${doc.notes}` : ''}`}>
+                                <p className="text-[11px] text-slate-600 truncate mt-1" title={`${doc.description ? `Desc: ${doc.description}` : ''} ${doc.notes ? `| Note: ${doc.notes}` : ''}`}>
                                   {doc.description ? <span className="font-semibold text-slate-700">{doc.description}</span> : null}
                                   {doc.description && doc.notes ? ' — ' : ''}
                                   {doc.notes ? <span className="italic text-slate-500">{doc.notes}</span> : null}
                                 </p>
                               )}
                               {doc.files && doc.files.length > 1 && (
-                                <div className="mt-1.5 flex flex-wrap gap-1">
+                                <div className="mt-2 flex flex-wrap gap-1.5">
                                   {doc.files.map((fItem, fIdx) => (
                                     <button
                                       key={fItem.id || fIdx}
@@ -1891,7 +1969,7 @@ export function Documents() {
                                       title={`Click to review file #${fIdx + 1}: ${fItem.name}`}
                                     >
                                       <Eye size={10} className="text-purple-600 shrink-0" />
-                                      <span className="max-w-[130px] truncate">{fIdx + 1}. {fItem.name}</span>
+                                      <span className="max-w-[150px] truncate">{fIdx + 1}. {fItem.name}</span>
                                     </button>
                                   ))}
                                 </div>
@@ -1899,15 +1977,16 @@ export function Documents() {
                             </div>
                           </div>
 
-                          {/* Quick File Action Buttons (View, Download, Remove) */}
-                          <div className="flex items-center gap-1.5 shrink-0 flex-wrap self-start sm:self-center">
+                          {/* Single Aligned Action Toolbar (No Duplicates, Uniform Height) */}
+                          <div className="flex items-center gap-1.5 flex-wrap md:justify-end shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-200/70">
                             <button
                               type="button"
                               onClick={() => handlePreviewDoc(item.key, doc, item)}
-                              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-blue-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                              className="h-8 px-3 rounded-lg bg-white hover:bg-blue-50 text-blue-700 border border-slate-200 hover:border-blue-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
                               title="Preview attached file(s)"
                             >
-                              <Eye size={13} /> {doc.files && doc.files.length > 1 ? `View (${doc.files.length})` : 'View'}
+                              <Eye size={13} />
+                              <span>{doc.files && doc.files.length > 1 ? `View (${doc.files.length})` : 'View'}</span>
                             </button>
 
                             <button
@@ -1916,27 +1995,30 @@ export function Documents() {
                                 const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
                                 downloadDocument(resolvedUrl, doc?.name || `${item.key}_document`);
                               }}
-                              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-emerald-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                              className="h-8 px-3 rounded-lg bg-white hover:bg-emerald-50 text-emerald-700 border border-slate-200 hover:border-emerald-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
                               title="Download attached file"
                             >
-                              <Download size={13} /> Download
+                              <Download size={13} />
+                              <span>Download</span>
                             </button>
 
                             <button
                               type="button"
                               onClick={() => openEditDocDialog(item)}
-                              className="px-2.5 py-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
-                              title="Update document details, description, notes, or files"
+                              className="h-8 px-3 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                              title="Edit description, notes, or files"
                             >
-                              <Edit2 size={13} className="text-blue-600" /> Edit / Update
+                              <Edit2 size={13} className="text-blue-600" />
+                              <span>Edit / Update</span>
                             </button>
 
                             <label
                               htmlFor={`add-more-slot-file-${item.key}`}
-                              className="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold inline-flex items-center gap-1 shadow-2xs transition-colors cursor-pointer"
+                              className="h-8 px-3 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
                               title="Add more files to this document"
                             >
-                              <Plus size={13} /> Add More
+                              <Plus size={13} />
+                              <span>Add More</span>
                             </label>
                             <input
                               type="file"
@@ -1955,10 +2037,31 @@ export function Documents() {
                               disabled={isUploading}
                             />
 
+                            <label
+                              htmlFor={`replace-doc-${item.key}`}
+                              className="h-8 px-3 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                              title="Replace all attached files"
+                            >
+                              <RefreshCw size={12} className={isUploading ? 'animate-spin' : ''} />
+                              <span>{isUploading ? 'Uploading...' : 'Replace All'}</span>
+                            </label>
+                            <input
+                              type="file"
+                              multiple
+                              id={`replace-doc-${item.key}`}
+                              accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                              onChange={(e) => {
+                                onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
+                                e.target.value = '';
+                              }}
+                              className="hidden"
+                              disabled={isUploading}
+                            />
+
                             <button
                               type="button"
                               onClick={() => handleRemoveDoc(item.key)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer"
+                              className="h-8 w-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
                               title="Remove document"
                               aria-label={`Remove ${item.title}`}
                             >
@@ -1975,7 +2078,7 @@ export function Documents() {
                           }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-500 group-hover:text-blue-600 group-hover:border-blue-200 flex items-center justify-center shrink-0 transition-colors shadow-2xs">
+                            <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 text-slate-500 group-hover:text-blue-600 group-hover:border-blue-200 flex items-center justify-center shrink-0 transition-colors shadow-2xs">
                               <Paperclip size={14} />
                             </div>
                             <div className="min-w-0">
@@ -1989,7 +2092,7 @@ export function Documents() {
                               </p>
                             </div>
                           </div>
-                          <span className="text-xs font-bold text-blue-600 group-hover:text-blue-700 whitespace-nowrap hidden sm:inline-flex items-center gap-1">
+                          <span className="text-xs font-bold text-blue-600 group-hover:text-blue-700 whitespace-nowrap hidden sm:inline-flex items-center gap-1 shrink-0">
                             Browse <Upload size={12} />
                           </span>
                           <input
@@ -2009,136 +2112,6 @@ export function Documents() {
                             disabled={isUploading}
                           />
                         </label>
-                      )}
-                    </div>
-
-                    {/* Right Column: Status Badge & Main Action */}
-                    <div className="flex items-center justify-between lg:justify-end gap-3 shrink-0 pt-2 lg:pt-0 border-t lg:border-t-0 border-slate-100">
-                      <span
-                        className={`text-[11px] font-extrabold px-2.5 py-1 rounded-full border flex items-center gap-1.5 shrink-0 ${
-                          isPassed
-                            ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                            : isPending
-                            ? 'bg-blue-100 text-blue-800 border-blue-300'
-                            : 'bg-amber-100 text-amber-800 border-amber-300'
-                        }`}
-                      >
-                        {isPassed ? (
-                          <>
-                            <Check size={12} className="stroke-[3]" /> APPROVED BY INSTRUCTOR
-                          </>
-                        ) : isPending ? (
-                          <>
-                            <Clock size={11} className="animate-pulse" /> SUBMITTED TO INSTRUCTOR
-                          </>
-                        ) : (
-                          <>
-                            <AlertTriangle size={11} /> PENDING SUBMISSION
-                          </>
-                        )}
-                      </span>
-
-                      {/* Primary Action Button */}
-                      {hasFile ? (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => openEditDocDialog(item)}
-                            className="py-1.5 px-3 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-blue-200 shadow-2xs"
-                            title="Edit description, notes, or files"
-                          >
-                            <Edit2 size={12} />
-                            Edit / Update
-                          </button>
-
-                          <label
-                            htmlFor={`add-more-main-${item.key}`}
-                            className="py-1.5 px-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold inline-flex items-center gap-1 transition-colors cursor-pointer border border-indigo-200 shadow-2xs"
-                            title="Add more files to this requirement"
-                          >
-                            <Plus size={12} />
-                            Add More
-                          </label>
-                          <input
-                            type="file"
-                            multiple
-                            id={`add-more-main-${item.key}`}
-                            accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
-                            onChange={(e) => {
-                              onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, true);
-                              e.target.value = '';
-                            }}
-                            className="hidden"
-                            disabled={isUploading}
-                          />
-
-                          <label
-                            htmlFor={`replace-doc-${item.key}`}
-                            className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold inline-flex items-center gap-1.5 transition-colors cursor-pointer border border-slate-200 shadow-2xs"
-                            title="Replace all attached files"
-                          >
-                            <RefreshCw size={12} className={isUploading ? 'animate-spin' : ''} />
-                            {isUploading ? 'Uploading...' : 'Replace All'}
-                          </label>
-                          <input
-                            type="file"
-                            multiple
-                            id={`replace-doc-${item.key}`}
-                            accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
-                            onChange={(e) => {
-                              onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
-                              e.target.value = '';
-                            }}
-                            className="hidden"
-                            disabled={isUploading}
-                          />
-                        </div>
-                      ) : (
-                        <div className="flex items-center gap-1.5">
-                          {(item.custom || item.traineeAdded) && (
-                            <>
-                              <button
-                                type="button"
-                                onClick={() => openEditDocDialog(item)}
-                                className="py-1.5 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold inline-flex items-center gap-1 transition-colors cursor-pointer border border-slate-200"
-                                title="Edit document title or description"
-                              >
-                                <Edit2 size={12} /> Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleRemoveDoc(item.key)}
-                                className="p-1.5 rounded-xl text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors cursor-pointer border border-slate-200"
-                                title="Delete this document requirement"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </>
-                          )}
-                          <label
-                            htmlFor={`attach-doc-btn-${item.key}`}
-                            className={`py-1.5 px-3.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all cursor-pointer shadow-xs ${
-                              isUploading
-                                ? 'bg-slate-200 text-slate-500 cursor-not-allowed'
-                                : 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
-                            }`}
-                          >
-                            <Paperclip size={13} className={isUploading ? 'animate-spin' : ''} />
-                            {isUploading ? 'Uploading...' : 'Attach File(s)'}
-                            <input
-                              type="file"
-                              multiple
-                              id={`attach-doc-btn-${item.key}`}
-                              accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
-                              onChange={(e) => {
-                                onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
-                                e.target.value = '';
-                              }}
-                              className="hidden"
-                              disabled={isUploading}
-                            />
-                          </label>
-                        </div>
                       )}
                     </div>
                   </div>
@@ -2753,15 +2726,15 @@ export function Documents() {
               className="bg-white rounded-3xl w-full max-w-3xl shadow-2xl max-h-[92vh] flex flex-col overflow-hidden print:max-h-none print:shadow-none print:rounded-none print:overflow-visible print:border-none"
             >
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-white print:pb-2 print:border-slate-800">
-                <div>
-                  <h3 className="font-bold text-slate-900 text-base">{previewDoc.title}</h3>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-6 py-4 border-b border-slate-100 bg-white print:pb-2 print:border-slate-800">
+                <div className="min-w-0 flex-1">
+                  <h3 className="font-bold text-slate-900 text-base truncate">{previewDoc.title}</h3>
                   <p className="text-xs text-slate-500 truncate max-w-xs sm:max-w-md">
                     {previewDoc.fileName} {previewDoc.files && previewDoc.files.length > 1 ? `(File ${(previewDoc.activeFileIndex ?? 0) + 1} of ${previewDoc.files.length})` : ''}
                   </p>
                 </div>
 
-                <div className="flex items-center gap-2 no-print">
+                <div className="flex items-center gap-2 flex-wrap shrink-0 no-print">
                   <button
                     type="button"
                     onClick={() => window.print()}
