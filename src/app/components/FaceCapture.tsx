@@ -29,12 +29,13 @@ import {
   inspectFaceQuality,
   computeLandmarkLivenessMetrics,
   detectScreenSpoofArtifacts,
+  hasNeuralFaceInDataUrl,
   type FaceQualityReport,
   type LandmarkLivenessMetrics,
 } from '../services/faceClient';
 import { isSecurityApiConfigured, verifyFace, registerFace } from '../services/securityApi';
 
-type LivenessPhase = 'calibrating' | 'turn_head' | 'blink_or_smile' | 'center_hold' | 'verified';
+type LivenessPhase = 'calibrating' | 'turn_head' | 'blink' | 'smile' | 'center_hold' | 'verified';
 
 type ScanState =
   | 'idle'
@@ -64,28 +65,28 @@ export interface FaceCaptureProps {
 const NORMALIZED_68_LANDMARKS: Array<{ x: number; y: number }> = [
   // Jaw Outline (0-16)
   { x: -0.66, y: -0.28 }, { x: -0.64, y: -0.12 }, { x: -0.61, y: 0.05 }, { x: -0.56, y: 0.22 },
-  { x: -0.48, y: 0.38 },  { x: -0.36, y: 0.52 },  { x: -0.24, y: 0.65 }, { x: -0.12, y: 0.74 },
-  { x: 0.00,  y: 0.78 },  { x: 0.12,  y: 0.74 },  { x: 0.24,  y: 0.65 }, { x: 0.36,  y: 0.52 },
-  { x: 0.48,  y: 0.38 },  { x: 0.56,  y: 0.22 },  { x: 0.61,  y: 0.05 }, { x: 0.64,  y: -0.12 },
-  { x: 0.66,  y: -0.28 },
+  { x: -0.48, y: 0.38 }, { x: -0.36, y: 0.52 }, { x: -0.24, y: 0.65 }, { x: -0.12, y: 0.74 },
+  { x: 0.00, y: 0.78 }, { x: 0.12, y: 0.74 }, { x: 0.24, y: 0.65 }, { x: 0.36, y: 0.52 },
+  { x: 0.48, y: 0.38 }, { x: 0.56, y: 0.22 }, { x: 0.61, y: 0.05 }, { x: 0.64, y: -0.12 },
+  { x: 0.66, y: -0.28 },
   // Right Eyebrow (17-21)
   { x: -0.52, y: -0.42 }, { x: -0.42, y: -0.48 }, { x: -0.30, y: -0.50 }, { x: -0.18, y: -0.46 }, { x: -0.09, y: -0.40 },
   // Left Eyebrow (22-26)
-  { x: 0.09,  y: -0.40 }, { x: 0.18,  y: -0.46 }, { x: 0.30,  y: -0.50 }, { x: 0.42,  y: -0.48 }, { x: 0.52,  y: -0.42 },
+  { x: 0.09, y: -0.40 }, { x: 0.18, y: -0.46 }, { x: 0.30, y: -0.50 }, { x: 0.42, y: -0.48 }, { x: 0.52, y: -0.42 },
   // Nose Bridge (27-30)
-  { x: 0.00,  y: -0.32 }, { x: 0.00,  y: -0.18 }, { x: 0.00,  y: -0.05 }, { x: 0.00,  y: 0.08 },
+  { x: 0.00, y: -0.32 }, { x: 0.00, y: -0.18 }, { x: 0.00, y: -0.05 }, { x: 0.00, y: 0.08 },
   // Nostrils / Base (31-35)
-  { x: -0.17, y: 0.12 },  { x: -0.08, y: 0.15 },  { x: 0.00,  y: 0.16 },  { x: 0.08,  y: 0.15 },  { x: 0.17,  y: 0.12 },
+  { x: -0.17, y: 0.12 }, { x: -0.08, y: 0.15 }, { x: 0.00, y: 0.16 }, { x: 0.08, y: 0.15 }, { x: 0.17, y: 0.12 },
   // Right Eye (36-41)
   { x: -0.45, y: -0.26 }, { x: -0.36, y: -0.32 }, { x: -0.24, y: -0.32 }, { x: -0.17, y: -0.26 }, { x: -0.24, y: -0.22 }, { x: -0.36, y: -0.22 },
   // Left Eye (42-47)
-  { x: 0.17,  y: -0.26 }, { x: 0.24,  y: -0.32 }, { x: 0.36,  y: -0.32 }, { x: 0.45,  y: -0.26 }, { x: 0.36,  y: -0.22 }, { x: 0.24,  y: -0.22 },
+  { x: 0.17, y: -0.26 }, { x: 0.24, y: -0.32 }, { x: 0.36, y: -0.32 }, { x: 0.45, y: -0.26 }, { x: 0.36, y: -0.22 }, { x: 0.24, y: -0.22 },
   // Outer Lips (48-59)
-  { x: -0.26, y: 0.38 },  { x: -0.17, y: 0.32 },  { x: -0.08, y: 0.30 },  { x: 0.00,  y: 0.31 },  { x: 0.08,  y: 0.30 },  { x: 0.17,  y: 0.32 },
-  { x: 0.26,  y: 0.38 },  { x: 0.17,  y: 0.46 },  { x: 0.08,  y: 0.50 },  { x: 0.00,  y: 0.51 },  { x: -0.08, y: 0.50 },  { x: -0.17, y: 0.46 },
+  { x: -0.26, y: 0.38 }, { x: -0.17, y: 0.32 }, { x: -0.08, y: 0.30 }, { x: 0.00, y: 0.31 }, { x: 0.08, y: 0.30 }, { x: 0.17, y: 0.32 },
+  { x: 0.26, y: 0.38 }, { x: 0.17, y: 0.46 }, { x: 0.08, y: 0.50 }, { x: 0.00, y: 0.51 }, { x: -0.08, y: 0.50 }, { x: -0.17, y: 0.46 },
   // Inner Lips (60-67)
-  { x: -0.21, y: 0.38 },  { x: -0.08, y: 0.35 },  { x: 0.00,  y: 0.35 },  { x: 0.08,  y: 0.35 },  { x: 0.21,  y: 0.38 },  { x: 0.08,  y: 0.42 },
-  { x: 0.00,  y: 0.43 },  { x: -0.08, y: 0.42 },
+  { x: -0.21, y: 0.38 }, { x: -0.08, y: 0.35 }, { x: 0.00, y: 0.35 }, { x: 0.08, y: 0.35 }, { x: 0.21, y: 0.38 }, { x: 0.08, y: 0.42 },
+  { x: 0.00, y: 0.43 }, { x: -0.08, y: 0.42 },
 ];
 
 export function FaceCapture({
@@ -126,9 +127,17 @@ export function FaceCapture({
   const livenessPhaseRef = useRef<LivenessPhase>('calibrating');
   const [livenessVerified, setLivenessVerified] = useState<boolean>(false);
   const livenessVerifiedRef = useRef<boolean>(false);
-  const [livenessPrompt, setLivenessPrompt] = useState<string>('Look straight at the camera to begin live check');
+  const [livenessPrompt, setLivenessPrompt] = useState<string>('Step 1/4: Look straight at the camera');
   const [spoofWarning, setSpoofWarning] = useState<string | null>(null);
   const spoofWarningRef = useRef<string | null>(null);
+
+  // Scan session & unrecognized-face error timeout tracking refs
+  const scanStartedAtRef = useRef<number>(0);
+  const noFaceSinceRef = useRef<number>(0);
+  const phaseStartedAtRef = useRef<number>(0);
+  const spoofStreakRef = useRef<number>(0);
+  const multiFaceSinceRef = useRef<number>(0);
+  const handleManualSnapRef = useRef<() => void>(() => { });
 
   const livenessTrackerRef = useRef<{
     calibSamples: LandmarkLivenessMetrics[];
@@ -169,6 +178,7 @@ export function FaceCapture({
     setLivenessVerified(false);
     autoScanTriggeredRef.current = false;
     faceDetectedSinceRef.current = 0;
+    phaseStartedAtRef.current = Date.now();
     setAutoScanProgress(0);
     livenessTrackerRef.current = {
       calibSamples: [],
@@ -186,7 +196,7 @@ export function FaceCapture({
       prevMetrics: null,
       frameCounter: 0,
     };
-    setLivenessPrompt(promptMsg || 'Look straight at the camera to begin live check');
+    setLivenessPrompt(promptMsg || 'Step 1/4: Look straight at the camera');
   }, []);
 
   const [state, setState] = useState<ScanState>('idle');
@@ -319,6 +329,22 @@ export function FaceCapture({
       animFrameRef.current = null;
     }
   }, []);
+
+  const failScan = useCallback(
+    (errorDetail: string, bannerMessage?: string) => {
+      stopCamera();
+      liveLandmarksRef.current = null;
+      isFaceLockedRef.current = false;
+      setIsFaceLocked(false);
+      livenessVerifiedRef.current = false;
+      setLivenessVerified(false);
+      setProgress(100);
+      setMismatchError(errorDetail);
+      setScanMessage(bannerMessage || `❌ ${errorDetail}`);
+      setScanState('failed');
+    },
+    [stopCamera, setScanState]
+  );
 
   /**
    * Draw the 68-point biometric facial landmark mesh, wireframe interconnects,
@@ -728,7 +754,29 @@ export function FaceCapture({
 
     const track = async () => {
       if (!active) return;
+      const nowTs = Date.now();
       const video = videoRef.current;
+
+      // Fail closed with explicit error if scan session cannot initialize AI models or recognize any face
+      if (
+        stateRef.current === 'scanning' &&
+        scanStartedAtRef.current > 0 &&
+        nowTs - scanStartedAtRef.current > 9000
+      ) {
+        const api = typeof window !== 'undefined' ? (window as any).faceapi : null;
+        const modelsReady = Boolean(
+          api?.nets?.tinyFaceDetector?.params && api?.nets?.faceLandmark68Net?.params
+        );
+        if (!modelsReady) {
+          active = false;
+          failScan(
+            'Unable to scan face — Facial recognition engine failed to initialize. Please check your internet connection and try again.',
+            '❌ Error: Facial recognition engine unavailable.'
+          );
+          return;
+        }
+      }
+
       if (video && video.videoWidth > 0 && !video.paused && !video.ended) {
         try {
           if (typeof window !== 'undefined' && (window as any).faceapi) {
@@ -736,7 +784,7 @@ export function FaceCapture({
             if (api.nets?.tinyFaceDetector?.params && api.nets?.faceLandmark68Net?.params) {
               if (!detectorOpt320) {
                 detectorOpt320 = new api.TinyFaceDetectorOptions({ inputSize: 320, scoreThreshold: 0.30 });
-                detectorOpt224 = new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.22 });
+                detectorOpt224 = new api.TinyFaceDetectorOptions({ inputSize: 224, scoreThreshold: 0.24 });
               }
 
               const currentOpt = consecutiveMisses > 2 ? detectorOpt224 : detectorOpt320;
@@ -750,16 +798,31 @@ export function FaceCapture({
                   .withFaceLandmarks();
               }
 
-              // Reject multiple faces in frame (e.g. person holding up another phone next to themselves)
+              // Reject multiple faces in frame (error out if persistent)
               if (detections && detections.length > 1 && active) {
+                if (multiFaceSinceRef.current === 0) {
+                  multiFaceSinceRef.current = Date.now();
+                }
                 const warnMsg = 'Multiple faces detected — Only one live face allowed in frame.';
                 spoofWarningRef.current = warnMsg;
                 setSpoofWarning(warnMsg);
                 resetLivenessChallenge('Ensure only your own live face is in view');
                 setScanMessage(`⚠️ ${warnMsg}`);
+
+                if (Date.now() - multiFaceSinceRef.current >= 4000) {
+                  active = false;
+                  failScan(
+                    'Facial scan error: Multiple faces detected in frame. Ensure only one face is visible and try again.',
+                    '❌ Error: Multiple faces detected — Could not isolate face.'
+                  );
+                  return;
+                }
               } else if (detections && detections.length === 1 && detections[0]?.landmarks?.positions && active) {
                 const res = detections[0];
                 consecutiveMisses = 0;
+                noFaceSinceRef.current = 0;
+                multiFaceSinceRef.current = 0;
+
                 const rawPts = res.landmarks.positions.map((p: any) => ({
                   x: Number(p.x),
                   y: Number(p.y),
@@ -771,6 +834,9 @@ export function FaceCapture({
                 if (!isFaceLockedRef.current) {
                   isFaceLockedRef.current = true;
                   setIsFaceLocked(true);
+                  if (phaseStartedAtRef.current === 0) {
+                    phaseStartedAtRef.current = now;
+                  }
                 }
 
                 const tracker = livenessTrackerRef.current;
@@ -780,22 +846,55 @@ export function FaceCapture({
                 if (tracker.frameCounter % 4 === 1) {
                   const spoofCheck = detectScreenSpoofArtifacts(video, rawPts);
                   if (spoofCheck.suspected) {
+                    spoofStreakRef.current += 1;
                     const msg = spoofCheck.reason || '2D screen or photo spoof detected — Live face required.';
                     spoofWarningRef.current = msg;
                     setSpoofWarning(msg);
                     resetLivenessChallenge('Remove phone/photo screen and show your live face');
                     setScanMessage(`🚨 ${msg}`);
+                    if (spoofStreakRef.current >= 3) {
+                      active = false;
+                      failScan(
+                        'No valid live face has been recognized — Static photo or digital screen detected.',
+                        '❌ Error: No live face recognized (photo/screen blocked).'
+                      );
+                      return;
+                    }
                     if (active) timer = setTimeout(track, 45);
                     return;
-                  } else if (spoofWarningRef.current) {
-                    spoofWarningRef.current = null;
-                    setSpoofWarning(null);
+                  } else {
+                    spoofStreakRef.current = 0;
+                    if (spoofWarningRef.current) {
+                      spoofWarningRef.current = null;
+                      setSpoofWarning(null);
+                    }
+                  }
+                }
+
+                // Stall / Unrecognizable face timeout check during active scanning
+                if (stateRef.current === 'scanning' && !livenessVerifiedRef.current) {
+                  const phaseElapsed = phaseStartedAtRef.current > 0 ? now - phaseStartedAtRef.current : 0;
+                  const totalElapsed = scanStartedAtRef.current > 0 ? now - scanStartedAtRef.current : 0;
+
+                  if (phaseElapsed >= 10500 || totalElapsed >= 24000) {
+                    active = false;
+                    const curPhase = livenessPhaseRef.current;
+                    const reason =
+                      curPhase === 'calibrating'
+                        ? 'No clear face has been recognized. Please look straight at the camera in good lighting without obstructions and try again.'
+                        : curPhase === 'turn_head'
+                          ? 'Error: Face could not be recognized — Could not detect live 3D head movement (left or right). Static photos cannot be scanned.'
+                          : curPhase === 'blink'
+                            ? 'Error: Face could not be recognized — Could not detect live eye blink. Ensure your eyes are clearly visible in good lighting and try again.'
+                            : 'Error: Face could not be recognized — Live facial scan could not be completed. Please ensure your full face is clearly visible and try again.';
+                    failScan(reason, '❌ Error: No valid live face has been recognized.');
+                    return;
                   }
                 }
 
                 const metrics = computeLandmarkLivenessMetrics(rawPts);
                 if (metrics && stateRef.current === 'scanning' && now > autoScanCooldownRef.current) {
-                  // Continuity gate: reject sudden single-frame jumps (blocks swiping between 2 photos!)
+                  // Continuity gate: reject sudden single-frame teleports (blocks swiping between 2 photos)
                   if (tracker.prevMetrics) {
                     const jumpDist = Math.hypot(
                       metrics.faceCx - tracker.prevMetrics.faceCx,
@@ -804,9 +903,9 @@ export function FaceCapture({
                     const scaleRatio =
                       metrics.faceWidth / Math.max(1, tracker.prevMetrics.faceWidth);
                     if (
-                      jumpDist > tracker.prevMetrics.faceWidth * 0.28 ||
-                      scaleRatio > 1.32 ||
-                      scaleRatio < 0.72
+                      jumpDist > tracker.prevMetrics.faceWidth * 0.48 ||
+                      scaleRatio > 1.65 ||
+                      scaleRatio < 0.55
                     ) {
                       resetLivenessChallenge('Sudden frame jump — Hold camera steady on your live face');
                     }
@@ -816,17 +915,17 @@ export function FaceCapture({
                   const phase = livenessPhaseRef.current;
 
                   if (phase === 'calibrating') {
-                    // Require roughly frontal open-eye pose to calibrate personal 3D baseline
-                    const isFrontal = metrics.yawRatio >= 0.37 && metrics.yawRatio <= 0.63;
-                    const eyesOpen = metrics.ear >= 0.175;
+                    // Step 1: Look straight ahead with open eyes to calibrate 3D facial geometry
+                    const isFrontal = metrics.yawRatio >= 0.35 && metrics.yawRatio <= 0.65;
+                    const eyesOpen = metrics.ear >= 0.165;
                     if (isFrontal && eyesOpen) {
                       tracker.calibSamples.push(metrics);
-                      const pct = Math.min(25, Math.round((tracker.calibSamples.length / 4) * 25));
+                      const pct = Math.min(25, Math.round((tracker.calibSamples.length / 3) * 25));
                       setAutoScanProgress(pct);
-                      setLivenessPrompt('Calibrating 3D face mesh... Look straight ahead');
-                      setScanMessage('Calibrating live face baseline...');
+                      setLivenessPrompt('Step 1/4: Hold still & look straight at the camera...');
+                      setScanMessage('Step 1/4: Looking straight — Calibrating live face...');
 
-                      if (tracker.calibSamples.length >= 4) {
+                      if (tracker.calibSamples.length >= 3) {
                         const n = tracker.calibSamples.length;
                         tracker.baselineYaw =
                           tracker.calibSamples.reduce((s, m) => s + m.yawRatio, 0) / n;
@@ -839,103 +938,117 @@ export function FaceCapture({
                         tracker.baselineMAR =
                           tracker.calibSamples.reduce((s, m) => s + m.mar, 0) / n;
 
+                        phaseStartedAtRef.current = now;
                         livenessPhaseRef.current = 'turn_head';
                         setLivenessPhase('turn_head');
                         setAutoScanProgress(30);
-                        setLivenessPrompt('Step 1/2: Slowly turn your head slightly LEFT or RIGHT');
-                        setScanMessage('🛡️ Live Check 1/2: Slowly turn your head slightly left or right');
+                        setLivenessPrompt('Step 2/4: Move your head slightly LEFT or RIGHT');
+                        setScanMessage('🛡️ Step 2/4: Slowly move your head left or right');
                       }
                     } else {
-                      setLivenessPrompt('Look straight at the camera with eyes open');
-                      setScanMessage('Center your live face and look straight ahead...');
+                      setLivenessPrompt('Step 1/4: Look straight at the camera with eyes open');
+                      setScanMessage('Step 1/4: Center your face and look straight ahead...');
                     }
                   } else if (phase === 'turn_head') {
-                    // 3D Nasal Parallax Check: flat 2D photos on phones keep yawRatio locked near ~0.50
-                    // even when tilted, whereas a real 3D head shifts nose-to-jaw ratio significantly.
+                    // Step 2: 3D Nasal Parallax Check (Move head left or right)
                     const yawDelta = Math.abs(metrics.yawRatio - tracker.baselineYaw);
                     const scaleSteady =
-                      metrics.faceWidth > tracker.calibSamples[0].faceWidth * 0.65 &&
-                      metrics.faceWidth < tracker.calibSamples[0].faceWidth * 1.45;
+                      metrics.faceWidth > tracker.calibSamples[0].faceWidth * 0.58 &&
+                      metrics.faceWidth < tracker.calibSamples[0].faceWidth * 1.55;
 
-                    if (yawDelta >= 0.04 && yawDelta < 0.115 && scaleSteady) {
+                    if (yawDelta >= 0.04 && yawDelta < 0.092 && scaleSteady) {
                       tracker.sawIntermediateTurn = true;
-                      setAutoScanProgress(45);
+                      setAutoScanProgress(42);
                     }
 
-                    if (yawDelta >= 0.115 && scaleSteady) {
+                    if (yawDelta >= 0.092 && scaleSteady) {
                       tracker.turnConfirmFrames++;
-                      setAutoScanProgress(55);
-                      if (tracker.turnConfirmFrames >= 2 && (tracker.sawIntermediateTurn || tracker.turnConfirmFrames >= 3)) {
-                        livenessPhaseRef.current = 'blink_or_smile';
-                        setLivenessPhase('blink_or_smile');
-                        setAutoScanProgress(65);
-                        setLivenessPrompt('Step 2/2: Face forward & BLINK naturally (or SMILE)');
-                        setScanMessage('🛡️ Live Check 2/2: Look straight ahead and blink naturally or smile');
+                      setAutoScanProgress(52);
+                      if (tracker.turnConfirmFrames >= 2 || (tracker.sawIntermediateTurn && tracker.turnConfirmFrames >= 1)) {
+                        phaseStartedAtRef.current = now;
+                        livenessPhaseRef.current = 'blink';
+                        setLivenessPhase('blink');
+                        setAutoScanProgress(60);
+                        setLivenessPrompt('Step 3/4: Face forward & BLINK your eyes');
+                        setScanMessage('🛡️ Step 3/4: Look straight ahead and blink naturally');
                       }
                     } else {
                       tracker.turnConfirmFrames = Math.max(0, tracker.turnConfirmFrames - 1);
                     }
-                  } else if (phase === 'blink_or_smile') {
-                    const isBackToCenter = Math.abs(metrics.yawRatio - tracker.baselineYaw) <= 0.105;
-                    // Rigid pitch invariant: tilting a flat photo vertically changes pitchRatio;
-                    // a real human blink or smile keeps pitchRatio steady!
+                  } else if (phase === 'blink') {
+                    // Step 3: Blink detection while facing forward
+                    const isBackToCenter =
+                      (metrics.yawRatio >= 0.35 && metrics.yawRatio <= 0.65) ||
+                      Math.abs(metrics.yawRatio - tracker.baselineYaw) <= 0.14;
                     const pitchDrift =
                       Math.abs(metrics.pitchRatio - tracker.baselinePitch) /
                       Math.max(0.15, tracker.baselinePitch);
-                    const pitchSteady = pitchDrift <= 0.145;
+                    const pitchSteady = pitchDrift <= 0.22;
 
                     if (!isBackToCenter) {
-                      setLivenessPrompt('Step 2/2: Return face to center, then BLINK or SMILE');
-                      setScanMessage('🛡️ Return your face to the center and blink or smile...');
+                      setLivenessPrompt('Step 3/4: Return face to center, then BLINK');
+                      setScanMessage('🛡️ Return your face to the center and blink...');
                     } else if (pitchSteady) {
-                      setLivenessPrompt('Step 2/2: Now BLINK naturally or SMILE');
+                      setLivenessPrompt('Step 3/4: Now BLINK your eyes naturally');
                       const blinkClosedThresh = Math.min(
-                        tracker.baselineEAR * 0.78,
-                        tracker.baselineEAR - 0.045
+                        tracker.baselineEAR * 0.84,
+                        tracker.baselineEAR - 0.032
                       );
-                      const blinkOpenThresh = tracker.baselineEAR * 0.88;
+                      const blinkOpenThresh = tracker.baselineEAR * 0.86;
 
-                      // Track genuine eyelid closure -> re-open cycle
                       if (metrics.ear <= blinkClosedThresh) {
                         if (tracker.eyesClosedAt === 0) {
                           tracker.eyesClosedAt = now;
                         }
                         tracker.eyesClosedFrames++;
-                        setAutoScanProgress(78);
+                        setAutoScanProgress(72);
                       } else if (tracker.eyesClosedAt > 0) {
                         const closedDuration = now - tracker.eyesClosedAt;
                         if (
                           metrics.ear >= blinkOpenThresh &&
-                          closedDuration >= 30 &&
-                          closedDuration <= 950 &&
+                          closedDuration >= 20 &&
+                          closedDuration <= 1500 &&
                           tracker.eyesClosedFrames >= 1
                         ) {
-                          // Natural live blink confirmed!
-                          livenessPhaseRef.current = 'center_hold';
-                          setLivenessPhase('center_hold');
-                          setAutoScanProgress(90);
-                          setLivenessPrompt('✓ Live Face Confirmed! Holding steady...');
-                          setScanMessage('✓ Live 3D Face Verified! Capturing biometrics...');
-                        } else if (closedDuration > 950) {
+                          phaseStartedAtRef.current = now;
+                          livenessPhaseRef.current = 'smile';
+                          setLivenessPhase('smile');
+                          setAutoScanProgress(80);
+                          setLivenessPrompt('Step 4/4: Great! Now SMILE at the camera');
+                          setScanMessage('🛡️ Step 4/4: Almost done — Smile at the camera!');
+                        } else if (closedDuration > 1500) {
                           tracker.eyesClosedAt = 0;
                           tracker.eyesClosedFrames = 0;
                         }
                       }
+                    }
+                  } else if (phase === 'smile') {
+                    // Step 4: Smile detection while facing forward
+                    const isBackToCenter =
+                      (metrics.yawRatio >= 0.35 && metrics.yawRatio <= 0.65) ||
+                      Math.abs(metrics.yawRatio - tracker.baselineYaw) <= 0.14;
 
-                      // Also accept non-rigid smile / mouth movement while eyes are open
+                    if (!isBackToCenter) {
+                      setLivenessPrompt('Step 4/4: Face forward & SMILE at the camera');
+                      setScanMessage('🛡️ Keep facing the camera and smile...');
+                    } else {
+                      setLivenessPrompt('Step 4/4: SMILE at the camera to complete scan');
                       const isSmiling =
-                        metrics.ear >= 0.18 &&
-                        (metrics.mouthToJaw >= tracker.baselineMouthToJaw * 1.125 ||
-                          metrics.mar >= tracker.baselineMAR + 0.14);
+                        metrics.ear >= 0.16 &&
+                        (metrics.mouthToJaw >= tracker.baselineMouthToJaw * 1.072 ||
+                          metrics.mar >= tracker.baselineMAR + 0.075 ||
+                          (metrics.mouthToJaw >= 0.48 &&
+                            metrics.mouthToJaw >= tracker.baselineMouthToJaw * 1.045));
                       if (isSmiling) {
                         tracker.smileConfirmFrames++;
-                        setAutoScanProgress(82);
-                        if (tracker.smileConfirmFrames >= 2) {
+                        setAutoScanProgress(90);
+                        if (tracker.smileConfirmFrames >= 1) {
+                          phaseStartedAtRef.current = now;
                           livenessPhaseRef.current = 'center_hold';
                           setLivenessPhase('center_hold');
-                          setAutoScanProgress(90);
-                          setLivenessPrompt('✓ Live Face Confirmed! Holding steady...');
-                          setScanMessage('✓ Live 3D Face Verified! Capturing biometrics...');
+                          setAutoScanProgress(95);
+                          setLivenessPrompt('✓ Live Face Confirmed! Scanning face...');
+                          setScanMessage('✓ Live 3D Face Verified! Recognizing biometrics...');
                         }
                       } else {
                         tracker.smileConfirmFrames = Math.max(0, tracker.smileConfirmFrames - 1);
@@ -943,12 +1056,12 @@ export function FaceCapture({
                     }
                   } else if (phase === 'center_hold') {
                     // Capture clean frontal open-eye frame for maximum recognition accuracy
-                    const isFrontal = Math.abs(metrics.yawRatio - 0.5) <= 0.12;
-                    const eyesOpen = metrics.ear >= Math.min(0.20, tracker.baselineEAR * 0.85);
+                    const isFrontal = Math.abs(metrics.yawRatio - 0.5) <= 0.14;
+                    const eyesOpen = metrics.ear >= Math.min(0.19, tracker.baselineEAR * 0.82);
                     if (isFrontal && eyesOpen) {
                       tracker.centerHoldFrames++;
-                      setAutoScanProgress(Math.min(100, 90 + tracker.centerHoldFrames * 5));
-                      if (tracker.centerHoldFrames >= 2) {
+                      setAutoScanProgress(100);
+                      if (tracker.centerHoldFrames >= 1) {
                         livenessPhaseRef.current = 'verified';
                         setLivenessPhase('verified');
                         livenessVerifiedRef.current = true;
@@ -958,7 +1071,7 @@ export function FaceCapture({
 
                         if (autoScanEnabledRef.current && !autoScanTriggeredRef.current) {
                           autoScanTriggeredRef.current = true;
-                          handleManualSnap();
+                          handleManualSnapRef.current();
                         } else {
                           setScanMessage('✓ Live Face Verified! Tap Scan button below to proceed.');
                         }
@@ -972,19 +1085,40 @@ export function FaceCapture({
                       now > autoScanCooldownRef.current
                     ) {
                       autoScanTriggeredRef.current = true;
-                      handleManualSnap();
+                      handleManualSnapRef.current();
                     }
                   }
                 }
               } else {
+                // NO FACE DETECTED IN CAMERA FRAME
                 consecutiveMisses++;
-                if (Date.now() - lastLandmarkDetectionTimeRef.current > 650) {
+                const missNow = Date.now();
+                if (noFaceSinceRef.current === 0) {
+                  noFaceSinceRef.current = missNow;
+                }
+                const noFaceElapsed = missNow - noFaceSinceRef.current;
+
+                if (missNow - lastLandmarkDetectionTimeRef.current > 650) {
                   if (isFaceLockedRef.current) {
                     isFaceLockedRef.current = false;
                     setIsFaceLocked(false);
                   }
                   if (livenessPhaseRef.current !== 'calibrating' || livenessVerifiedRef.current) {
-                    resetLivenessChallenge('Face lost — Keep your live face in view to verify');
+                    resetLivenessChallenge('No face detected — Center your face in view');
+                  }
+                }
+
+                if (stateRef.current === 'scanning') {
+                  if (noFaceElapsed >= 6000) {
+                    active = false;
+                    failScan(
+                      'No face has been recognized. Please position your face clearly in front of the camera in good lighting and try again.',
+                      '❌ Error: No face has been recognized.'
+                    );
+                    return;
+                  } else if (noFaceElapsed >= 2200) {
+                    setLivenessPrompt('⚠️ No face detected — Position face in camera');
+                    setScanMessage('⚠️ No face detected in frame — Align your face clearly with the camera...');
                   }
                 }
               }
@@ -1005,7 +1139,7 @@ export function FaceCapture({
       active = false;
       if (timer) clearTimeout(timer);
     };
-  }, [state, resetLivenessChallenge]);
+  }, [state, resetLivenessChallenge, failScan]);
 
   /**
    * Capture a pristine JPEG snapshot from the live physical camera video,
@@ -1154,13 +1288,36 @@ export function FaceCapture({
       }
     }
 
+    const nowStart = Date.now();
+    scanStartedAtRef.current = nowStart;
+    noFaceSinceRef.current = nowStart;
+    phaseStartedAtRef.current = nowStart;
+    spoofStreakRef.current = 0;
+    multiFaceSinceRef.current = 0;
+
     setScanState('scanning');
-    setScanMessage('Look straight at the camera to begin 3D live face verification...');
+    setScanMessage('Step 1/4: Look straight at the camera to begin facial scan...');
     setProgress(20);
 
-    // Pre-load biometric recognition models in the background
-    loadFaceModels().catch(() => {});
-  }, [stopCamera, setScanState, resetLivenessChallenge]);
+    // Pre-load biometric recognition models and surface an explicit error if models cannot load
+    loadFaceModels()
+      .then((loaded) => {
+        if (!loaded && stateRef.current === 'scanning') {
+          failScan(
+            'Unable to scan face — Facial recognition models could not load. Please check your connection and try again.',
+            '❌ Error: Facial recognition engine failed to initialize.'
+          );
+        }
+      })
+      .catch(() => {
+        if (stateRef.current === 'scanning') {
+          failScan(
+            'Unable to scan face — Facial recognition models could not load. Please check your connection and try again.',
+            '❌ Error: Facial recognition engine failed to initialize.'
+          );
+        }
+      });
+  }, [stopCamera, setScanState, resetLivenessChallenge, failScan]);
 
   useEffect(() => {
     if (state === 'scanning' || state === 'analyzing' || state === 'verifying') {
@@ -1177,43 +1334,62 @@ export function FaceCapture({
   }, [state, drawOverlay]);
 
   /**
-   * Live-face verified snapshot trigger (blocks static photos & unverified captures)
+   * Live-face verified snapshot trigger (blocks static photos & explicitly errors when no face is recognized)
    */
   const handleManualSnap = useCallback(async () => {
     if (stateRef.current === 'success' || stateRef.current === 'verifying') return;
 
+    // If no face is detected at all when scan is triggered, report explicit No Face Recognized error
+    if (!isFaceLockedRef.current || Date.now() - lastLandmarkDetectionTimeRef.current > 1200) {
+      autoScanTriggeredRef.current = false;
+      failScan(
+        'No face has been recognized in the camera frame. Please position your face clearly in front of the camera and try again.',
+        '❌ Error: No face has been recognized.'
+      );
+      return;
+    }
+
     // SECURITY: Strictly block capture unless real-time 3D liveness challenge has passed on the active live stream
-    if (
-      !livenessVerifiedRef.current ||
-      Boolean(spoofWarningRef.current) ||
-      Date.now() - lastLandmarkDetectionTimeRef.current > 750
-    ) {
+    if (!livenessVerifiedRef.current || Boolean(spoofWarningRef.current)) {
       autoScanTriggeredRef.current = false;
       setScanMessage(
-        '🛡️ Live Face Required: Complete Step 1 (turn head slightly) & Step 2 (blink or smile). Photos from other devices are blocked.'
+        '🛡️ Complete Live Scan Steps: Look straight → Move head left/right → Blink → Smile.'
       );
       return;
     }
 
     const img = captureFrame();
     if (!img) {
-      setScanState('failed');
-      setScanMessage('Failed to capture live camera frame. Please ensure camera is active.');
+      failScan(
+        'Unable to scan face — Failed to capture frame from camera. Please ensure your camera is active and try again.',
+        '❌ Error: Camera frame could not be captured.'
+      );
       return;
     }
 
-    // Final frame quality & neural face presence check
-    const quality = await inspectFaceQuality(img).catch(() => null);
+    setScanState('analyzing');
+    setScanMessage('Analyzing facial landmarks & recognizing face...');
+    setProgress(70);
+
+    // Final frame quality & neural 128-D face recognition check (must confirm a recognizable human face)
+    const [quality, hasNeuralFace] = await Promise.all([
+      inspectFaceQuality(img).catch(() => null),
+      hasNeuralFaceInDataUrl(img).catch(() => false),
+    ]);
+
     if (quality) {
       setQualityReport(quality);
-      if (!quality.faceDetected) {
-        resetLivenessChallenge('Keep face centered and repeat live check');
-        setScanMessage('⚠️ Face moved out of frame during capture. Please repeat live check.');
-        return;
-      }
     }
 
-    // In registration mode: enroll only after live 3D face verification succeeded
+    if (!quality || !quality.faceDetected || !hasNeuralFace) {
+      failScan(
+        'No face has been recognized. Unable to detect clear facial landmarks during scan. Please ensure good lighting, face the camera directly, and try again.',
+        '❌ Error: No face has been recognized.'
+      );
+      return;
+    }
+
+    // In registration mode: enroll only after live 3D face + neural descriptor recognition succeeded
     if (modeRef.current === 'register') {
       stopCamera();
       setCapturedImage(img);
@@ -1227,29 +1403,30 @@ export function FaceCapture({
     // In verify mode: strict Biometric Match using neural 128-D descriptors
     setScanState('verifying');
     setScanMessage('Verifying live face biometrics with AI...');
-    setProgress(80);
+    setProgress(85);
 
     const enrolledImage = registeredImageRef.current;
     if (!enrolledImage) {
-      setScanState('failed');
-      setMismatchError(
-        `No registered face biometric template on file for ${employeeNameRef.current || 'this trainee'}. Attendance scan blocked.`
+      failScan(
+        `No registered face biometric template on file for ${employeeNameRef.current || 'this trainee'}. Please register your face first.`,
+        '❌ Error: Missing registered face biometrics.'
       );
-      setScanMessage('❌ Missing registered face biometrics.');
       return;
     }
 
     const bio = await strictBiometricVerify(enrolledImage, img, 0.56, false);
     if (!bio.matched) {
       resetLivenessChallenge();
-      setScanState('failed');
-      setMismatchError(
-        bio.error || `Face does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`
-      );
-      setScanMessage(
-        Number.isFinite(bio.distance)
-          ? `❌ Face mismatch (Biometric distance: ${bio.distance.toFixed(2)} > 0.56)`
-          : `❌ ${bio.error || 'Face verification failed.'}`
+      const noFaceDetected =
+        String(bio.error || '').toLowerCase().includes('no clear live human face') ||
+        !Number.isFinite(bio.distance);
+      failScan(
+        noFaceDetected
+          ? 'No face has been recognized in the camera frame. Please ensure your face is clearly visible in good lighting and try again.'
+          : bio.error || `Face not recognized — Does not match registered biometrics for ${employeeNameRef.current || 'this trainee'}.`,
+        noFaceDetected
+          ? '❌ Error: No face has been recognized.'
+          : `❌ Face not recognized (Biometric distance: ${bio.distance.toFixed(2)} > 0.56)`
       );
       return;
     }
@@ -1289,22 +1466,18 @@ export function FaceCapture({
         }
 
         if (!response.matched) {
-          setState('failed');
-          setMismatchError('Server facial recognition rejected verification.');
-          setScanMessage('❌ Server verification: Identity mismatch.');
+          failScan(
+            'Face not recognized — Server facial recognition rejected verification.',
+            '❌ Error: Face could not be recognized against enrolled profile.'
+          );
           return;
         }
       } catch (serverErr) {
-        // SECURITY: fail CLOSED, not open. If the server verification call
-        // itself fails (network error, server down, timeout), do NOT treat
-        // the earlier client-only descriptor match as sufficient -- that
-        // reopens the exact "spoofable on-device decision" hole that was
-        // already fixed on the mobile app. Block the clock-in instead and
-        // ask the person to retry once connectivity is back.
         console.warn('Server verification unreachable:', serverErr);
-        setScanState('failed');
-        setMismatchError("Can't verify right now — check your connection and try again.");
-        setScanMessage('❌ Verification server unreachable.');
+        failScan(
+          "Can't verify face right now — Check your connection and try again.",
+          '❌ Error: Verification server unreachable.'
+        );
         return;
       }
     }
@@ -1316,7 +1489,11 @@ export function FaceCapture({
     setScanState('success');
     setScanMessage('✓ Live Face & Identity Verified! Attendance Time Recorded.');
     setTimeout(() => fireSuccessOnce(img), 300);
-  }, [stopCamera, captureFrame, setScanState, resetLivenessChallenge, fireSuccessOnce]);
+  }, [stopCamera, captureFrame, setScanState, resetLivenessChallenge, fireSuccessOnce, failScan]);
+
+  useEffect(() => {
+    handleManualSnapRef.current = handleManualSnap;
+  }, [handleManualSnap]);
 
   const handleConfirmPhoto = useCallback(() => {
     if (!capturedImage || !livenessVerifiedRef.current) return;
@@ -1327,7 +1504,7 @@ export function FaceCapture({
 
   const hasStartedRef = useRef(false);
   useEffect(() => {
-    loadFaceModels().catch(() => {});
+    loadFaceModels().catch(() => { });
     if (autoStart && !hasStartedRef.current) {
       hasStartedRef.current = true;
       startScan();
@@ -1356,15 +1533,14 @@ export function FaceCapture({
     <div className="flex flex-col items-center gap-3.5 w-full">
       {/* Camera / Live Viewport (Live Hardware Stream Only — Static Uploads Blocked) */}
       <div
-        className={`relative w-full max-w-[340px] aspect-[3/4] rounded-3xl overflow-hidden bg-slate-950 shadow-2xl border-2 border-slate-800 touch-none ${
-          isScanning ? (isDragging ? 'cursor-grabbing select-none' : 'cursor-grab select-none') : ''
-        }`}
+        className={`relative w-full max-w-[340px] aspect-[3/4] rounded-3xl overflow-hidden bg-slate-950 shadow-2xl border-2 border-slate-800 touch-none ${isScanning ? (isDragging ? 'cursor-grabbing select-none' : 'cursor-grab select-none') : ''
+          }`}
         onPointerDown={(e) => {
           if (state !== 'scanning' && state !== 'analyzing' && state !== 'verifying') return;
           if ((e.target as HTMLElement).closest('button, input, a')) return;
           try {
             (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-          } catch {}
+          } catch { }
           isDraggingRef.current = true;
           setIsDragging(true);
           dragStartPos.current = { x: e.clientX, y: e.clientY };
@@ -1385,7 +1561,7 @@ export function FaceCapture({
             setIsDragging(false);
             try {
               (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-            } catch {}
+            } catch { }
           }
         }}
         onPointerCancel={(e) => {
@@ -1394,7 +1570,7 @@ export function FaceCapture({
             setIsDragging(false);
             try {
               (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-            } catch {}
+            } catch { }
           }
         }}
       >
@@ -1424,11 +1600,10 @@ export function FaceCapture({
             {/* Top Center: Facial Landmark Mesh Alignment Pill */}
             <div className="absolute top-3 left-1/2 -translate-x-1/2 z-20 pointer-events-none whitespace-nowrap">
               <div
-                className={`px-3.5 py-1 rounded-full backdrop-blur-md text-[10.5px] font-bold flex items-center gap-1.5 shadow-lg transition-all ${
-                  isFaceLocked
+                className={`px-3.5 py-1 rounded-full backdrop-blur-md text-[10.5px] font-bold flex items-center gap-1.5 shadow-lg transition-all ${isFaceLocked
                     ? 'bg-emerald-950/85 border border-emerald-400/80 text-emerald-300'
                     : 'bg-black/70 border border-white/15 text-white/95'
-                }`}
+                  }`}
               >
                 <User size={11} className={isFaceLocked ? 'text-emerald-400 animate-pulse' : 'text-cyan-400'} />
                 <span>{isFaceLocked ? 'Face Locked • Mesh Tracking' : 'Align Face with Biometric Mesh'}</span>
@@ -1488,11 +1663,10 @@ export function FaceCapture({
                     return next;
                   });
                 }}
-                className={`px-2 py-1 rounded-full backdrop-blur-md border text-[9.5px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  autoScanEnabled
+                className={`px-2 py-1 rounded-full backdrop-blur-md border text-[9.5px] font-bold transition-all flex items-center gap-1 cursor-pointer ${autoScanEnabled
                     ? 'bg-emerald-600/90 border-emerald-400 text-white shadow-md'
                     : 'bg-black/60 border border-white/10 text-slate-400 hover:text-white'
-                }`}
+                  }`}
                 title="Toggle hands-free automatic scanning"
               >
                 <Sparkles size={10} className={autoScanEnabled ? 'text-emerald-200' : ''} />
@@ -1519,11 +1693,10 @@ export function FaceCapture({
                   e.stopPropagation();
                   setShowMoveControls((prev) => !prev);
                 }}
-                className={`px-2 py-1 rounded-full backdrop-blur-md border text-[9.5px] font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                  showMoveControls
+                className={`px-2 py-1 rounded-full backdrop-blur-md border text-[9.5px] font-bold transition-all flex items-center gap-1 cursor-pointer ${showMoveControls
                     ? 'bg-cyan-600 border-cyan-400 text-white shadow-md'
                     : 'bg-black/60 border border-white/10 text-slate-300 hover:text-white'
-                }`}
+                  }`}
                 title="Toggle move & scale controls"
               >
                 <Move size={10} />
@@ -1723,12 +1896,25 @@ export function FaceCapture({
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/80 backdrop-blur-sm z-30 p-4 text-center"
+              className="absolute inset-0 flex flex-col items-center justify-center bg-red-950/90 backdrop-blur-md z-30 p-5 text-center"
             >
               <motion.div initial={{ scale: 0 }} animate={{ scale: 1 }}>
-                <XCircle size={68} className="text-red-400 drop-shadow-lg" />
+                <XCircle size={64} className="text-red-400 drop-shadow-lg" />
               </motion.div>
-              <p className="text-white text-xs font-bold mt-2">{mismatchError || 'Facial verification rejected'}</p>
+              <span className="mt-2.5 px-2.5 py-0.5 rounded-full bg-red-500/25 border border-red-400/50 text-red-200 text-[10px] font-extrabold uppercase tracking-wider">
+                Facial Recognition Error
+              </span>
+              <p className="text-white text-xs font-bold mt-2 leading-relaxed max-w-[265px]">
+                {mismatchError || 'No face has been recognized. Please try again.'}
+              </p>
+              <button
+                type="button"
+                onClick={handleRetry}
+                className="mt-4 px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-bold shadow-lg flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <RefreshCw size={13} />
+                <span>Scan Again</span>
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -1754,13 +1940,12 @@ export function FaceCapture({
         <div className="w-full max-w-[340px]">
           <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden">
             <motion.div
-              className={`h-full rounded-full ${
-                state === 'success' || state === 'preview'
+              className={`h-full rounded-full ${state === 'success' || state === 'preview'
                   ? 'bg-emerald-500'
                   : state === 'failed' || mismatchError
                     ? 'bg-red-500'
                     : 'bg-cyan-500'
-              }`}
+                }`}
               initial={{ width: 0 }}
               animate={{ width: `${progress}%` }}
               transition={{ duration: 0.3 }}
@@ -1771,15 +1956,14 @@ export function FaceCapture({
 
       {/* Status message banner */}
       <div
-        className={`flex items-center gap-2 p-2.5 rounded-2xl border text-xs font-semibold w-full max-w-[340px] ${
-          state === 'success' || state === 'preview'
+        className={`flex items-center gap-2 p-2.5 rounded-2xl border text-xs font-semibold w-full max-w-[340px] ${state === 'success' || state === 'preview'
             ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
             : state === 'failed' || mismatchError
               ? 'bg-red-50 text-red-800 border-red-200'
               : qualityReport && !qualityReport.ok
                 ? 'bg-amber-50 text-amber-800 border-amber-200'
                 : 'bg-slate-50 text-slate-800 border-slate-200'
-        }`}
+          }`}
       >
         {isScanning && !qualityReport?.ok && <AlertTriangle size={15} className="text-amber-600 shrink-0" />}
         {isScanning && qualityReport?.ok && <div className="w-2.5 h-2.5 rounded-full bg-cyan-500 animate-pulse shrink-0" />}
@@ -1831,14 +2015,15 @@ export function FaceCapture({
             <button
               type="button"
               onClick={() => handleManualSnap()}
-              disabled={state === 'verifying' || state === 'analyzing' || !livenessVerified}
-              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${
-                state === 'verifying' || state === 'analyzing'
+              disabled={state === 'verifying' || state === 'analyzing' || (isFaceLocked && !livenessVerified)}
+              className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${state === 'verifying' || state === 'analyzing'
                   ? 'bg-blue-600 text-white cursor-wait animate-pulse'
                   : livenessVerified
                     ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-emerald-600/25 cursor-pointer'
-                    : 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
-              }`}
+                    : !isFaceLocked
+                      ? 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'
+                      : 'bg-slate-200 text-slate-500 cursor-not-allowed border border-slate-300'
+                }`}
             >
               {state === 'verifying' || state === 'analyzing' ? (
                 <>
@@ -1857,10 +2042,12 @@ export function FaceCapture({
                   <Eye size={15} />
                   <span>
                     {livenessPhase === 'turn_head'
-                      ? 'Step 1/2: Turn Head Slightly...'
-                      : livenessPhase === 'blink_or_smile'
-                        ? 'Step 2/2: Blink or Smile...'
-                        : 'Complete Live Face Check First'}
+                      ? 'Step 2/4: Move Head Left or Right...'
+                      : livenessPhase === 'blink'
+                        ? 'Step 3/4: Blink Your Eyes...'
+                        : livenessPhase === 'smile'
+                          ? 'Step 4/4: Smile at Camera...'
+                          : 'Step 1/4: Look Straight at Camera...'}
                   </span>
                 </>
               )}

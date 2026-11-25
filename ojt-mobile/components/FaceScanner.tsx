@@ -69,9 +69,13 @@ export default function FaceScanner({
   // Strict 3D Live-Face Challenge Anti-Spoof State
   const [livenessVerified, setLivenessVerified] = useState(false);
   const livenessVerifiedRef = useRef(false);
-  const [livenessStepText, setLivenessStepText] = useState('🛡️ Live Check: Look straight ahead');
-  const blinkStateRef = useRef<'calibrating' | 'turn_head' | 'blink_or_smile' | 'verified'>('calibrating');
+  const [livenessStepText, setLivenessStepText] = useState('🛡️ Step 1/4: Look straight ahead');
+  const blinkStateRef = useRef<'calibrating' | 'turn_head' | 'blink' | 'smile' | 'verified'>('calibrating');
   const blinkFrameRef = useRef<string | null>(null);
+  const scanStatusRef = useRef<ScanStatus>('initializing');
+  const scanStartedAtRef = useRef<number>(Date.now());
+  const noFaceSinceRef = useRef<number>(0);
+  const phaseStartedAtRef = useRef<number>(Date.now());
   const livenessStatsRef = useRef({
     calibFrames: 0,
     sumYaw: 0,
@@ -92,11 +96,17 @@ export default function FaceScanner({
     missedFrames: 0,
   });
 
-  const resetMobileLiveness = useCallback((badgeMsg = '🛡️ Live Check: Look straight ahead') => {
+  const updateScanStatus = useCallback((next: ScanStatus) => {
+    scanStatusRef.current = next;
+    setScanStatus(next);
+  }, []);
+
+  const resetMobileLiveness = useCallback((badgeMsg = '🛡️ Step 1/4: Look straight ahead') => {
     livenessVerifiedRef.current = false;
     setLivenessVerified(false);
     blinkStateRef.current = 'calibrating';
     blinkFrameRef.current = null;
+    phaseStartedAtRef.current = Date.now();
     setLivenessStepText(badgeMsg);
     livenessStatsRef.current = {
       calibFrames: 0,
@@ -203,13 +213,27 @@ export default function FaceScanner({
     };
   }, []);
 
+  const failMobileScan = useCallback(
+    (bannerMsg: string, detailMsg: string) => {
+      livenessVerifiedRef.current = false;
+      setLivenessVerified(false);
+      updateScanStatus('failed');
+      setStatusMessage(bannerMsg);
+      setErrorMessage(detailMsg);
+      setLivenessStepText('❌ No Face Recognized');
+      Animated.timing(progressAnim, { toValue: 1, duration: 200, useNativeDriver: false }).start();
+      triggerAlarmHaptic();
+    },
+    [progressAnim, triggerAlarmHaptic, updateScanStatus]
+  );
+
   // Handle successful biometric completion
   const handleSuccess = useCallback(
     (photo: string, confidence = 100, distance = 0.0) => {
       if (hasFinishedRef.current) return;
       hasFinishedRef.current = true;
 
-      setScanStatus('success');
+      updateScanStatus('success');
       setCapturedPhoto(photo);
       setMatchDetails({ confidence, distance });
 
@@ -231,12 +255,19 @@ export default function FaceScanner({
         }
       }, 750);
     },
-    [mode, onCapture, progressAnim]
+    [mode, onCapture, progressAnim, updateScanStatus]
   );
 
   // Automated continuous biometric inspection loop
   useEffect(() => {
-    if (!cameraReady || hasFinishedRef.current || scanStatus === 'success') return;
+    if (
+      !cameraReady ||
+      hasFinishedRef.current ||
+      scanStatus === 'success' ||
+      scanStatus === 'failed'
+    ) {
+      return;
+    }
 
     let scanTimer: any = null;
     let consecutiveStable = 0;
@@ -246,6 +277,8 @@ export default function FaceScanner({
         !cameraRef.current ||
         isScanningRef.current ||
         hasFinishedRef.current ||
+        scanStatusRef.current === 'failed' ||
+        scanStatusRef.current === 'success' ||
         !isMountedRef.current
       ) {
         return;
@@ -281,9 +314,10 @@ export default function FaceScanner({
           consecutiveStable = 0;
           setStableCount(0);
           resetMobileLiveness('🚨 Spoof Blocked: Show Live Face');
-          setScanStatus('failed');
-          setStatusMessage(quality.spoofReason || '🚨 Phone screen / photo detected! Live face required.');
-          triggerAlarmHaptic();
+          failMobileScan(
+            '🚨 No Live Face Recognized (Photo/Screen Blocked)',
+            quality.spoofReason || 'No valid live face has been recognized — A phone screen or static photo was detected.'
+          );
           return;
         }
 
@@ -291,7 +325,7 @@ export default function FaceScanner({
           consecutiveStable = 0;
           setStableCount(0);
           resetMobileLiveness('⚠️ Only one live face allowed');
-          setScanStatus('aligning');
+          updateScanStatus('aligning');
           setStatusMessage('⚠️ Multiple faces detected. Ensure only you are in view.');
           return;
         }
@@ -300,7 +334,15 @@ export default function FaceScanner({
         if (quality.tooDark) {
           consecutiveStable = 0;
           setStableCount(0);
-          setScanStatus('aligning');
+          if (noFaceSinceRef.current === 0) noFaceSinceRef.current = Date.now();
+          if (Date.now() - noFaceSinceRef.current >= 6500) {
+            failMobileScan(
+              '❌ Error: No face has been recognized',
+              'Camera frame is too dark to recognize a face. Please move to a well-lit area and tap Retry.'
+            );
+            return;
+          }
+          updateScanStatus('aligning');
           setStatusMessage('💡 Area is dark. Move to better lighting');
           Animated.timing(progressAnim, { toValue: 0.15, duration: 150, useNativeDriver: false }).start();
           return;
@@ -313,7 +355,7 @@ export default function FaceScanner({
         if (quality.tooBright) {
           consecutiveStable = 0;
           setStableCount(0);
-          setScanStatus('aligning');
+          updateScanStatus('aligning');
           setStatusMessage('⚠️ Too bright! Avoid direct glare');
           Animated.timing(progressAnim, { toValue: 0.2, duration: 150, useNativeDriver: false }).start();
           return;
@@ -331,19 +373,56 @@ export default function FaceScanner({
         if (!quality.hasFace) {
           consecutiveStable = 0;
           setStableCount(0);
+          const nowMiss = Date.now();
+
+          // Allow AI neural bridge up to 9s to finish initial loading before counting missed frames;
+          // if bridge still fails to initialize after 9s, surface an explicit scan error.
+          if (!biometricService.isReady()) {
+            if (nowMiss - scanStartedAtRef.current >= 9000) {
+              failMobileScan(
+                '❌ Error: Unable to scan face',
+                'Facial recognition engine could not initialize. Please check your internet connection and tap Retry.'
+              );
+              return;
+            }
+            noFaceSinceRef.current = nowMiss;
+            updateScanStatus('initializing');
+            setStatusMessage('Initializing AI facial recognition...');
+            return;
+          }
+
+          if (noFaceSinceRef.current === 0) {
+            noFaceSinceRef.current = nowMiss;
+          }
           livenessStatsRef.current.missedFrames++;
           if (livenessStatsRef.current.missedFrames >= 2) {
-            resetMobileLiveness('🛡️ Live Check: Center live face');
+            resetMobileLiveness('⚠️ No face detected — Align face');
           }
-          setScanStatus('aligning');
-          setStatusMessage('Position your live face inside the oval');
+
+          const noFaceElapsed = nowMiss - noFaceSinceRef.current;
+          if (noFaceElapsed >= 6000 || livenessStatsRef.current.missedFrames >= 16) {
+            failMobileScan(
+              '❌ Error: No face has been recognized',
+              'No face has been recognized in the camera frame. Please position your face clearly inside the oval in good lighting and tap Retry.'
+            );
+            return;
+          }
+
+          updateScanStatus('aligning');
+          setStatusMessage(
+            noFaceElapsed >= 2200
+              ? '⚠️ No face detected — Position face inside oval'
+              : 'Position your live face inside the oval'
+          );
           Animated.timing(progressAnim, { toValue: 0.15, duration: 150, useNativeDriver: false }).start();
           return;
         }
 
+        noFaceSinceRef.current = 0;
         livenessStatsRef.current.missedFrames = 0;
 
-        // 2. Mandatory 3D Live-Face Challenge (Blocks static photos & screen replays)
+        // 2. Mandatory 3D Live-Face Challenge (Look -> Move Head Left/Right -> Blink -> Smile)
+        const now = Date.now();
         const stats = livenessStatsRef.current;
         const yaw = quality.yawRatio ?? 0.5;
         const ear = quality.ear ?? 0.28;
@@ -358,7 +437,7 @@ export default function FaceScanner({
         if (stats.prevCx >= 0 && stats.prevWidth > 0) {
           const jump = Math.hypot(cx - stats.prevCx, cy - stats.prevCy);
           const scaleRatio = fw / Math.max(0.05, stats.prevWidth);
-          if (jump > 0.22 || scaleRatio > 1.38 || scaleRatio < 0.68) {
+          if (jump > 0.38 || scaleRatio > 1.65 || scaleRatio < 0.55) {
             resetMobileLiveness('🛡️ Hold steady — Restarting live check');
           }
         }
@@ -367,14 +446,31 @@ export default function FaceScanner({
         stats.prevWidth = fw;
 
         if (!livenessVerifiedRef.current) {
-          setScanStatus('analyzing');
+          updateScanStatus('analyzing');
+
+          // Detect stalled / unrecognizable live scan as an explicit error
+          const phaseElapsed = now - phaseStartedAtRef.current;
+          const totalElapsed = now - scanStartedAtRef.current;
+          if (phaseElapsed >= 11000 || totalElapsed >= 26000) {
+            const curStep = blinkStateRef.current;
+            const detail =
+              curStep === 'calibrating'
+                ? 'No clear face has been recognized. Please look straight at the camera without obstructions and tap Retry.'
+                : curStep === 'turn_head'
+                  ? 'Face could not be recognized — Could not detect live 3D head movement (left or right). Static photos cannot be scanned.'
+                  : curStep === 'blink'
+                    ? 'Face could not be recognized — Could not detect live eye blink. Ensure clear lighting on your eyes and tap Retry.'
+                    : 'Face could not be recognized — Live facial scan could not be completed. Please center your face clearly and tap Retry.';
+            failMobileScan('❌ Error: No valid live face recognized', detail);
+            return;
+          }
 
           if (blinkStateRef.current === 'calibrating') {
             if (quality.faceCentered === false) {
-              setStatusMessage('Center face inside the oval guide');
+              setStatusMessage('Step 1/4: Center face inside the oval guide');
               return;
             }
-            if (yaw >= 0.36 && yaw <= 0.64 && ear >= 0.175) {
+            if (yaw >= 0.35 && yaw <= 0.65 && ear >= 0.165) {
               stats.calibFrames++;
               stats.sumYaw += yaw;
               stats.sumEAR += ear;
@@ -383,9 +479,9 @@ export default function FaceScanner({
               stats.sumMAR += mar;
               stats.baselineWidth = fw;
 
-              setLivenessStepText('🛡️ Calibrating 3D Face Mesh...');
-              setStatusMessage('Look straight ahead with eyes open...');
-              Animated.timing(progressAnim, { toValue: 0.30, duration: 150, useNativeDriver: false }).start();
+              setLivenessStepText('🛡️ Step 1/4: Looking Straight...');
+              setStatusMessage('Step 1/4: Look straight ahead with eyes open...');
+              Animated.timing(progressAnim, { toValue: 0.28, duration: 150, useNativeDriver: false }).start();
 
               if (stats.calibFrames >= 2) {
                 const n = stats.calibFrames;
@@ -394,13 +490,14 @@ export default function FaceScanner({
                 stats.baselinePitch = stats.sumPitch / n;
                 stats.baselineMouthToJaw = stats.sumMouthToJaw / n;
                 stats.baselineMAR = stats.sumMAR / n;
+                phaseStartedAtRef.current = now;
                 blinkStateRef.current = 'turn_head';
-                setLivenessStepText('🛡️ Step 1/2: Turn Head Slightly Left or Right');
-                setStatusMessage('Turn your head slightly left or right');
-                Animated.timing(progressAnim, { toValue: 0.45, duration: 150, useNativeDriver: false }).start();
+                setLivenessStepText('🛡️ Step 2/4: Move Head Left or Right');
+                setStatusMessage('Step 2/4: Slowly move your head left or right');
+                Animated.timing(progressAnim, { toValue: 0.48, duration: 150, useNativeDriver: false }).start();
               }
             } else {
-              setStatusMessage('Look straight at the camera with eyes open');
+              setStatusMessage('Step 1/4: Look straight at the camera with eyes open');
             }
             return;
           }
@@ -408,55 +505,80 @@ export default function FaceScanner({
           if (blinkStateRef.current === 'turn_head') {
             // Flat 2D photos on another phone preserve nose-to-jaw collinear ratio (~0.50) when tilted!
             const yawDelta = Math.abs(yaw - stats.baselineYaw);
-            const scaleOk = fw > stats.baselineWidth * 0.62 && fw < stats.baselineWidth * 1.48;
-            if (yawDelta >= 0.11 && scaleOk) {
-              blinkStateRef.current = 'blink_or_smile';
-              setLivenessStepText('🛡️ Step 2/2: Face Forward & Smile or Blink');
-              setStatusMessage('Now look straight ahead and smile or blink slowly');
-              Animated.timing(progressAnim, { toValue: 0.72, duration: 150, useNativeDriver: false }).start();
+            const scaleOk = fw > stats.baselineWidth * 0.58 && fw < stats.baselineWidth * 1.55;
+            if (yawDelta >= 0.09 && scaleOk) {
+              phaseStartedAtRef.current = now;
+              blinkStateRef.current = 'blink';
+              setLivenessStepText('🛡️ Step 3/4: Face Forward & Blink');
+              setStatusMessage('Step 3/4: Look straight ahead and blink slowly');
+              Animated.timing(progressAnim, { toValue: 0.68, duration: 150, useNativeDriver: false }).start();
             } else {
-              setStatusMessage('Step 1/2: Slowly turn your head left or right');
+              setStatusMessage('Step 2/4: Move your head slightly left or right');
             }
             return;
           }
 
-          if (blinkStateRef.current === 'blink_or_smile') {
-            const backToCenter = Math.abs(yaw - stats.baselineYaw) <= 0.115;
+          if (blinkStateRef.current === 'blink') {
+            const backToCenter =
+              (yaw >= 0.35 && yaw <= 0.65) || Math.abs(yaw - stats.baselineYaw) <= 0.14;
             const pitchSteady =
-              Math.abs(pitch - stats.baselinePitch) / Math.max(0.15, stats.baselinePitch) <= 0.15;
+              Math.abs(pitch - stats.baselinePitch) / Math.max(0.15, stats.baselinePitch) <= 0.22;
 
             if (!backToCenter) {
-              setStatusMessage('Return face to center, then smile or blink');
+              setStatusMessage('Step 3/4: Return face to center, then blink');
               return;
             }
 
             if (pitchSteady) {
-              const blinkThresh = Math.min(stats.baselineEAR * 0.79, stats.baselineEAR - 0.042);
+              const blinkThresh = Math.min(stats.baselineEAR * 0.85, stats.baselineEAR - 0.030);
               if (ear <= blinkThresh) {
                 stats.sawBlinkDrop = true;
                 blinkFrameRef.current = dataUrl;
-                setStatusMessage('Good! Now open eyes & look straight ahead...');
-                Animated.timing(progressAnim, { toValue: 0.88, duration: 120, useNativeDriver: false }).start();
+                setStatusMessage('Good! Now open your eyes...');
+                Animated.timing(progressAnim, { toValue: 0.78, duration: 120, useNativeDriver: false }).start();
                 return;
               }
 
-              const blinkCompleted = stats.sawBlinkDrop && ear >= stats.baselineEAR * 0.87;
-              const smileCompleted =
-                ear >= 0.18 &&
-                (mouthToJaw >= stats.baselineMouthToJaw * 1.12 || mar >= stats.baselineMAR + 0.14);
-
-              if (blinkCompleted || smileCompleted) {
-                blinkStateRef.current = 'verified';
-                livenessVerifiedRef.current = true;
-                setLivenessVerified(true);
-                setLivenessStepText('✓ Live 3D Face Verified');
-                Animated.timing(progressAnim, { toValue: 0.92, duration: 150, useNativeDriver: false }).start();
-              } else {
-                setStatusMessage('Step 2/2: Blink slowly or smile at the camera');
+              if (stats.sawBlinkDrop && ear >= stats.baselineEAR * 0.85) {
+                phaseStartedAtRef.current = now;
+                blinkStateRef.current = 'smile';
+                setLivenessStepText('🛡️ Step 4/4: Smile at Camera');
+                setStatusMessage('Step 4/4: Now smile at the camera!');
+                Animated.timing(progressAnim, { toValue: 0.86, duration: 150, useNativeDriver: false }).start();
                 return;
               }
+
+              setStatusMessage('Step 3/4: Blink slowly at the camera');
+              return;
             } else {
-              setStatusMessage('Keep phone level and blink or smile');
+              setStatusMessage('Keep phone level and blink');
+              return;
+            }
+          }
+
+          if (blinkStateRef.current === 'smile') {
+            const backToCenter =
+              (yaw >= 0.35 && yaw <= 0.65) || Math.abs(yaw - stats.baselineYaw) <= 0.14;
+            if (!backToCenter) {
+              setStatusMessage('Step 4/4: Face forward and smile');
+              return;
+            }
+
+            const smileCompleted =
+              ear >= 0.16 &&
+              (mouthToJaw >= stats.baselineMouthToJaw * 1.072 ||
+                mar >= stats.baselineMAR + 0.075 ||
+                (mouthToJaw >= 0.48 && mouthToJaw >= stats.baselineMouthToJaw * 1.045));
+
+            if (smileCompleted) {
+              phaseStartedAtRef.current = now;
+              blinkStateRef.current = 'verified';
+              livenessVerifiedRef.current = true;
+              setLivenessVerified(true);
+              setLivenessStepText('✓ Live 3D Face Verified');
+              Animated.timing(progressAnim, { toValue: 0.94, duration: 150, useNativeDriver: false }).start();
+            } else {
+              setStatusMessage('Step 4/4: Smile at the camera to complete scan');
               return;
             }
           }
@@ -471,7 +593,7 @@ export default function FaceScanner({
         if (mode === 'enroll') {
           consecutiveStable++;
           setStableCount(consecutiveStable);
-          setScanStatus('analyzing');
+          updateScanStatus('analyzing');
 
           try {
             const finalPhoto = await cameraRef.current.takePictureAsync({
@@ -480,6 +602,14 @@ export default function FaceScanner({
               shutterSound: false,
             } as any);
             const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : dataUrl;
+            const finalCheck = await biometricService.inspectQuality(finalDataUrl);
+            if (!finalCheck.hasFace || finalCheck.screenSpoofSuspected) {
+              failMobileScan(
+                '❌ Error: No face has been recognized',
+                'No clear live face was recognized during enrollment capture. Please center your face in good lighting and tap Retry.'
+              );
+              return;
+            }
             handleSuccess(finalDataUrl);
           } catch {
             handleSuccess(dataUrl);
@@ -488,13 +618,14 @@ export default function FaceScanner({
           if (!enrolledPhoto) {
             consecutiveStable = 0;
             setStableCount(0);
-            setScanStatus('failed');
-            setStatusMessage('❌ Face not registered. Please register face first.');
-            setErrorMessage('No registered biometric facial profile found on your account. Please complete face registration before recording attendance.');
+            failMobileScan(
+              '❌ Face not registered. Please register face first.',
+              'No registered biometric facial profile found on your account. Please complete face registration before recording attendance.'
+            );
             return;
           }
 
-          setScanStatus('verifying');
+          updateScanStatus('verifying');
           setStatusMessage('Live face verified! Matching identity...');
           Animated.timing(progressAnim, { toValue: 0.95, duration: 150, useNativeDriver: false }).start();
 
@@ -538,12 +669,14 @@ export default function FaceScanner({
               handleSuccess(dataUrl, dfRes.similarity_percent, dfRes.distance);
             }
           } else {
-            resetMobileLiveness('🛡️ Mismatch — Repeat Live Check');
-            setScanStatus('failed');
-            setStatusMessage('❌ Identity mismatch against enrolled face');
-            setErrorMessage(
-              localBio?.error ||
-                `Face does not match enrolled template for ${employeeName || 'this trainee'}.`
+            resetMobileLiveness('🛡️ Not Recognized — Tap Retry');
+            const errText = localBio?.error || dfRes.error || '';
+            const isNoFace = errText.toLowerCase().includes('no clear live human face') || errText.toLowerCase().includes('no face');
+            failMobileScan(
+              isNoFace ? '❌ Error: No face has been recognized' : '❌ Face not recognized against enrolled profile',
+              isNoFace
+                ? 'No face has been recognized in the camera frame. Please position your face clearly in good lighting and tap Retry.'
+                : errText || `Face does not match enrolled template for ${employeeName || 'this trainee'}.`
             );
           }
         }
@@ -560,24 +693,31 @@ export default function FaceScanner({
     return () => {
       if (scanTimer) clearInterval(scanTimer);
     };
-  }, [cameraReady, mode, enrolledPhoto, handleSuccess, progressAnim, resetMobileLiveness, triggerAlarmHaptic, deepFaceModel, employeeName]);
+  }, [cameraReady, scanStatus, mode, enrolledPhoto, handleSuccess, progressAnim, resetMobileLiveness, failMobileScan, updateScanStatus, deepFaceModel, employeeName]);
 
   // Manual shutter trigger fallback (Strictly gated by 3D live-face verification!)
   async function handleManualCapture() {
     if (!cameraRef.current || isCapturing || hasFinishedRef.current) return;
 
     if (!livenessVerifiedRef.current) {
+      if (livenessStatsRef.current.missedFrames >= 2 || noFaceSinceRef.current > 0) {
+        failMobileScan(
+          '❌ Error: No face has been recognized',
+          'No face has been recognized in the camera frame. Please position your face clearly inside the oval in good lighting and tap Retry.'
+        );
+        return;
+      }
       triggerAlarmHaptic();
-      setStatusMessage('🛡️ Complete Live Check First (Turn Head & Smile/Blink)');
+      setStatusMessage('🛡️ Complete Steps: Look → Move Head → Blink → Smile');
       setErrorMessage(
-        'Static photos and phone screens are blocked. Please complete Step 1 (turn head slightly) and Step 2 (smile or blink) before capturing.'
+        'Please complete all live facial recognition steps (look straight, move head left or right, blink, and smile) before capturing.'
       );
       return;
     }
 
     setIsCapturing(true);
     setErrorMessage(null);
-    setScanStatus('verifying');
+    updateScanStatus('verifying');
     setStatusMessage('Capturing & analyzing live biometrics...');
 
     try {
@@ -600,27 +740,28 @@ export default function FaceScanner({
 
       if (quality.screenSpoofSuspected) {
         resetMobileLiveness('🚨 Spoof Blocked: Show Live Face');
-        setScanStatus('failed');
-        setErrorMessage(quality.spoofReason || 'Device screen or photo spoof detected. Only live faces are allowed.');
-        setStatusMessage('🚨 Photo / Screen Blocked');
+        failMobileScan(
+          '🚨 Photo / Screen Blocked',
+          quality.spoofReason || 'No valid live face recognized — Device screen or static photo detected.'
+        );
         setIsCapturing(false);
         return;
       }
 
       if ((quality.tooDark && quality.brightness < 20) || (quality.tooBright && quality.brightness > 248)) {
-        setScanStatus('failed');
-        triggerAlarmHaptic();
-        const reason = quality.tooDark ? '🚨 Lighting too dark! Please move to a well-lit area.' : '🚨 Harsh glare! Please adjust camera away from direct lights.';
-        setErrorMessage(reason);
-        setStatusMessage(quality.tooDark ? '⚠️ Too Dark' : '⚠️ Harsh Glare');
+        const reason = quality.tooDark
+          ? 'Lighting too dark to recognize face! Please move to a well-lit area and tap Retry.'
+          : 'Harsh glare prevented face recognition! Please adjust camera away from direct light and tap Retry.';
+        failMobileScan(quality.tooDark ? '❌ Too Dark — No Face Recognized' : '❌ Harsh Glare — No Face Recognized', reason);
         setIsCapturing(false);
         return;
       }
 
       if (!quality.hasFace) {
-        setScanStatus('failed');
-        setErrorMessage('No clear live face detected in capture. Please position face clearly inside the oval.');
-        setStatusMessage('⚠️ No face detected');
+        failMobileScan(
+          '❌ Error: No face has been recognized',
+          'No face has been recognized in the captured frame. Please position your face clearly inside the oval and tap Retry.'
+        );
         setIsCapturing(false);
         return;
       }
@@ -632,9 +773,10 @@ export default function FaceScanner({
 
       if (mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') {
         if (!enrolledPhoto) {
-          setScanStatus('failed');
-          setErrorMessage('No registered biometric face profile found. You must complete face registration before clocking in.');
-          setStatusMessage('❌ Face not registered');
+          failMobileScan(
+            '❌ Face not registered',
+            'No registered biometric face profile found. You must complete face registration before clocking in.'
+          );
           setIsCapturing(false);
           return;
         }
@@ -655,13 +797,12 @@ export default function FaceScanner({
           handleSuccess(base64Data, dfRes.similarity_percent, dfRes.distance);
           return;
         } else {
-          resetMobileLiveness('🛡️ Mismatch — Repeat Live Check');
-          setScanStatus('failed');
-          setErrorMessage(
+          resetMobileLiveness('🛡️ Not Recognized — Tap Retry');
+          failMobileScan(
+            '❌ Face not recognized',
             localBio?.error ||
-              `Facial Mismatch: Does not match enrolled template for ${employeeName || 'this student'}.`
+              `Face not recognized: Does not match enrolled template for ${employeeName || 'this student'}.`
           );
-          setStatusMessage('⚠️ Verification failed. Please retake.');
           setIsCapturing(false);
           return;
         }
@@ -669,23 +810,30 @@ export default function FaceScanner({
 
       handleSuccess(base64Data);
     } catch (err: any) {
-      setScanStatus('failed');
-      setErrorMessage(err?.message || 'Failed to capture photo');
-      setStatusMessage('⚠️ Capture error');
+      failMobileScan('❌ Error: Facial scan failed', err?.message || 'Unable to recognize face. Please tap Retry.');
       setIsCapturing(false);
     }
   }
 
   function toggleFacing() {
+    scanStartedAtRef.current = Date.now();
+    noFaceSinceRef.current = Date.now();
+    phaseStartedAtRef.current = Date.now();
     resetMobileLiveness();
+    updateScanStatus('aligning');
+    setErrorMessage(null);
     setFacing((prev) => (prev === 'front' ? 'back' : 'front'));
   }
 
   function handleResetScan() {
     hasFinishedRef.current = false;
+    const nowReset = Date.now();
+    scanStartedAtRef.current = nowReset;
+    noFaceSinceRef.current = nowReset;
+    phaseStartedAtRef.current = nowReset;
     resetMobileLiveness();
-    setScanStatus('aligning');
-    setStatusMessage('Position your live face inside the oval');
+    updateScanStatus('aligning');
+    setStatusMessage('Step 1/4: Position your live face inside the oval');
     setErrorMessage(null);
     setCapturedPhoto(null);
     setStableCount(0);
@@ -762,9 +910,13 @@ export default function FaceScanner({
         style={StyleSheet.absoluteFill}
         facing={facing}
         onCameraReady={() => {
+          const nowReady = Date.now();
+          scanStartedAtRef.current = nowReady;
+          noFaceSinceRef.current = nowReady;
+          phaseStartedAtRef.current = nowReady;
           setCameraReady(true);
-          setScanStatus('aligning');
-          setStatusMessage('Position face inside the oval');
+          updateScanStatus('aligning');
+          setStatusMessage('Step 1/4: Position face inside the oval');
         }}
       />
 
@@ -897,7 +1049,12 @@ export default function FaceScanner({
                     inputRange: [0, 1],
                     outputRange: ['0%', '100%'],
                   }),
-                  backgroundColor: scanStatus === 'success' ? '#22c55e' : '#38bdf8',
+                  backgroundColor:
+                    scanStatus === 'success'
+                      ? '#22c55e'
+                      : scanStatus === 'failed'
+                        ? '#ef4444'
+                        : '#38bdf8',
                 },
               ]}
             />
@@ -910,7 +1067,9 @@ export default function FaceScanner({
             <View style={styles.errorCard}>
               <AlertTriangle size={18} color="#ef4444" style={{ marginTop: 2 }} />
               <View style={{ flex: 1 }}>
-                <Text style={styles.errorCardTitle}>Verification Notice</Text>
+                <Text style={styles.errorCardTitle}>
+                  {scanStatus === 'failed' ? 'Facial Recognition Error' : 'Verification Notice'}
+                </Text>
                 <Text style={styles.errorCardText}>{errorMessage}</Text>
               </View>
               <TouchableOpacity onPress={handleResetScan} style={styles.retryBtnSmall}>

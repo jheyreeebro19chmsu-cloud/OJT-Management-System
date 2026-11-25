@@ -240,6 +240,14 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
   return typed ? typed.descriptor : null;
 }
 
+export async function hasNeuralFaceInDataUrl(dataUrl: string): Promise<boolean> {
+  if (!dataUrl) return false;
+  const modelsAvailable = _modelsLoaded || (await loadFaceModels().catch(() => false));
+  if (!modelsAvailable) return false;
+  const typed = await computeTypedDescriptorFromDataUrl(dataUrl);
+  return Boolean(typed && typed.type === 'neural' && typed.descriptor && typed.descriptor.length === 128);
+}
+
 /**
  * 128-Dimensional Perceptual Facial Descriptor
  * Generates an L2-normalized 128-D vector from face framing geometry,
@@ -508,90 +516,59 @@ export async function inspectFaceQuality(dataUrl: string): Promise<FaceQualityRe
     if (ok && (window as any).faceapi) {
       const api = (window as any).faceapi;
       try {
-        // Multi-resolution face detection without requiring landmarks first
+        // Multi-resolution neural face detection (strictly requires genuine face score, never random background noise)
         let faceResult = await api.detectSingleFace(
           img,
-          new api.TinyFaceDetectorOptions({ scoreThreshold: 0.05, inputSize: 416 })
+          new api.TinyFaceDetectorOptions({ scoreThreshold: 0.24, inputSize: 416 })
         );
 
         if (!faceResult) {
           faceResult = await api.detectSingleFace(
             img,
-            new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 320 })
+            new api.TinyFaceDetectorOptions({ scoreThreshold: 0.22, inputSize: 320 })
           );
         }
 
         if (!faceResult) {
           faceResult = await api.detectSingleFace(
             img,
-            new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 224 })
+            new api.TinyFaceDetectorOptions({ scoreThreshold: 0.20, inputSize: 224 })
           );
         }
 
         if (!faceResult && api.nets.ssdMobilenetv1?.params) {
           faceResult = await api.detectSingleFace(
             img,
-            new api.SsdMobilenetv1Options({ minConfidence: 0.15 })
+            new api.SsdMobilenetv1Options({ minConfidence: 0.28 })
           );
         }
 
         if (faceResult) {
-          result.faceDetected = true;
           faceBox = (faceResult as any).box || (faceResult as any).detection?.box || faceResult;
 
-          // Attempt landmarks extraction on the detected face
+          // Require 68-point facial landmarks to confirm a genuine recognizable human face
           try {
             const withLm = await api.detectSingleFace(
               img,
-              new api.TinyFaceDetectorOptions({ scoreThreshold: 0.03, inputSize: 320 })
+              new api.TinyFaceDetectorOptions({ scoreThreshold: 0.18, inputSize: 320 })
             ).withFaceLandmarks();
             if (withLm?.landmarks) {
               landmarks = withLm.landmarks.positions || withLm.landmarks;
-              if (Array.isArray(landmarks)) {
+              if (Array.isArray(landmarks) && landmarks.length >= 68) {
+                result.faceDetected = true;
                 result.landmarks = landmarks.map((pt: any) => ({ x: Number(pt.x), y: Number(pt.y) }));
               }
             }
           } catch {
-            // Landmark detection failure should not invalidate face detection
+            // Fall through if landmarks cannot be extracted
+          }
+
+          if (!result.faceDetected && (faceResult as any)?.score >= 0.45) {
+            result.faceDetected = true;
           }
         }
       } catch (detErr) {
         console.warn('Face detection error:', detErr);
-      }
-    }
-
-    // Fallback: Skin-tone & facial presence analysis in central area if models unavailable or missed
-    if (!result.faceDetected) {
-      let ovalSkinPixels = 0;
-      let ovalTotalPixels = 0;
-
-      for (let y = 0; y < h; y += 4) {
-        for (let x = 0; x < w; x += 4) {
-          const dx = (x - w * 0.5) / (w * 0.32);
-          const dy = (y - h * 0.48) / (h * 0.35);
-          if ((dx * dx + dy * dy) <= 1.0) {
-            ovalTotalPixels++;
-            const p = getPixel(x, y);
-            const isSkin = (
-              p.r > 35 && p.g > 22 && p.b > 15 &&
-              p.r >= p.g && (p.r - p.b) > 4 &&
-              p.lum > 22 && p.lum < 248
-            );
-            if (isSkin) ovalSkinPixels++;
-          }
-        }
-      }
-
-      const skinRatio = ovalTotalPixels > 0 ? ovalSkinPixels / ovalTotalPixels : 0;
-      if (skinRatio >= 0.10 && result.sharpness > 2.5) {
-        result.faceDetected = true;
-        result.faceCentered = true;
-        faceBox = {
-          x: Math.round(w * 0.20),
-          y: Math.round(h * 0.16),
-          width: Math.round(w * 0.60),
-          height: Math.round(h * 0.64),
-        };
       }
     }
 
