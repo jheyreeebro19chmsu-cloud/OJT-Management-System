@@ -9,7 +9,7 @@ import { isSecurityApiConfigured, registerFace } from '../../services/securityAp
 import { useApp } from '../../store/AppContext';
 import { Employee, TraineeDocuments, TraineeDocumentFile, RequiredDocument, TraineeDocumentItem } from '../../types';
 import { getPhotoUrl } from '../../services/config';
-import { saveDocumentPassStatus, uploadDocumentToStorage } from '../../services/supabaseService';
+import { fetchEmployeeDocuments, saveDocumentPassStatus, uploadDocumentToStorage } from '../../services/supabaseService';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../../data/documentRequirements';
@@ -154,11 +154,24 @@ export function AdminEmployees() {
       }
     } catch {}
 
+    const sub = getRequiredDocumentSubmission?.(docKey, empId);
+    const subFiles = sub?.files && Array.isArray(sub.files) && sub.files.length > 0 ? sub.files : null;
+    const candidates = [
+      doc?.files && Array.isArray(doc.files) && doc.files.length > 0 ? doc.files : null,
+      cachedFiles && cachedFiles.length > 0 ? cachedFiles : null,
+      subFiles,
+    ].filter(Boolean) as TraineeDocumentFile[][];
+
+    let bestList: TraineeDocumentFile[] | null = null;
+    for (const c of candidates) {
+      if (!bestList || c.length > bestList.length) {
+        bestList = c;
+      }
+    }
+
     const baseFiles: TraineeDocumentFile[] =
-      doc?.files && Array.isArray(doc.files) && doc.files.length > 0
-        ? doc.files
-        : cachedFiles && cachedFiles.length > 0
-        ? cachedFiles
+      bestList && bestList.length > 0
+        ? bestList
         : doc?.name || doc?.fileUrl || doc?.dataUrl
         ? [
             {
@@ -1175,6 +1188,40 @@ export function AdminEmployees() {
 
   const totalFiltered = Object.values(filteredGroups).reduce((sum, items) => sum + items.length, 0);
 
+  const hydrateSelectedEmployeeDocs = (emp: Employee) => {
+    const targetId = emp.id || emp.employeeId;
+    if (!targetId) return;
+    fetchEmployeeDocuments(targetId)
+      .then((res) => {
+        if (!res?.documents || Object.keys(res.documents).length === 0) return;
+        const merged: TraineeDocuments = { ...(emp.submittedDocuments || {}) };
+        let changed = false;
+        for (const [k, inc] of Object.entries(res.documents)) {
+          if (!inc || typeof inc !== 'object') continue;
+          const prev = merged[k];
+          const incFiles = Array.isArray(inc.files) ? inc.files : [];
+          const prevFiles = Array.isArray(prev?.files) ? prev.files : [];
+          if (!prev || incFiles.length > prevFiles.length) {
+            merged[k] = {
+              ...(prev || {}),
+              ...inc,
+              files: incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
+              status: prev?.status === 'passed' || inc.status === 'passed' ? 'passed' : inc.status || prev?.status,
+            };
+            changed = true;
+          }
+        }
+        if (changed) {
+          setSelectedEmp((cur) =>
+            cur && (cur.id === emp.id || cur.employeeId === emp.employeeId)
+              ? { ...cur, submittedDocuments: merged }
+              : cur
+          );
+        }
+      })
+      .catch(() => {});
+  };
+
   const openView = (emp: Employee) => {
     if (!emp) return;
     setSelectedEmp(emp);
@@ -1184,6 +1231,7 @@ export function AdminEmployees() {
     setEditingPhone(false);
     setPhoneValue(resolveEmpPhone(emp));
     setModalMode('view');
+    hydrateSelectedEmployeeDocs(emp);
   };
 
   const openReview = (emp: Employee) => {
@@ -1193,6 +1241,7 @@ export function AdminEmployees() {
     setEditingAddress(false);
     setEditingPhone(false);
     setModalMode('review');
+    hydrateSelectedEmployeeDocs(emp);
   };
 
   const openEdit = (emp: Employee) => {
@@ -4641,21 +4690,73 @@ export function AdminEmployees() {
 
                                           {doc?.name ? (
                                             <div className="flex items-center gap-2 text-xs text-slate-600 mt-1 flex-wrap">
-                                              {doc.files && doc.files.length > 1 ? (
-                                                <span
-                                                  className="inline-flex items-center gap-1 font-bold text-[11px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-2 py-0.5 rounded-md"
-                                                  title={`${doc.files.length} files attached`}
-                                                >
-                                                  <Files size={12} /> {doc.files.length} Files Attached
-                                                </span>
-                                              ) : (
-                                                <span
-                                                  className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
-                                                  title={doc.name}
-                                                >
-                                                  📎 {doc.name}
-                                                </span>
-                                              )}
+                                              {(() => {
+                                                const viewResolvedFiles = resolveTraineeDocFiles(selectedEmp.id, docItem.key, doc);
+                                                if (viewResolvedFiles.length > 1) {
+                                                  return (
+                                                    <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
+                                                      {viewResolvedFiles.map((vf, vfIdx) => {
+                                                        const vfUrl = resolveSafeDocumentViewUrl(vf.fileUrl || vf.dataUrl) || '';
+                                                        const vfIsImg =
+                                                          getFileCategory(vf.name || vf.fileType || '') === 'picture' ||
+                                                          vfUrl.startsWith('data:image/') ||
+                                                          /\.(jpg|jpeg|jfif|png|webp|gif|bmp)$/i.test(vf.name || '');
+                                                        return (
+                                                          <div
+                                                            key={vf.id || vfIdx}
+                                                            className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-white border border-indigo-200/90 hover:border-indigo-400 shadow-2xs"
+                                                          >
+                                                            <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                              {vfIsImg && vfUrl ? (
+                                                                <img
+                                                                  src={vfUrl}
+                                                                  alt={vf.name}
+                                                                  className="w-7 h-7 rounded object-cover border border-slate-200 shrink-0"
+                                                                />
+                                                              ) : (
+                                                                <span className="w-6 h-6 rounded bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                                                                  {vfIdx + 1}
+                                                                </span>
+                                                              )}
+                                                              <span className="font-semibold text-[11px] text-slate-800 truncate" title={vf.name}>
+                                                                {vf.name}
+                                                              </span>
+                                                            </div>
+                                                            <button
+                                                              type="button"
+                                                              onClick={() =>
+                                                                setPreviewInstructorDoc({
+                                                                  studentName: selectedEmp.name,
+                                                                  studentId: selectedEmp.employeeId,
+                                                                  title: `${docItem.num}. ${docItem.title}`,
+                                                                  fileName: vf.name,
+                                                                  fileUrl: vfUrl || undefined,
+                                                                  note: `File ${vfIdx + 1} of ${viewResolvedFiles.length}: ${vf.name}`,
+                                                                  date: vf.uploadedAt ? new Date(vf.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                                                                  files: viewResolvedFiles,
+                                                                  activeFileIndex: vfIdx,
+                                                                })
+                                                              }
+                                                              className="px-2 py-0.5 rounded-md bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-[10px] font-bold inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                                              title={`View ${vf.name}`}
+                                                            >
+                                                              <Eye size={10} /> View
+                                                            </button>
+                                                          </div>
+                                                        );
+                                                      })}
+                                                    </div>
+                                                  );
+                                                }
+                                                return (
+                                                  <span
+                                                    className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"
+                                                    title={doc.name}
+                                                  >
+                                                    📎 {doc.name}
+                                                  </span>
+                                                );
+                                              })()}
                                               {doc.size ? (
                                                 <span className="text-[10px] text-slate-500 font-medium">
                                                   {(Number(doc.size) / 1024).toFixed(0)} KB
@@ -4695,22 +4796,7 @@ export function AdminEmployees() {
                                         <button
                                           type="button"
                                           onClick={() => {
-                                            const filesList: TraineeDocumentFile[] =
-                                              doc?.files && doc.files.length > 0
-                                                ? doc.files
-                                                : doc?.name || doc?.dataUrl || doc?.fileUrl
-                                                ? [
-                                                    {
-                                                      id: 'file-1',
-                                                      name: doc.name || `${docItem.title.toLowerCase().replace(/\s+/g, '_')}_${selectedEmp.employeeId}.pdf`,
-                                                      size: doc.size,
-                                                      dataUrl: doc.dataUrl,
-                                                      fileUrl: doc.fileUrl,
-                                                      fileType: doc.fileType,
-                                                      uploadedAt: doc.uploadedAt,
-                                                    },
-                                                  ]
-                                                : [];
+                                            const filesList = resolveTraineeDocFiles(selectedEmp.id, docItem.key, doc);
 
                                             const activeFile = filesList[0];
                                             const targetUrl = resolveSafeDocumentViewUrl(activeFile?.fileUrl || activeFile?.dataUrl || doc?.fileUrl || doc?.dataUrl) || undefined;
@@ -5794,29 +5880,58 @@ export function AdminEmployees() {
                                   <div className="flex flex-col gap-1 text-xs text-slate-600 mt-1">
                                     <div className="flex items-center gap-1.5 flex-wrap">
                                       {resolvedFiles.length > 1 ? (
-                                        resolvedFiles.map((f, fIdx) => (
-                                          <button
-                                            key={fIdx}
-                                            type="button"
-                                            onClick={() =>
-                                              setPreviewInstructorDoc({
-                                                studentName: selectedEmp.name,
-                                                studentId: selectedEmp.employeeId,
-                                                title: `${docItem.num}. ${docItem.title}`,
-                                                fileName: f.name,
-                                                fileUrl: resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl) || undefined,
-                                                note: `File ${fIdx + 1} of ${resolvedFiles.length}: ${f.name}`,
-                                                date: f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
-                                                files: resolvedFiles,
-                                                activeFileIndex: fIdx,
-                                              })
-                                            }
-                                            className="inline-flex items-center gap-1 font-mono text-[10px] font-semibold text-blue-700 bg-blue-100/80 hover:bg-blue-200/80 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[180px] cursor-pointer transition-colors"
-                                            title={`Click to preview ${f.name}`}
-                                          >
-                                            📎 {fIdx + 1}. {f.name}
-                                          </button>
-                                        ))
+                                        <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-1">
+                                          {resolvedFiles.map((f, fIdx) => {
+                                            const fUrl = resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl) || '';
+                                            const isImg =
+                                              getFileCategory(f.name || f.fileType || '') === 'picture' ||
+                                              fUrl.startsWith('data:image/') ||
+                                              /\.(jpg|jpeg|jfif|png|webp|gif|bmp)$/i.test(f.name || '');
+                                            return (
+                                              <div
+                                                key={f.id || fIdx}
+                                                className="flex items-center justify-between gap-2 p-1.5 rounded-lg bg-white border border-blue-200/90 hover:border-blue-400 shadow-2xs"
+                                              >
+                                                <div className="flex items-center gap-2 min-w-0 flex-1">
+                                                  {isImg && fUrl ? (
+                                                    <img
+                                                      src={fUrl}
+                                                      alt={f.name}
+                                                      className="w-7 h-7 rounded object-cover border border-slate-200 shrink-0"
+                                                    />
+                                                  ) : (
+                                                    <span className="w-6 h-6 rounded bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-extrabold flex items-center justify-center shrink-0">
+                                                      {fIdx + 1}
+                                                    </span>
+                                                  )}
+                                                  <span className="font-semibold text-[11px] text-slate-800 truncate" title={f.name}>
+                                                    {f.name}
+                                                  </span>
+                                                </div>
+                                                <button
+                                                  type="button"
+                                                  onClick={() =>
+                                                    setPreviewInstructorDoc({
+                                                      studentName: selectedEmp.name,
+                                                      studentId: selectedEmp.employeeId,
+                                                      title: `${docItem.num}. ${docItem.title}`,
+                                                      fileName: f.name,
+                                                      fileUrl: fUrl || undefined,
+                                                      note: `File ${fIdx + 1} of ${resolvedFiles.length}: ${f.name}`,
+                                                      date: f.uploadedAt ? new Date(f.uploadedAt).toLocaleDateString() : new Date().toLocaleDateString(),
+                                                      files: resolvedFiles,
+                                                      activeFileIndex: fIdx,
+                                                    })
+                                                  }
+                                                  className="px-2 py-0.5 rounded-md bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200 text-[10px] font-bold inline-flex items-center gap-1 shrink-0 cursor-pointer"
+                                                  title={`View ${f.name}`}
+                                                >
+                                                  <Eye size={10} /> View
+                                                </button>
+                                              </div>
+                                            );
+                                          })}
+                                        </div>
                                       ) : (
                                         <span
                                           className="inline-flex items-center gap-1 font-mono text-[11px] font-semibold text-blue-700 bg-blue-100/70 border border-blue-200 px-2 py-0.5 rounded-md truncate max-w-[220px]"

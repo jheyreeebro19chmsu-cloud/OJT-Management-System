@@ -42,8 +42,34 @@ function sanitizeDocuments(docs) {
         }
       }
 
+      let sanitizedFiles = undefined;
+      if (Array.isArray(val.files) && val.files.length > 0) {
+        sanitizedFiles = val.files.map((f, idx) => {
+          const fData = typeof f?.dataUrl === 'string' && !isBadUrl(f.dataUrl) ? f.dataUrl : '';
+          const fUrl = typeof f?.fileUrl === 'string' && !isBadUrl(f.fileUrl) ? f.fileUrl : '';
+          const fHttp =
+            (fUrl.startsWith('http://') || fUrl.startsWith('https://') ? fUrl : '') ||
+            (fData.startsWith('http://') || fData.startsWith('https://') ? fData : '');
+          let fResolved = fHttp;
+          if (!fResolved) {
+            if (fData.startsWith('data:') && fData.length < 50000) fResolved = fData;
+            else if (fUrl.startsWith('data:') && fUrl.length < 50000) fResolved = fUrl;
+          }
+          return {
+            id: f?.id || `file-${idx}`,
+            name: f?.name || `file_${idx + 1}`,
+            size: f?.size || 0,
+            fileType: f?.fileType || 'application/octet-stream',
+            uploadedAt: f?.uploadedAt || val.uploadedAt || new Date().toISOString(),
+            fileUrl: fHttp || fResolved,
+            dataUrl: fResolved,
+          };
+        });
+      }
+
       clean[key] = {
         name: val.name || 'document',
+        ...(val.title ? { title: val.title } : {}),
         size: val.size,
         fileType: val.fileType || 'application/pdf',
         uploadedAt: val.uploadedAt || new Date().toISOString(),
@@ -56,6 +82,7 @@ function sanitizeDocuments(docs) {
         reviewedBy: val.reviewedBy || '',
         reviewedAt: val.reviewedAt || '',
         source: val.source || 'portal',
+        ...(sanitizedFiles ? { files: sanitizedFiles } : {}),
       };
     } else {
       clean[key] = val;
@@ -413,6 +440,108 @@ export default async function handler(req, res) {
               status: 'pending',
             };
           }
+        }
+      }
+
+      // Recover multi-file arrays from Supabase Storage if an earlier save stripped `files`
+      const needsMultiFileRecovery = Object.entries(regDocs).some(([_, d]) => {
+        if (!d || typeof d !== 'object') return false;
+        const hasMultipleInName = typeof d.name === 'string' && /^\d+\s+Files\b/i.test(d.name);
+        return hasMultipleInName && (!Array.isArray(d.files) || d.files.length <= 1);
+      });
+
+      if (needsMultiFileRecovery && empData) {
+        try {
+          const folderCandidates = Array.from(
+            new Set(
+              [empData.id, empData.employee_id]
+                .filter(Boolean)
+                .map((v) => String(v).replace(/[^a-zA-Z0-9_-]/g, '_'))
+            )
+          );
+          const allStorageItems = [];
+          for (const folder of folderCandidates) {
+            const { data: listed } = await supabase.storage
+              .from('face-photos')
+              .list(`documents/${folder}`, { limit: 200, sortBy: { column: 'name', order: 'desc' } });
+            if (Array.isArray(listed)) {
+              for (const obj of listed) {
+                if (obj?.name) {
+                  allStorageItems.push({ folder, obj });
+                }
+              }
+            }
+          }
+
+          for (const [docKey, docVal] of Object.entries(regDocs)) {
+            if (!docVal || typeof docVal !== 'object') continue;
+            const m = typeof docVal.name === 'string' ? docVal.name.match(/^(\d+)\s+Files\s*\((.+)\)$/i) : null;
+            if (!m || (Array.isArray(docVal.files) && docVal.files.length > 1)) continue;
+            const expectedCount = parseInt(m[1], 10) || 0;
+            const firstOriginalName = m[2] || '';
+            if (expectedCount <= 1) continue;
+
+            // Match files named `${docKey}_${idx}_${ts1}_${ts2}.${ext}`
+            const escapedKey = docKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const idxRe = new RegExp(`^${escapedKey}_(\\d+)_(\\d+)`, 'i');
+            const byIndex = new Map();
+            for (const { folder, obj } of allStorageItems) {
+              const hit = obj.name.match(idxRe);
+              if (!hit) continue;
+              const idx = parseInt(hit[1], 10);
+              const ts = parseInt(hit[2], 10) || 0;
+              const prev = byIndex.get(idx);
+              if (!prev || ts > prev.ts) {
+                const { data: pub } = supabase.storage
+                  .from('face-photos')
+                  .getPublicUrl(`documents/${folder}/${obj.name}`);
+                byIndex.set(idx, {
+                  idx,
+                  ts,
+                  storageName: obj.name,
+                  size: obj.metadata?.size || 0,
+                  mimetype: obj.metadata?.mimetype || '',
+                  publicUrl: pub?.publicUrl || '',
+                });
+              }
+            }
+
+            if (byIndex.size > 1) {
+              const sorted = Array.from(byIndex.values())
+                .sort((a, b) => a.idx - b.idx)
+                .slice(0, expectedCount);
+              regDocs[docKey] = {
+                ...docVal,
+                files: sorted.map((entry, i) => {
+                  const ext = (entry.storageName.split('.').pop() || 'pdf').toLowerCase();
+                  const inferredMime =
+                    entry.mimetype ||
+                    (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)
+                      ? `image/${ext === 'jpg' ? 'jpeg' : ext}`
+                      : ext === 'pdf'
+                      ? 'application/pdf'
+                      : ext === 'docx'
+                      ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                      : 'application/octet-stream');
+                  const displayFileName =
+                    i === 0 && firstOriginalName
+                      ? firstOriginalName
+                      : `Attachment_${i + 1}.${ext}`;
+                  return {
+                    id: `recovered-${docKey}-${i}`,
+                    name: displayFileName,
+                    size: entry.size || Math.round((Number(docVal.size) || 0) / sorted.length),
+                    fileType: inferredMime,
+                    uploadedAt: docVal.uploadedAt || new Date().toISOString(),
+                    fileUrl: entry.publicUrl,
+                    dataUrl: entry.publicUrl,
+                  };
+                }),
+              };
+            }
+          }
+        } catch (recErr) {
+          console.warn('Multi-file storage recovery notice:', recErr);
         }
       }
 

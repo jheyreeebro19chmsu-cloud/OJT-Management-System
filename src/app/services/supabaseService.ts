@@ -185,8 +185,34 @@ function sanitizeDocumentsForDb(docs: any): any {
         }
       }
 
+      let sanitizedFiles: any[] | undefined = undefined;
+      if (Array.isArray(docItem.files) && docItem.files.length > 0) {
+        sanitizedFiles = docItem.files.map((f: any, idx: number) => {
+          const fData = typeof f?.dataUrl === 'string' && !isBadUrl(f.dataUrl) ? f.dataUrl : '';
+          const fUrl = typeof f?.fileUrl === 'string' && !isBadUrl(f.fileUrl) ? f.fileUrl : '';
+          const fHttp =
+            (fUrl.startsWith('http://') || fUrl.startsWith('https://') ? fUrl : '') ||
+            (fData.startsWith('http://') || fData.startsWith('https://') ? fData : '');
+          let fResolved = fHttp;
+          if (!fResolved) {
+            if (fData.startsWith('data:') && fData.length < 50000) fResolved = fData;
+            else if (fUrl.startsWith('data:') && fUrl.length < 50000) fResolved = fUrl;
+          }
+          return {
+            id: f?.id || `file-${idx}`,
+            name: f?.name || `file_${idx + 1}`,
+            size: f?.size || 0,
+            fileType: f?.fileType || 'application/octet-stream',
+            uploadedAt: f?.uploadedAt || docItem.uploadedAt || new Date().toISOString(),
+            fileUrl: fHttp || fResolved,
+            dataUrl: fResolved,
+          };
+        });
+      }
+
       clean[key] = {
         name: docItem.name || 'document',
+        title: docItem.title || undefined,
         size: docItem.size,
         fileType: docItem.fileType || 'application/pdf',
         uploadedAt: docItem.uploadedAt || new Date().toISOString(),
@@ -199,6 +225,7 @@ function sanitizeDocumentsForDb(docs: any): any {
         reviewedBy: docItem.reviewedBy || '',
         reviewedAt: docItem.reviewedAt || '',
         source: docItem.source || 'portal',
+        ...(sanitizedFiles ? { files: sanitizedFiles } : {}),
       };
     } else {
       clean[key] = val;

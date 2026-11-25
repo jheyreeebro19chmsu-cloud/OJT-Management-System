@@ -589,11 +589,26 @@ function sanitizeDocRecordForStorage(docs: any): any {
       // Strip large base64 data URLs (> 2KB) entirely from persistent localStorage
       const safeDataUrl = dUrl.startsWith('data:') && dUrl.length > 2000 ? '' : dUrl;
       const safeFileUrl = fUrl.startsWith('data:') && fUrl.length > 2000 ? '' : fUrl;
+      const safeFiles = Array.isArray(docObj.files)
+        ? docObj.files.map((f: any) => {
+            if (!f || typeof f !== 'object') return f;
+            const fd = typeof f.dataUrl === 'string' ? f.dataUrl : '';
+            const fu = typeof f.fileUrl === 'string' ? f.fileUrl : '';
+            const sd = fd.startsWith('data:') && fd.length > 2000 ? '' : fd;
+            const su = fu.startsWith('data:') && fu.length > 2000 ? '' : fu;
+            return {
+              ...f,
+              dataUrl: sd,
+              fileUrl: su || (sd.startsWith('http') ? sd : fu && !fu.startsWith('data:') ? fu : ''),
+            };
+          })
+        : docObj.files;
 
       sanitizedDocs[docKey] = {
         ...docObj,
         dataUrl: safeDataUrl,
         fileUrl: safeFileUrl || (safeDataUrl.startsWith('http') ? safeDataUrl : (fUrl && !fUrl.startsWith('data:') ? fUrl : '')),
+        ...(safeFiles ? { files: safeFiles } : {}),
       };
     } else {
       sanitizedDocs[docKey] = docVal;
@@ -654,6 +669,18 @@ function sanitizeValueForStorage(key: string, value: any): any {
       }
       if (typeof copy.fileUrl === 'string' && copy.fileUrl.startsWith('data:') && copy.fileUrl.length > 2000) {
         copy.fileUrl = '';
+      }
+      if (Array.isArray(copy.files)) {
+        copy.files = copy.files.map((f: any) => {
+          if (!f || typeof f !== 'object') return f;
+          const fd = typeof f.dataUrl === 'string' ? f.dataUrl : '';
+          const fu = typeof f.fileUrl === 'string' ? f.fileUrl : '';
+          return {
+            ...f,
+            dataUrl: fd.startsWith('data:') && fd.length > 2000 ? '' : fd,
+            fileUrl: fu.startsWith('data:') && fu.length > 2000 ? '' : fu,
+          };
+        });
       }
       return copy;
     });

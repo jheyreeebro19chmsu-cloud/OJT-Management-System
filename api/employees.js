@@ -68,8 +68,34 @@ function sanitizeDocuments(docs) {
         }
       }
 
+      let sanitizedFiles = undefined;
+      if (Array.isArray(val.files) && val.files.length > 0) {
+        sanitizedFiles = val.files.map((f, idx) => {
+          const fData = typeof f?.dataUrl === 'string' && !isBadUrl(f.dataUrl) ? f.dataUrl : '';
+          const fUrl = typeof f?.fileUrl === 'string' && !isBadUrl(f.fileUrl) ? f.fileUrl : '';
+          const fHttp =
+            (fUrl.startsWith('http://') || fUrl.startsWith('https://') ? fUrl : '') ||
+            (fData.startsWith('http://') || fData.startsWith('https://') ? fData : '');
+          let fResolved = fHttp;
+          if (!fResolved) {
+            if (fData.startsWith('data:') && fData.length < 50000) fResolved = fData;
+            else if (fUrl.startsWith('data:') && fUrl.length < 50000) fResolved = fUrl;
+          }
+          return {
+            id: f?.id || `file-${idx}`,
+            name: f?.name || `file_${idx + 1}`,
+            size: f?.size || 0,
+            fileType: f?.fileType || 'application/octet-stream',
+            uploadedAt: f?.uploadedAt || val.uploadedAt || new Date().toISOString(),
+            fileUrl: fHttp || fResolved,
+            dataUrl: fResolved,
+          };
+        });
+      }
+
       clean[key] = {
         name: val.name || 'document',
+        ...(val.title ? { title: val.title } : {}),
         size: val.size,
         fileType: val.fileType || 'application/pdf',
         uploadedAt: val.uploadedAt || new Date().toISOString(),
@@ -82,6 +108,7 @@ function sanitizeDocuments(docs) {
         reviewedBy: val.reviewedBy || '',
         reviewedAt: val.reviewedAt || '',
         source: val.source || 'portal',
+        ...(sanitizedFiles ? { files: sanitizedFiles } : {}),
       };
     } else {
       clean[key] = val;

@@ -99,6 +99,7 @@ export function Documents() {
     updateRequiredDocument,
     deleteRequiredDocument,
     submitRequiredDocument,
+    getRequiredDocumentSubmission,
     refreshData,
     settings,
   } = useApp();
@@ -160,13 +161,33 @@ export function Documents() {
     fetchEmployeeDocuments(empId)
       .then((res) => {
         if (res && res.documents && Object.keys(res.documents).length > 0) {
-          setDatabaseDocs((prev) => ({ ...(res.documents || {}), ...(prev || {}) }));
+          const mergeDocMaps = (base: TraineeDocuments, incoming: TraineeDocuments): TraineeDocuments => {
+            const out: TraineeDocuments = { ...base };
+            for (const [k, incVal] of Object.entries(incoming)) {
+              if (!incVal || typeof incVal !== 'object') continue;
+              const prevVal = out[k];
+              if (!prevVal) {
+                out[k] = incVal;
+              } else {
+                const incFiles = Array.isArray(incVal.files) ? incVal.files : [];
+                const prevFiles = Array.isArray(prevVal.files) ? prevVal.files : [];
+                out[k] = {
+                  ...prevVal,
+                  ...incVal,
+                  dataUrl: incVal.dataUrl || prevVal.dataUrl,
+                  fileUrl: incVal.fileUrl || prevVal.fileUrl,
+                  files: incFiles.length >= prevFiles.length && incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
+                  status: incVal.status === 'passed' || prevVal.status === 'passed' ? 'passed' : incVal.status || prevVal.status,
+                };
+              }
+            }
+            return out;
+          };
+
+          setDatabaseDocs((prev) => mergeDocMaps(prev || {}, res.documents || {}));
           if (employee) {
             updateEmployee(employee.id, {
-              submittedDocuments: {
-                ...(res.documents || {}),
-                ...(employee.submittedDocuments || {}),
-              },
+              submittedDocuments: mergeDocMaps(employee.submittedDocuments || {}, res.documents || {}),
               documentsPassed: res.documentsPassed ?? employee.documentsPassed,
               documentsStatus: res.documentsStatus ?? employee.documentsStatus,
             });
@@ -177,10 +198,28 @@ export function Documents() {
   }, [employee?.id, currentUser?.employeeId, currentUser?.id]);
 
   const submittedDocs: TraineeDocuments = useMemo(() => {
-    return {
-      ...(employee?.submittedDocuments || {}),
-      ...(databaseDocs || {}),
-    };
+    const empDocs = employee?.submittedDocuments || {};
+    const dbDocs = databaseDocs || {};
+    const out: TraineeDocuments = { ...empDocs };
+    for (const [k, dbVal] of Object.entries(dbDocs)) {
+      if (!dbVal || typeof dbVal !== 'object') continue;
+      const empVal = out[k];
+      if (!empVal) {
+        out[k] = dbVal;
+      } else {
+        const dbFiles = Array.isArray(dbVal.files) ? dbVal.files : [];
+        const empFiles = Array.isArray(empVal.files) ? empVal.files : [];
+        out[k] = {
+          ...empVal,
+          ...dbVal,
+          dataUrl: dbVal.dataUrl || empVal.dataUrl,
+          fileUrl: dbVal.fileUrl || empVal.fileUrl,
+          files: dbFiles.length >= empFiles.length && dbFiles.length > 0 ? dbFiles : empFiles.length > 0 ? empFiles : undefined,
+          status: dbVal.status === 'passed' || empVal.status === 'passed' ? 'passed' : dbVal.status || empVal.status,
+        };
+      }
+    }
+    return out;
   }, [employee?.submittedDocuments, databaseDocs]);
 
   // Helper to safely get document item supporting legacy aliases
@@ -463,6 +502,92 @@ export function Documents() {
     return '';
   };
 
+  /**
+   * Resolves all attached files/images for a document from `doc.files`,
+   * local shared cache, and `getRequiredDocumentSubmission` so multi-file
+   * uploads are always visible and individually viewable.
+   */
+  const resolveDocFiles = (docKey: string, docItem?: TraineeDocumentItem): TraineeDocumentFile[] => {
+    if (!docItem) return [];
+    const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+
+    let cachedFiles: TraineeDocumentFile[] | null = null;
+    try {
+      const raw =
+        localStorage.getItem(`ojt_shared_doc_files_${empId}_${docKey}`) ||
+        (employee?.employeeId ? localStorage.getItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`) : null) ||
+        localStorage.getItem(`ojt_shared_doc_files_${docKey}`);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          cachedFiles = parsed;
+        }
+      }
+    } catch {}
+
+    const sub = empId ? getRequiredDocumentSubmission?.(docKey, empId) : null;
+    const subFiles = sub?.files && Array.isArray(sub.files) && sub.files.length > 0 ? sub.files : null;
+
+    const candidates = [
+      Array.isArray(docItem.files) && docItem.files.length > 0 ? docItem.files : null,
+      cachedFiles,
+      subFiles,
+    ].filter(Boolean) as TraineeDocumentFile[][];
+
+    // Pick the richest file list (most items)
+    let baseFiles: TraineeDocumentFile[] | null = null;
+    for (const c of candidates) {
+      if (!baseFiles || c.length > baseFiles.length) {
+        baseFiles = c;
+      }
+    }
+
+    if (!baseFiles || baseFiles.length === 0) {
+      const fallbackUrl = resolveDocDataUrl(docKey, docItem);
+      if (!docItem.name && !fallbackUrl) return [];
+      baseFiles = [
+        {
+          id: 'file-0',
+          name: docItem.name || `${docKey}_document.pdf`,
+          size: docItem.size,
+          dataUrl: fallbackUrl,
+          fileUrl: resolveSafeDocumentViewUrl(fallbackUrl),
+          fileType: docItem.fileType,
+          uploadedAt: docItem.uploadedAt,
+        },
+      ];
+    }
+
+    return baseFiles.map((f, idx) => {
+      const cachedMatch = cachedFiles?.[idx] || cachedFiles?.find((cf) => cf.name === f.name);
+      const subMatch = subFiles?.[idx] || subFiles?.find((sf) => sf.name === f.name);
+      let fileDataUrl =
+        f.fileUrl ||
+        f.dataUrl ||
+        cachedMatch?.fileUrl ||
+        cachedMatch?.dataUrl ||
+        subMatch?.fileUrl ||
+        subMatch?.dataUrl ||
+        '';
+      if (!fileDataUrl) {
+        try {
+          fileDataUrl =
+            sessionStorage.getItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`) ||
+            localStorage.getItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`) ||
+            (idx === 0 ? resolveDocDataUrl(docKey, docItem) : '');
+        } catch {}
+      }
+      const safeViewUrl = resolveSafeDocumentViewUrl(fileDataUrl);
+      return {
+        ...f,
+        id: f.id || `file-${idx}`,
+        name: f.name || `Attachment ${idx + 1}`,
+        dataUrl: fileDataUrl || safeViewUrl,
+        fileUrl: safeViewUrl || fileDataUrl,
+      };
+    });
+  };
+
   const ALLOWED_MIME = [
     'application/pdf',
     'image/jpeg',
@@ -578,10 +703,11 @@ export function Documents() {
     if (validFiles.length === 0) return;
 
     let baseFiles: SubmitDialogFile[] = [];
-    const existingDoc = submittedDocs[docKey];
+    const existingDoc = getDocItem(docKey) || submittedDocs[docKey];
     if (isAppending && existingDoc) {
-      if (existingDoc.files && existingDoc.files.length > 0) {
-        baseFiles = existingDoc.files.map((f, i) => ({
+      const existingResolved = resolveDocFiles(docKey, existingDoc);
+      if (existingResolved.length > 0) {
+        baseFiles = existingResolved.map((f, i) => ({
           id: f.id || `prev-${i}`,
           name: f.name,
           size: f.size || 0,
@@ -589,17 +715,6 @@ export function Documents() {
           fileUrl: f.fileUrl,
           fileType: f.fileType,
         }));
-      } else if (existingDoc.name) {
-        baseFiles = [
-          {
-            id: 'prev-0',
-            name: existingDoc.name,
-            size: existingDoc.size || 0,
-            dataUrl: existingDoc.dataUrl,
-            fileUrl: existingDoc.fileUrl,
-            fileType: existingDoc.fileType,
-          },
-        ];
       }
     }
 
@@ -673,23 +788,10 @@ export function Documents() {
   };
 
   const handlePreviewDoc = (docKey: string, doc: TraineeDocumentItem, item: any, initialActiveIndex: number = 0) => {
-    const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
-    let cachedFiles: TraineeDocumentFile[] | null = null;
-    try {
-      const raw =
-        localStorage.getItem(`ojt_shared_doc_files_${empId}_${docKey}`) ||
-        localStorage.getItem(`ojt_shared_doc_files_${docKey}`);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length > 0) cachedFiles = parsed;
-      }
-    } catch {}
-
-    const baseFiles =
-      doc.files && doc.files.length > 0
-        ? doc.files
-        : cachedFiles && cachedFiles.length > 0
-        ? cachedFiles
+    const resolved = resolveDocFiles(docKey, doc);
+    const filesList: TraineeDocumentFile[] =
+      resolved.length > 0
+        ? resolved
         : [
             {
               id: 'file-1',
@@ -701,24 +803,6 @@ export function Documents() {
               uploadedAt: doc.uploadedAt,
             },
           ];
-
-    const filesList: TraineeDocumentFile[] = baseFiles.map((f, idx) => {
-      const cachedMatch = cachedFiles?.[idx] || cachedFiles?.find((cf) => cf.name === f.name);
-      let fileDataUrl = f.fileUrl || f.dataUrl || cachedMatch?.fileUrl || cachedMatch?.dataUrl || '';
-      if (!fileDataUrl) {
-        try {
-          fileDataUrl =
-            sessionStorage.getItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`) ||
-            localStorage.getItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`) ||
-            (idx === 0 ? resolveDocDataUrl(docKey, doc) : '');
-        } catch {}
-      }
-      return {
-        ...f,
-        dataUrl: fileDataUrl,
-        fileUrl: resolveSafeDocumentViewUrl(fileDataUrl),
-      };
-    });
 
     const safeIndex = Math.min(Math.max(0, initialActiveIndex), filesList.length - 1);
     const activeFile = filesList[safeIndex] || filesList[0];
@@ -1144,28 +1228,15 @@ export function Documents() {
 
   const openEditDocDialog = (item: any) => {
     const doc = getDocItem(item.key);
-    let existingFiles: SubmitDialogFile[] = [];
-    if (doc?.files && doc.files.length > 0) {
-      existingFiles = doc.files.map((f, i) => ({
-        id: f.id || `file-${i}`,
-        name: f.name,
-        size: f.size || 0,
-        dataUrl: f.dataUrl,
-        fileUrl: f.fileUrl,
-        fileType: f.fileType,
-      }));
-    } else if (doc?.name) {
-      existingFiles = [
-        {
-          id: 'file-0',
-          name: doc.name,
-          size: doc.size || 0,
-          dataUrl: doc.dataUrl,
-          fileUrl: doc.fileUrl,
-          fileType: doc.fileType,
-        },
-      ];
-    }
+    const resolved = doc ? resolveDocFiles(item.key, doc) : [];
+    const existingFiles: SubmitDialogFile[] = resolved.map((f, i) => ({
+      id: f.id || `file-${i}`,
+      name: f.name,
+      size: f.size || 0,
+      dataUrl: f.dataUrl,
+      fileUrl: f.fileUrl,
+      fileType: f.fileType,
+    }));
 
     setEditDocDialog({
       docKey: item.key,
@@ -1694,12 +1765,13 @@ export function Documents() {
           <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs divide-y divide-slate-100 overflow-hidden">
             {filteredDocRequirements.map((item) => {
               const doc = getDocItem(item.key);
-              const hasFile = Boolean(doc?.dataUrl || doc?.name || doc?.fileUrl);
+              const resolvedFiles = doc ? resolveDocFiles(item.key, doc) : [];
+              const hasFile = Boolean(resolvedFiles.length > 0 || doc?.dataUrl || doc?.name || doc?.fileUrl);
               const isPassed = doc?.status === 'passed' && hasFile;
               const isPending = (doc?.status === 'pending' || doc?.status === 'submitted' || !doc?.status) && hasFile && !isPassed;
               const isUploading = uploadingKey === item.key;
               const Icon = item.icon || FileText;
-              const docCategory = doc ? getFileCategory(doc.name || doc.fileType || '') : 'other';
+              const docCategory = doc ? getFileCategory(resolvedFiles[0]?.name || doc.name || doc.fileType || '') : 'other';
               const isDragTarget = dragOverKey === item.key;
 
               return (
@@ -1906,168 +1978,287 @@ export function Documents() {
                       </div>
                     </div>
 
-                    {/* Bottom Full-Width Attachment Slot / Unified Action Toolbar */}
+                    {/* Bottom Full-Width Attachment Slot / Per-File Chooser & Unified Action Toolbar */}
                     <div className="w-full min-w-0">
                       {hasFile && doc ? (
-                        <div className="p-3 sm:px-4 sm:py-3 rounded-xl bg-slate-50/95 border border-slate-200/90 flex flex-col md:flex-row md:items-center justify-between gap-3 min-w-0 overflow-hidden">
-                          {/* Attached File Info */}
-                          <div className="flex items-center gap-3 min-w-0 flex-1">
-                            <div
-                              className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${
-                                doc.files && doc.files.length > 1
-                                  ? 'bg-purple-100 text-purple-700'
-                                  : docCategory === 'picture'
-                                  ? 'bg-emerald-100 text-emerald-700'
-                                  : docCategory === 'doc'
-                                  ? 'bg-indigo-100 text-indigo-700'
-                                  : 'bg-blue-100 text-blue-700'
-                              }`}
-                            >
-                              {doc.files && doc.files.length > 1 ? (
-                                <Files size={16} />
-                              ) : docCategory === 'picture' ? (
-                                <ImageIcon size={15} />
-                              ) : docCategory === 'doc' ? (
-                                <FileText size={15} />
+                        <div className="p-3 sm:px-4 sm:py-3.5 rounded-xl bg-slate-50/95 border border-slate-200/90 flex flex-col gap-3 min-w-0 overflow-hidden">
+                          {/* Top Summary & Unified Action Toolbar */}
+                          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 min-w-0">
+                            {/* Attached File Summary */}
+                            <div className="flex items-center gap-3 min-w-0 flex-1">
+                              {resolvedFiles.length === 1 &&
+                              (docCategory === 'picture' ||
+                                resolvedFiles[0]?.fileUrl?.startsWith('data:image/') ||
+                                /\.(jpg|jpeg|png|webp|gif|bmp)$/i.test(resolvedFiles[0]?.name || '')) &&
+                              (resolvedFiles[0]?.fileUrl || resolvedFiles[0]?.dataUrl) ? (
+                                <button
+                                  type="button"
+                                  onClick={() => handlePreviewDoc(item.key, doc, item, 0)}
+                                  className="w-11 h-11 rounded-lg overflow-hidden border border-slate-200 shrink-0 shadow-2xs bg-white cursor-pointer group relative"
+                                  title={`Click to view ${resolvedFiles[0].name}`}
+                                >
+                                  <img
+                                    src={resolvedFiles[0].fileUrl || resolvedFiles[0].dataUrl}
+                                    alt={resolvedFiles[0].name}
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                  />
+                                </button>
                               ) : (
-                                <FileGeneric size={15} />
-                              )}
-                            </div>
-                            <div className="min-w-0 flex-1">
-                              <div className="flex items-center gap-2 min-w-0">
-                                <p className="text-xs sm:text-sm font-bold text-slate-800 truncate" title={doc.name}>
-                                  {doc.name}
-                                </p>
-                                {doc.files && doc.files.length > 1 && (
-                                  <span className="text-[10px] font-extrabold px-1.5 py-0.5 rounded-md bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
-                                    {doc.files.length} Files
-                                  </span>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 flex-wrap">
-                                <span className="shrink-0">{doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Attached'}</span>
-                                {doc.size ? <span className="shrink-0">• {formatFileSize(doc.size)}</span> : null}
-                                <span className="uppercase font-bold text-[10px] text-slate-600 bg-slate-200/70 px-1.5 py-0.2 rounded shrink-0">
-                                  {doc.files && doc.files.length > 1 ? 'Multi-File' : docCategory === 'picture' ? 'Picture' : docCategory === 'doc' ? 'Word Doc' : 'PDF'}
-                                </span>
-                              </div>
-                              {(doc.description || doc.notes) && (
-                                <p className="text-[11px] text-slate-600 truncate mt-1" title={`${doc.description ? `Desc: ${doc.description}` : ''} ${doc.notes ? `| Note: ${doc.notes}` : ''}`}>
-                                  {doc.description ? <span className="font-semibold text-slate-700">{doc.description}</span> : null}
-                                  {doc.description && doc.notes ? ' — ' : ''}
-                                  {doc.notes ? <span className="italic text-slate-500">{doc.notes}</span> : null}
-                                </p>
-                              )}
-                              {doc.files && doc.files.length > 1 && (
-                                <div className="mt-2 flex flex-wrap gap-1.5">
-                                  {doc.files.map((fItem, fIdx) => (
-                                    <button
-                                      key={fItem.id || fIdx}
-                                      type="button"
-                                      onClick={() => handlePreviewDoc(item.key, doc, item, fIdx)}
-                                      className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white hover:bg-purple-50 text-purple-800 border border-purple-200 text-[10px] font-semibold transition-colors cursor-pointer"
-                                      title={`Click to review file #${fIdx + 1}: ${fItem.name}`}
-                                    >
-                                      <Eye size={10} className="text-purple-600 shrink-0" />
-                                      <span className="max-w-[150px] truncate">{fIdx + 1}. {fItem.name}</span>
-                                    </button>
-                                  ))}
+                                <div
+                                  className={`w-10 h-10 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${
+                                    resolvedFiles.length > 1
+                                      ? 'bg-purple-100 text-purple-700'
+                                      : docCategory === 'picture'
+                                      ? 'bg-emerald-100 text-emerald-700'
+                                      : docCategory === 'doc'
+                                      ? 'bg-indigo-100 text-indigo-700'
+                                      : 'bg-blue-100 text-blue-700'
+                                  }`}
+                                >
+                                  {resolvedFiles.length > 1 ? (
+                                    <Files size={17} />
+                                  ) : docCategory === 'picture' ? (
+                                    <ImageIcon size={16} />
+                                  ) : docCategory === 'doc' ? (
+                                    <FileText size={16} />
+                                  ) : (
+                                    <FileGeneric size={16} />
+                                  )}
                                 </div>
                               )}
+
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                                  <p
+                                    className="text-xs sm:text-sm font-bold text-slate-800 truncate"
+                                    title={resolvedFiles.length === 1 ? resolvedFiles[0].name : doc.name}
+                                  >
+                                    {resolvedFiles.length > 1
+                                      ? `${resolvedFiles.length} Attached Files & Images`
+                                      : resolvedFiles[0]?.name || doc.name}
+                                  </p>
+                                  {resolvedFiles.length > 1 && (
+                                    <span className="text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 border border-purple-200 shrink-0">
+                                      Choose a file below to view
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5 text-[11px] text-slate-500 mt-0.5 flex-wrap">
+                                  <span className="shrink-0">
+                                    {doc.uploadedAt ? new Date(doc.uploadedAt).toLocaleDateString() : 'Attached'}
+                                  </span>
+                                  {doc.size ? <span className="shrink-0">• {formatFileSize(doc.size)}</span> : null}
+                                  <span className="uppercase font-bold text-[10px] text-slate-600 bg-slate-200/70 px-1.5 py-0.2 rounded shrink-0">
+                                    {resolvedFiles.length > 1
+                                      ? `${resolvedFiles.length} Files`
+                                      : docCategory === 'picture'
+                                      ? 'Picture'
+                                      : docCategory === 'doc'
+                                      ? 'Word Doc'
+                                      : 'PDF'}
+                                  </span>
+                                </div>
+                                {(doc.description || doc.notes) && (
+                                  <p
+                                    className="text-[11px] text-slate-600 truncate mt-1"
+                                    title={`${doc.description ? `Desc: ${doc.description}` : ''} ${doc.notes ? `| Note: ${doc.notes}` : ''}`}
+                                  >
+                                    {doc.description ? <span className="font-semibold text-slate-700">{doc.description}</span> : null}
+                                    {doc.description && doc.notes ? ' — ' : ''}
+                                    {doc.notes ? <span className="italic text-slate-500">{doc.notes}</span> : null}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Single Aligned Action Toolbar */}
+                            <div className="flex items-center gap-1.5 flex-wrap md:justify-end shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-200/70">
+                              <button
+                                type="button"
+                                onClick={() => handlePreviewDoc(item.key, doc, item, 0)}
+                                className="h-8 px-3 rounded-lg bg-white hover:bg-blue-50 text-blue-700 border border-slate-200 hover:border-blue-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                                title="Preview attached file(s)"
+                              >
+                                <Eye size={13} />
+                                <span>{resolvedFiles.length > 1 ? `View All (${resolvedFiles.length})` : 'View'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (resolvedFiles.length > 1) {
+                                    resolvedFiles.forEach((f, idx) => {
+                                      const u = resolveSafeDocumentViewUrl(f.fileUrl || f.dataUrl || '');
+                                      if (u) {
+                                        setTimeout(() => downloadDocument(u, f.name || `${item.key}_${idx + 1}`), idx * 250);
+                                      }
+                                    });
+                                  } else {
+                                    const resolvedUrl = resolveSafeDocumentViewUrl(
+                                      resolvedFiles[0]?.fileUrl || resolvedFiles[0]?.dataUrl || resolveDocDataUrl(item.key, doc)
+                                    );
+                                    downloadDocument(resolvedUrl, resolvedFiles[0]?.name || doc?.name || `${item.key}_document`);
+                                  }
+                                }}
+                                className="h-8 px-3 rounded-lg bg-white hover:bg-emerald-50 text-emerald-700 border border-slate-200 hover:border-emerald-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                                title={resolvedFiles.length > 1 ? 'Download all attached files' : 'Download attached file'}
+                              >
+                                <Download size={13} />
+                                <span>{resolvedFiles.length > 1 ? 'Download All' : 'Download'}</span>
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => openEditDocDialog(item)}
+                                className="h-8 px-3 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                                title="Edit description, notes, or files"
+                              >
+                                <Edit2 size={13} className="text-blue-600" />
+                                <span>Edit / Update</span>
+                              </button>
+
+                              <label
+                                htmlFor={`add-more-slot-file-${item.key}`}
+                                className="h-8 px-3 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                                title="Add more files to this document"
+                              >
+                                <Plus size={13} />
+                                <span>Add More</span>
+                              </label>
+                              <input
+                                type="file"
+                                multiple
+                                id={`add-more-slot-file-${item.key}`}
+                                accept={
+                                  item.allowedFileTypes?.length
+                                    ? `${item.allowedFileTypes.map((t: string) => (t.startsWith('.') ? t : `.${t}`)).join(',')},image/*,.jpg,.jpeg,.png,.webp,.jfif,.img,.bmp,.heic,.pdf,.doc,.docx,.docs,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document`
+                                    : '.pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,.img,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream'
+                                }
+                                onChange={(e) => {
+                                  onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, true);
+                                  e.target.value = '';
+                                }}
+                                className="hidden"
+                                disabled={isUploading}
+                              />
+
+                              <label
+                                htmlFor={`replace-doc-${item.key}`}
+                                className="h-8 px-3 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
+                                title="Replace all attached files"
+                              >
+                                <RefreshCw size={12} className={isUploading ? 'animate-spin' : ''} />
+                                <span>{isUploading ? 'Uploading...' : 'Replace All'}</span>
+                              </label>
+                              <input
+                                type="file"
+                                multiple
+                                id={`replace-doc-${item.key}`}
+                                accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
+                                onChange={(e) => {
+                                  onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
+                                  e.target.value = '';
+                                }}
+                                className="hidden"
+                                disabled={isUploading}
+                              />
+
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveDoc(item.key)}
+                                className="h-8 w-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
+                                title="Remove document"
+                                aria-label={`Remove ${item.title}`}
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             </div>
                           </div>
 
-                          {/* Single Aligned Action Toolbar (No Duplicates, Uniform Height) */}
-                          <div className="flex items-center gap-1.5 flex-wrap md:justify-end shrink-0 pt-2 md:pt-0 border-t md:border-t-0 border-slate-200/70">
-                            <button
-                              type="button"
-                              onClick={() => handlePreviewDoc(item.key, doc, item)}
-                              className="h-8 px-3 rounded-lg bg-white hover:bg-blue-50 text-blue-700 border border-slate-200 hover:border-blue-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
-                              title="Preview attached file(s)"
-                            >
-                              <Eye size={13} />
-                              <span>{doc.files && doc.files.length > 1 ? `View (${doc.files.length})` : 'View'}</span>
-                            </button>
+                          {/* Individual File & Image Chooser List (Select & View Every File Directly) */}
+                          {resolvedFiles.length > 1 && (
+                            <div className="pt-2.5 border-t border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {resolvedFiles.map((fItem, fIdx) => {
+                                const fCat = getFileCategory(fItem.name || fItem.fileType || '');
+                                const fUrl = resolveSafeDocumentViewUrl(fItem.fileUrl || fItem.dataUrl || '');
+                                const isImgFile =
+                                  fCat === 'picture' ||
+                                  fUrl.startsWith('data:image/') ||
+                                  /\.(jpg|jpeg|jfif|png|webp|gif|bmp|heic)$/i.test(fItem.name || '');
 
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const resolvedUrl = resolveSafeDocumentViewUrl(resolveDocDataUrl(item.key, doc));
-                                downloadDocument(resolvedUrl, doc?.name || `${item.key}_document`);
-                              }}
-                              className="h-8 px-3 rounded-lg bg-white hover:bg-emerald-50 text-emerald-700 border border-slate-200 hover:border-emerald-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
-                              title="Download attached file"
-                            >
-                              <Download size={13} />
-                              <span>Download</span>
-                            </button>
+                                return (
+                                  <div
+                                    key={fItem.id || fIdx}
+                                    className="p-2 sm:px-3 sm:py-2 rounded-xl bg-white border border-slate-200 hover:border-blue-300 flex items-center justify-between gap-2.5 shadow-2xs transition-all"
+                                  >
+                                    <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                                      {isImgFile && fUrl ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handlePreviewDoc(item.key, doc, item, fIdx)}
+                                          className="w-10 h-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0 cursor-pointer group relative"
+                                          title={`Click to view image: ${fItem.name}`}
+                                        >
+                                          <img
+                                            src={fUrl}
+                                            alt={fItem.name}
+                                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                                          />
+                                        </button>
+                                      ) : (
+                                        <div
+                                          className={`w-9 h-9 rounded-lg flex items-center justify-center text-[11px] font-extrabold shrink-0 border ${
+                                            fCat === 'doc'
+                                              ? 'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                              : 'bg-blue-50 text-blue-700 border-blue-200'
+                                          }`}
+                                        >
+                                          #{fIdx + 1}
+                                        </div>
+                                      )}
 
-                            <button
-                              type="button"
-                              onClick={() => openEditDocDialog(item)}
-                              className="h-8 px-3 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
-                              title="Edit description, notes, or files"
-                            >
-                              <Edit2 size={13} className="text-blue-600" />
-                              <span>Edit / Update</span>
-                            </button>
+                                      <div className="min-w-0 flex-1">
+                                        <p
+                                          className="text-xs font-bold text-slate-800 truncate"
+                                          title={`${fIdx + 1}. ${fItem.name}`}
+                                        >
+                                          {fIdx + 1}. {fItem.name}
+                                        </p>
+                                        <div className="flex items-center gap-1.5 text-[10px] text-slate-500 mt-0.5">
+                                          <span className="uppercase font-bold text-[9px] px-1.5 py-0.2 rounded bg-slate-100 text-slate-600">
+                                            {isImgFile ? 'Image' : fCat === 'doc' ? 'Word' : 'PDF'}
+                                          </span>
+                                          {fItem.size ? <span>• {formatFileSize(fItem.size)}</span> : null}
+                                        </div>
+                                      </div>
+                                    </div>
 
-                            <label
-                              htmlFor={`add-more-slot-file-${item.key}`}
-                              className="h-8 px-3 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
-                              title="Add more files to this document"
-                            >
-                              <Plus size={13} />
-                              <span>Add More</span>
-                            </label>
-                            <input
-                              type="file"
-                              multiple
-                              id={`add-more-slot-file-${item.key}`}
-                              accept={
-                                item.allowedFileTypes?.length
-                                  ? `${item.allowedFileTypes.map((t: string) => (t.startsWith('.') ? t : `.${t}`)).join(',')},image/*,.jpg,.jpeg,.png,.webp,.jfif,.img,.bmp,.heic,.pdf,.doc,.docx,.docs,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document`
-                                  : '.pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,.img,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream'
-                              }
-                              onChange={(e) => {
-                                onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, true);
-                                e.target.value = '';
-                              }}
-                              className="hidden"
-                              disabled={isUploading}
-                            />
-
-                            <label
-                              htmlFor={`replace-doc-${item.key}`}
-                              className="h-8 px-3 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 text-xs font-semibold inline-flex items-center gap-1.5 shadow-2xs transition-colors cursor-pointer whitespace-nowrap"
-                              title="Replace all attached files"
-                            >
-                              <RefreshCw size={12} className={isUploading ? 'animate-spin' : ''} />
-                              <span>{isUploading ? 'Uploading...' : 'Replace All'}</span>
-                            </label>
-                            <input
-                              type="file"
-                              multiple
-                              id={`replace-doc-${item.key}`}
-                              accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.jfif,.png,.webp,.heic,image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/octet-stream"
-                              onChange={(e) => {
-                                onSelectFiles(item.key, item.title, e.target.files, (item as any).instructorDoc?.fileName, false);
-                                e.target.value = '';
-                              }}
-                              className="hidden"
-                              disabled={isUploading}
-                            />
-
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveDoc(item.key)}
-                              className="h-8 w-8 rounded-lg bg-white border border-slate-200 text-slate-400 hover:text-red-600 hover:bg-red-50 hover:border-red-200 inline-flex items-center justify-center transition-colors cursor-pointer shrink-0"
-                              title="Remove document"
-                              aria-label={`Remove ${item.title}`}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
+                                    <div className="flex items-center gap-1 shrink-0">
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePreviewDoc(item.key, doc, item, fIdx)}
+                                        className="h-7 px-2.5 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] font-bold inline-flex items-center gap-1 transition-colors cursor-pointer whitespace-nowrap"
+                                        title={`View file #${fIdx + 1}: ${fItem.name}`}
+                                      >
+                                        <Eye size={12} />
+                                        <span>View</span>
+                                      </button>
+                                      {fUrl && (
+                                        <button
+                                          type="button"
+                                          onClick={() => downloadDocument(fUrl, fItem.name || `${item.key}_${fIdx + 1}`)}
+                                          className="h-7 w-7 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 inline-flex items-center justify-center transition-colors cursor-pointer"
+                                          title={`Download ${fItem.name}`}
+                                        >
+                                          <Download size={12} />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         /* Empty Attachment Slot - "Attach a File" dropzone */
