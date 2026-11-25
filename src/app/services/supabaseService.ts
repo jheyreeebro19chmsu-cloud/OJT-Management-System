@@ -1348,6 +1348,10 @@ export function encodeSlotNotes(existingNotes: string | null | undefined, record
   if (record.amDepartureGeofenced) slots.amDepartureGeofenced = true;
   if (record.pmArrivalGeofenced) slots.pmArrivalGeofenced = true;
   if (record.pmDepartureGeofenced) slots.pmDepartureGeofenced = true;
+  if (record.approvalStatus) slots.approvalStatus = record.approvalStatus;
+  if (record.approvedBy) slots.approvedBy = record.approvedBy;
+  if (record.approvedAt) slots.approvedAt = record.approvedAt;
+  if (record.approvalNote) slots.approvalNote = record.approvalNote;
 
   if (Object.keys(slots).length === 0) return existingNotes || null;
 
@@ -1383,25 +1387,32 @@ function parseTimeToMinutes(t?: string | null): number | null {
 
 export async function resolveEmployeeUuid(empIdOrCode?: string): Promise<string | null> {
   if (!empIdOrCode) return null;
-  const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(empIdOrCode);
-  if (isUuid) return empIdOrCode;
+  const trimmed = String(empIdOrCode).trim();
+  if (!trimmed || /^(emp-\d+|demo-|mock-|seed-)/i.test(trimmed)) return null;
+
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (uuidRegex.test(trimmed)) return trimmed;
 
   try {
-    const { data: matched } = await supabase
-      .from('employees')
-      .select('id')
-      .or(`employee_id.eq.${empIdOrCode},email.eq.${empIdOrCode}`)
-      .limit(1)
-      .maybeSingle();
-
-    if (matched?.id) return matched.id;
+    let q = supabase.from('employees').select('id').limit(1);
+    if (trimmed.includes('@')) {
+      q = q.eq('email', trimmed.toLowerCase());
+    } else {
+      q = q.eq('employee_id', trimmed);
+    }
+    const { data: matched } = await q.maybeSingle();
+    if (matched?.id && uuidRegex.test(matched.id)) return matched.id;
   } catch (e) {
     console.warn('resolveEmployeeUuid notice:', e);
   }
-  return empIdOrCode;
+  return null;
 }
 
 export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<TimeRecord | null> {
+  if (!record?.employeeId || /^(emp-\d+|demo-|mock-|seed-)/i.test(String(record.employeeId).trim())) {
+    return null;
+  }
+
   // 1. Primary path: Fast server-side proxy using service role key (bypasses RLS)
   if (typeof window !== 'undefined') {
     try {
@@ -1422,13 +1433,21 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
           saveDttrStoreToStorage({ timeRecords: [transformed] }).catch(() => {});
           return transformed;
         }
+        // Server explicitly skipped record because employee_id could not be resolved to an existing UUID
+        if (resData?.success === true && resData?.count === 0) {
+          return null;
+        }
       }
     } catch {}
   }
 
   if (!isSupabaseConfigured()) return null;
 
-  const resolvedEmpId = (await resolveEmployeeUuid(record.employeeId)) || record.employeeId;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  const resolvedEmpId = await resolveEmployeeUuid(record.employeeId);
+  if (!resolvedEmpId || !uuidRegex.test(resolvedEmpId)) {
+    return null;
+  }
   const cleanDate = record.date ? String(record.date).split('T')[0] : new Date().toISOString().split('T')[0];
 
   // Idempotency guard: if a "Time In" request fires twice (retry, double-tap),
@@ -1471,11 +1490,6 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
     time_out_lng: record.timeOutLocation?.lng != null ? Number(record.timeOutLocation.lng) : null,
   };
 
-  if (record.approvalStatus) baseRecord.approval_status = record.approvalStatus;
-  if (record.approvedBy) baseRecord.approved_by = record.approvedBy;
-  if (record.approvedAt) baseRecord.approved_at = record.approvedAt;
-  if (record.approvalNote) baseRecord.approval_note = record.approvalNote;
-
   if (record.timeInPhoto && record.timeInPhoto.startsWith('http')) {
     baseRecord.time_in_photo = record.timeInPhoto;
   }
@@ -1485,23 +1499,10 @@ export async function createTimeRecord(record: Omit<TimeRecord, 'id'>): Promise<
 
   let insertResult = await supabase.from('time_records').insert([baseRecord]).select().single();
 
-  // Resilience: If insert failed due to approval columns missing from schema cache, retry without them
+  // Resilience fallback: Core columns only if extended metadata columns don't exist yet
   if (insertResult.error) {
-    const errText = String(insertResult.error.message || JSON.stringify(insertResult.error));
-    console.warn('[Supabase] Initial createTimeRecord notice, attempting fallback without approval columns:', errText);
-    const fallbackRecord = { ...baseRecord };
-    delete fallbackRecord.approval_note;
-    delete fallbackRecord.approval_status;
-    delete fallbackRecord.approved_by;
-    delete fallbackRecord.approved_at;
-    insertResult = await supabase.from('time_records').insert([fallbackRecord]).select().single();
-  }
-
-  // Second resilience fallback: Core columns only if extended metadata columns don't exist yet
-  if (insertResult.error) {
-    console.warn('[Supabase] Second createTimeRecord notice, attempting fallback with core columns:', insertResult.error.message || insertResult.error);
     const coreRecord: any = {
-      employee_id: record.employeeId,
+      employee_id: resolvedEmpId,
       date: cleanDate,
       time_in: effectiveTimeIn,
       time_out: effectiveTimeOut,
@@ -1579,7 +1580,13 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
     updates.pmArrival !== undefined ||
     updates.pmDeparture !== undefined;
 
-  if (updates.notes !== undefined || hasSlotUpdate) {
+  const hasApprovalMeta =
+    updates.approvalStatus !== undefined ||
+    updates.approvedBy !== undefined ||
+    updates.approvedAt !== undefined ||
+    updates.approvalNote !== undefined;
+
+  if (updates.notes !== undefined || hasSlotUpdate || hasApprovalMeta) {
     // Load the current DB notes so previously saved punch slots ([slots:{...}]) and tasks are never lost
     let existingDbNotes: string | null = null;
     try {
@@ -1587,16 +1594,18 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
         const { data: cur } = await supabase.from('time_records').select('notes').eq('id', id).maybeSingle();
         existingDbNotes = cur?.notes ?? null;
       } else if (updates.employeeId) {
-        const empUuid = (await resolveEmployeeUuid(updates.employeeId)) || updates.employeeId;
-        const d = updates.date ? String(updates.date).split('T')[0] : new Date().toISOString().split('T')[0];
-        const { data: cur } = await supabase
-          .from('time_records')
-          .select('notes')
-          .eq('employee_id', empUuid)
-          .eq('date', d)
-          .limit(1)
-          .maybeSingle();
-        existingDbNotes = cur?.notes ?? null;
+        const empUuid = await resolveEmployeeUuid(updates.employeeId);
+        if (empUuid) {
+          const d = updates.date ? String(updates.date).split('T')[0] : new Date().toISOString().split('T')[0];
+          const { data: cur } = await supabase
+            .from('time_records')
+            .select('notes')
+            .eq('employee_id', empUuid)
+            .eq('date', d)
+            .limit(1)
+            .maybeSingle();
+          existingDbNotes = cur?.notes ?? null;
+        }
       }
     } catch {}
 
@@ -1608,10 +1617,6 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
       : baseNote;
     supabaseUpdates.notes = encodeSlotNotes(seed, updates) ?? (baseNote || null);
   }
-  if (updates.approvalStatus !== undefined) supabaseUpdates.approval_status = updates.approvalStatus;
-  if (updates.approvedBy !== undefined) supabaseUpdates.approved_by = updates.approvedBy;
-  if (updates.approvedAt !== undefined) supabaseUpdates.approved_at = updates.approvedAt;
-  if (updates.approvalNote !== undefined) supabaseUpdates.approval_note = updates.approvalNote;
 
   if (Object.keys(supabaseUpdates).length === 0) {
     return true;
@@ -1675,27 +1680,17 @@ export async function updateTimeRecord(id: string, updates: Partial<TimeRecord>)
 
   // Fallback: match by employee_id and date (critical for temporary local IDs like rec-...)
   if (updates.employeeId) {
-    const resolvedEmpId = (await resolveEmployeeUuid(updates.employeeId)) || updates.employeeId;
+    const resolvedEmpId = await resolveEmployeeUuid(updates.employeeId);
+    if (!resolvedEmpId) {
+      return false;
+    }
     const targetDate = updates.date ? String(updates.date).split('T')[0] : new Date().toISOString().split('T')[0];
-    let res2 = await supabase
+    const res2 = await supabase
       .from('time_records')
       .update(supabaseUpdates)
       .eq('employee_id', resolvedEmpId)
       .eq('date', targetDate)
       .select();
-    if (res2.error) {
-      const fallbackUpdates = { ...supabaseUpdates };
-      delete fallbackUpdates.approval_status;
-      delete fallbackUpdates.approved_by;
-      delete fallbackUpdates.approved_at;
-      delete fallbackUpdates.approval_note;
-      res2 = await supabase
-        .from('time_records')
-        .update(fallbackUpdates)
-        .eq('employee_id', resolvedEmpId)
-        .eq('date', targetDate)
-        .select();
-    }
     if (res2.data && res2.data.length > 0) {
       return true;
     }
@@ -3529,10 +3524,10 @@ export function transformSupabaseTimeRecord(data: any): TimeRecord {
     status: data.status,
     notes: cleanNotes,
     academicYear: data.academic_year,
-    approvalStatus: (data.approval_status as any) || 'pending',
-    approvedBy: data.approved_by || undefined,
-    approvedAt: data.approved_at || undefined,
-    approvalNote: data.approval_note || undefined,
+    approvalStatus: (data.approval_status || slotData.approvalStatus || 'pending') as any,
+    approvedBy: data.approved_by || slotData.approvedBy || undefined,
+    approvedAt: data.approved_at || slotData.approvedAt || undefined,
+    approvalNote: data.approval_note || slotData.approvalNote || undefined,
   };
 }
 

@@ -1107,6 +1107,8 @@ function mergeTimeRecords(
       // Drop demo / mock / seed generated records or records without valid ID
       if (
         !recId ||
+        !rawEmp ||
+        /^(emp-\d+|demo-|mock-|seed-)/i.test(rawEmp) ||
         recId.startsWith('demo-') ||
         recId.startsWith('mock-') ||
         recId.startsWith('seed-') ||
@@ -1125,8 +1127,16 @@ function mergeTimeRecords(
         }
       }
 
-      // Unsynced local record: push it to the cloud so every other device sees it too
-      if (recId.startsWith('rec-')) queueCloudCreate(localR);
+      // Unsynced local record: push to cloud only if employee maps to a real database UUID
+      if (recId.startsWith('rec-')) {
+        const isUuidEmp = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(rawEmp);
+        const mappedUuid = isUuidEmp ? localR.employeeId : empCodeToIdMap.get(rawEmp);
+        if (mappedUuid && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(mappedUuid)) {
+          queueCloudCreate({ ...localR, employeeId: mappedUuid });
+        } else {
+          return false;
+        }
+      }
 
       return true;
     })
