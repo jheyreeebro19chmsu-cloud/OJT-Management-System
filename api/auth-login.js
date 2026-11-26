@@ -41,16 +41,88 @@ function parseQuery(req) {
   }
 }
 
+const EMP_AUTH_COLS =
+  'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at';
+const HOST_AUTH_COLS =
+  'id, name, email, company_name, position, active, is_approved, created_at';
+
+const isUuid = (val) =>
+  Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val)));
+
+function withTimeout(promise, ms = 4500) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => setTimeout(() => reject(new Error('DB lookup timeout')), ms)),
+  ]);
+}
+
+// Warm in-memory pool of pre-minted GoTrue Google OAuth authorize URLs (each state nonce is single-use)
+const _googleUrlPool = new Map(); // redirectTo -> Array<{ url: string, expiresAt: number }>
+const _replenishingRedirects = new Set();
+
+async function fetchSingleGoogleAuthorizeUrl(redirectTo, timeoutMs = 8500) {
+  const targetAuthorize = `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
+  const controller = new AbortController();
+  const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const resp = await fetch(targetAuthorize, {
+      method: 'GET',
+      redirect: 'manual',
+      signal: controller.signal,
+      headers: {
+        Accept: 'text/html,application/xhtml+xml',
+        'Cache-Control': 'no-cache',
+      },
+    });
+    clearTimeout(abortTimer);
+    const loc = resp.headers.get('location') || '';
+    if ((resp.status === 302 || resp.status === 303 || resp.status === 307) && loc.includes('accounts.google.com')) {
+      return loc;
+    }
+    throw new Error(`Unexpected status ${resp.status}`);
+  } catch (err) {
+    clearTimeout(abortTimer);
+    throw err;
+  }
+}
+
+function replenishGoogleUrlPool(redirectTo) {
+  if (_replenishingRedirects.has(redirectTo)) return;
+  const now = Date.now();
+  const existing = (_googleUrlPool.get(redirectTo) || []).filter((item) => item.expiresAt > now);
+  _googleUrlPool.set(redirectTo, existing);
+  if (existing.length >= 2) return;
+
+  _replenishingRedirects.add(redirectTo);
+  fetchSingleGoogleAuthorizeUrl(redirectTo, 8500)
+    .then((url) => {
+      if (url) {
+        const list = (_googleUrlPool.get(redirectTo) || []).filter((item) => item.expiresAt > Date.now());
+        list.push({ url, expiresAt: Date.now() + 3.5 * 60 * 1000 });
+        _googleUrlPool.set(redirectTo, list.slice(-3));
+      }
+    })
+    .catch(() => {})
+    .finally(() => {
+      _replenishingRedirects.delete(redirectTo);
+    });
+}
+
 /**
- * Staggered hedged resolver for Supabase GoTrue /auth/v1/authorize.
- * When Supabase Nano's GoTrue pool has a stuck Postgres socket (which hangs 10-62s -> 504),
- * staggered parallel probes at 0ms, 1100ms, and 2400ms hit a healthy worker and return the
- * direct `https://accounts.google.com/o/oauth2/v2/auth?...` redirect URL immediately.
+ * Staggered hedged resolver for Supabase GoTrue /auth/v1/authorize with warm single-use URL pool.
+ * Returns in < 5ms when warm, or races staggered probes (8.5s window) so GoTrue Disk-IO stalls never 504.
  */
 async function resolveGoogleAuthorizeUrlHedged(redirectTo) {
-  const targetAuthorize = `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
-  const controllers = [];
+  const now = Date.now();
+  const pool = (_googleUrlPool.get(redirectTo) || []).filter((item) => item.expiresAt > now);
+  if (pool.length > 0) {
+    const popped = pool.shift();
+    _googleUrlPool.set(redirectTo, pool);
+    replenishGoogleUrlPool(redirectTo);
+    return popped.url;
+  }
 
+  const controllers = [];
   const singleAttempt = (delayMs, timeoutMs) =>
     new Promise((resolve, reject) => {
       const startTimer = setTimeout(async () => {
@@ -58,6 +130,7 @@ async function resolveGoogleAuthorizeUrlHedged(redirectTo) {
         controllers.push(controller);
         const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
         try {
+          const targetAuthorize = `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
           const resp = await fetch(targetAuthorize, {
             method: 'GET',
             redirect: 'manual',
@@ -85,13 +158,14 @@ async function resolveGoogleAuthorizeUrlHedged(redirectTo) {
 
   try {
     const winnerUrl = await Promise.any([
-      singleAttempt(0, 4800),
-      singleAttempt(1100, 4800),
-      singleAttempt(2400, 5200),
+      singleAttempt(0, 8500),
+      singleAttempt(1200, 8500),
+      singleAttempt(2800, 8500),
     ]);
     controllers.forEach((c) => {
       try { c.abort(); } catch {}
     });
+    replenishGoogleUrlPool(redirectTo);
     return winnerUrl;
   } catch {
     controllers.forEach((c) => {
@@ -101,44 +175,125 @@ async function resolveGoogleAuthorizeUrlHedged(redirectTo) {
   }
 }
 
-async function findEmployeeByIdentifier(cleanId, lowerId) {
-  const { data: byEmail } = await supabaseAdmin
-    .from('employees')
-    .select('*')
-    .ilike('email', lowerId)
-    .limit(1)
-    .maybeSingle();
-  if (byEmail) return byEmail;
+let _accountsIndexCache = { data: null, expiresAt: 0 };
 
-  const { data: byEmpId } = await supabaseAdmin
-    .from('employees')
-    .select('*')
-    .ilike('employee_id', cleanId)
-    .limit(1)
-    .maybeSingle();
-  if (byEmpId) return byEmpId;
-
+async function readStorageAccountsIndex() {
+  if (_accountsIndexCache.data && _accountsIndexCache.expiresAt > Date.now()) {
+    return _accountsIndexCache.data;
+  }
+  try {
+    const { data: blob, error } = await supabaseAdmin.storage
+      .from('face-photos')
+      .download('settings/accounts_index.json');
+    if (!error && blob) {
+      const parsed = JSON.parse(await blob.text());
+      if (parsed && typeof parsed === 'object') {
+        _accountsIndexCache = { data: parsed, expiresAt: Date.now() + 15000 };
+        return parsed;
+      }
+    }
+  } catch {}
   return null;
 }
 
-async function findHostByIdentifier(cleanId, lowerId) {
-  const { data: byEmail } = await supabaseAdmin
-    .from('host_supervisors')
-    .select('*')
-    .ilike('email', lowerId)
-    .limit(1)
-    .maybeSingle();
-  if (byEmail) return byEmail;
+async function lookupAccountInStorageIndex(cleanId, lowerId, authUserId = '') {
+  const index = await readStorageAccountsIndex();
+  if (!index) return { employee: null, hostSupervisor: null, indexAvailable: false };
 
-  const { data: byEmpId } = await supabaseAdmin
-    .from('host_supervisors')
-    .select('*')
-    .ilike('employee_id', cleanId)
-    .limit(1)
-    .maybeSingle();
-  if (byEmpId) return byEmpId;
+  const emps = Array.isArray(index.employees) ? index.employees : [];
+  const hosts = Array.isArray(index.hostSupervisors) ? index.hostSupervisors : [];
 
-  return null;
+  const matchedEmp =
+    emps.find(
+      (e) =>
+        (lowerId && e.email && String(e.email).trim().toLowerCase() === lowerId) ||
+        (cleanId && e.employee_id && String(e.employee_id).trim().toLowerCase() === lowerId) ||
+        (authUserId && e.id === authUserId)
+    ) || null;
+
+  const matchedHost = matchedEmp
+    ? null
+    : hosts.find(
+        (h) =>
+          (lowerId && h.email && String(h.email).trim().toLowerCase() === lowerId) ||
+          (authUserId && h.id === authUserId)
+      ) || null;
+
+  return { employee: matchedEmp, hostSupervisor: matchedHost, indexAvailable: true };
+}
+
+async function findEmployeeByIdentifier(cleanId, lowerId, authUserId = '') {
+  try {
+    if (authUserId && isUuid(authUserId)) {
+      const { data: byUuid, error: uuidErr } = await withTimeout(
+        supabaseAdmin.from('employees').select(EMP_AUTH_COLS).eq('id', authUserId).limit(1).maybeSingle(),
+        3500
+      );
+      if (!uuidErr && byUuid) return byUuid;
+    }
+
+    if (lowerId && lowerId.includes('@')) {
+      const { data: byExactEmail, error: emailErr } = await withTimeout(
+        supabaseAdmin.from('employees').select(EMP_AUTH_COLS).eq('email', lowerId).limit(1).maybeSingle(),
+        3500
+      );
+      if (!emailErr && byExactEmail) return byExactEmail;
+
+      const { data: byIlikeEmail, error: ilikeErr } = await withTimeout(
+        supabaseAdmin.from('employees').select(EMP_AUTH_COLS).ilike('email', lowerId).limit(1).maybeSingle(),
+        3500
+      );
+      if (!ilikeErr && byIlikeEmail) return byIlikeEmail;
+    } else if (cleanId) {
+      const { data: byExactEmpId, error: empErr } = await withTimeout(
+        supabaseAdmin.from('employees').select(EMP_AUTH_COLS).eq('employee_id', cleanId).limit(1).maybeSingle(),
+        3500
+      );
+      if (!empErr && byExactEmpId) return byExactEmpId;
+
+      const { data: byIlikeEmpId } = await withTimeout(
+        supabaseAdmin.from('employees').select(EMP_AUTH_COLS).ilike('employee_id', cleanId).limit(1).maybeSingle(),
+        3500
+      );
+      if (byIlikeEmpId) return byIlikeEmpId;
+    }
+  } catch (err) {
+    console.warn('findEmployeeByIdentifier DB fallback to Storage index:', err?.message || err);
+  }
+
+  const fromIndex = await lookupAccountInStorageIndex(cleanId, lowerId, authUserId);
+  return fromIndex.employee;
+}
+
+async function findHostByIdentifier(cleanId, lowerId, authUserId = '') {
+  try {
+    if (authUserId && isUuid(authUserId)) {
+      const { data: byUuid, error: uuidErr } = await withTimeout(
+        supabaseAdmin.from('host_supervisors').select(HOST_AUTH_COLS).eq('id', authUserId).limit(1).maybeSingle(),
+        3500
+      );
+      if (!uuidErr && byUuid) return byUuid;
+    }
+
+    if (lowerId && lowerId.includes('@')) {
+      const { data: byEmail, error: emailErr } = await withTimeout(
+        supabaseAdmin.from('host_supervisors').select(HOST_AUTH_COLS).eq('email', lowerId).limit(1).maybeSingle(),
+        3500
+      );
+      if (!emailErr && byEmail) return byEmail;
+
+      const { data: byIlike } = await withTimeout(
+        supabaseAdmin.from('host_supervisors').select(HOST_AUTH_COLS).ilike('email', lowerId).limit(1).maybeSingle(),
+        3500
+      );
+      if (byIlike) return byIlike;
+    }
+  } catch (err) {
+    console.warn('findHostByIdentifier DB fallback to Storage index:', err?.message || err);
+  }
+
+  const fromIndex = await lookupAccountInStorageIndex(cleanId, lowerId, authUserId);
+  return fromIndex.hostSupervisor;
 }
 
 export default async function handler(req, res) {
@@ -150,7 +305,7 @@ export default async function handler(req, res) {
     return res.status(200).end();
   }
 
-  // Fast hedged pre-resolver for Google OAuth authorize URL (avoids 60s browser 504 hangs)
+  // Fast hedged pre-resolver for Google OAuth authorize URL & OAuth account lookup
   if (req.method === 'GET') {
     const query = parseQuery(req);
     if (query.action === 'google-url') {
@@ -167,6 +322,23 @@ export default async function handler(req, res) {
         error: 'Supabase Auth is temporarily congested. Retrying connection...',
       });
     }
+
+    if (query.action === 'lookup-oauth-user') {
+      const cleanEmail = String(query.email || '').trim().toLowerCase();
+      const authId = String(query.id || '').trim();
+      res.setHeader('Cache-Control', 'no-store');
+      if (!cleanEmail && !authId) {
+        return res.status(400).json({ success: false, error: 'Missing email or id' });
+      }
+      const matchedEmp = await findEmployeeByIdentifier(cleanEmail, cleanEmail, authId);
+      const matchedHost = matchedEmp ? null : await findHostByIdentifier(cleanEmail, cleanEmail, authId);
+      return res.status(200).json({
+        success: true,
+        employee: matchedEmp || null,
+        hostSupervisor: matchedHost || null,
+      });
+    }
+
     return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
@@ -263,30 +435,9 @@ export default async function handler(req, res) {
 
     // Ensure profile record is loaded by auth user ID or resolved email if initial lookup missed
     if (!matchedEmp && !matchedHost) {
-      const { data: empById } = await supabaseAdmin
-        .from('employees')
-        .select('*')
-        .eq('id', userId)
-        .limit(1)
-        .maybeSingle();
-      if (empById) {
-        matchedEmp = empById;
-      } else {
-        matchedEmp = await findEmployeeByIdentifier(targetEmail, targetEmail);
-      }
-
+      matchedEmp = await findEmployeeByIdentifier(targetEmail, targetEmail, userId);
       if (!matchedEmp) {
-        const { data: hostById } = await supabaseAdmin
-          .from('host_supervisors')
-          .select('*')
-          .eq('id', userId)
-          .limit(1)
-          .maybeSingle();
-        if (hostById) {
-          matchedHost = hostById;
-        } else {
-          matchedHost = await findHostByIdentifier(targetEmail, targetEmail);
-        }
+        matchedHost = await findHostByIdentifier(targetEmail, targetEmail, userId);
       }
     }
 

@@ -3,7 +3,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { toast } from 'sonner';
 import { authAPI } from '../services/authApi';
 
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, lookupAccountInPublicStorageIndex } from '../lib/supabase';
 import * as supabaseService from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { getAbsoluteUrl } from '../services/config';
@@ -1703,7 +1703,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
               }
             }),
             (shouldFetchFullDashboardData
-              ? supabaseService.fetchTimeRecords().then((recs) => {
+              ? (currentUser?.role === 'employee' && currentUser.id
+                  ? supabaseService.fetchTimeRecordsForEmployee(
+                      currentUser.id,
+                      currentUser.employeeId ? [currentUser.employeeId] : []
+                    )
+                  : supabaseService.fetchTimeRecords()
+                ).then((recs) => {
                   if (isMounted && recs && recs.length > 0) {
                     setTimeRecords((prev) => {
                       const merged = mergeTimeRecords(recs, prev);
@@ -2123,14 +2129,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
               return updated;
             });
           }
-          const supabaseRecords = await supabaseService.fetchTimeRecords();
-          if (supabaseRecords.length > 0) {
-            setTimeRecords((prev) => {
-              const merged = mergeTimeRecords(supabaseRecords, prev);
-              saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-              return merged;
-            });
-          }
         } catch (err) {
           console.error('Real-time time_records sync error:', err);
         }
@@ -2195,7 +2193,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseService.fetchHostSupervisors(),
         supabaseService.fetchGeofenceZones(),
         supabaseService.fetchSettings(),
-        supabaseService.fetchTimeRecords(),
+        currentUser?.role === 'employee' && currentUser.id
+          ? supabaseService.fetchTimeRecordsForEmployee(
+              currentUser.id,
+              currentUser.employeeId ? [currentUser.employeeId] : []
+            )
+          : supabaseService.fetchTimeRecords(),
       ]);
 
       const supabaseEmployees = empSettled.status === 'fulfilled' ? empSettled.value : null;
@@ -2947,14 +2950,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     let targetEmail = normalizedId;
 
+    const EMP_AUTH_SELECT_COLS =
+      'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at';
+    const HOST_AUTH_SELECT_COLS =
+      'id, name, email, company_name, position, active, is_approved, created_at';
+
     if (cloudEnabled && !matchedEmp && !matchedHost) {
       try {
         const { data: dbEmp } = await supabase
           .from('employees')
-          .select('*')
-          .or(
-            `email_lower.eq.${normalizedId},email.ilike.${normalizedId},employee_id_lower.eq.${normalizedId},employee_id.ilike.${normalizedId}`
-          )
+          .select(EMP_AUTH_SELECT_COLS)
+          .or(`email.eq.${normalizedId},email.ilike.${normalizedId},employee_id.eq.${normalizedId},employee_id.ilike.${normalizedId}`)
           .limit(1)
           .maybeSingle();
 
@@ -2964,8 +2970,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         } else {
           const { data: dbHost } = await supabase
             .from('host_supervisors')
-            .select('*')
-            .or(`email_lower.eq.${normalizedId},email.ilike.${normalizedId}`)
+            .select(HOST_AUTH_SELECT_COLS)
+            .or(`email_lower.eq.${normalizedId},email.eq.${normalizedId},email.ilike.${normalizedId}`)
             .limit(1)
             .maybeSingle();
 
@@ -2976,6 +2982,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         }
       } catch (lookupErr) {
         console.warn('Cross-platform account lookup notice:', lookupErr);
+      }
+
+      if (!matchedEmp && !matchedHost) {
+        const storageLookup = await lookupAccountInPublicStorageIndex(normalizedId, normalizedId);
+        if (storageLookup.employee) {
+          matchedEmp = supabaseService.transformSupabaseEmployee(storageLookup.employee);
+        } else if (storageLookup.hostSupervisor) {
+          matchedHost = mapDbHost(storageLookup.hostSupervisor);
+        }
       }
     }
 
@@ -3024,8 +3039,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!matchedEmp && !matchedHost) {
           const { data: dbEmp } = await supabase
             .from('employees')
-            .select('*')
-            .or(`id.eq.${userId},email_lower.eq.${targetEmail},email.ilike.${targetEmail}`)
+            .select(EMP_AUTH_SELECT_COLS)
+            .or(`id.eq.${userId},email.eq.${targetEmail},email.ilike.${targetEmail}`)
             .limit(1)
             .maybeSingle();
 
@@ -3034,8 +3049,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
           } else {
             const { data: dbHost } = await supabase
               .from('host_supervisors')
-              .select('*')
-              .or(`id.eq.${userId},email_lower.eq.${targetEmail},email.ilike.${targetEmail}`)
+              .select(HOST_AUTH_SELECT_COLS)
+              .or(`id.eq.${userId},email_lower.eq.${targetEmail},email.eq.${targetEmail}`)
               .limit(1)
               .maybeSingle();
 
@@ -3147,21 +3162,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
     }
 
-    // Step 2: Parallel race between direct Supabase PostgREST (~100ms, zero cold start) and /api/employees
+    // Step 2: Parallel 3-way race across Supabase Storage CDN (~120ms, zero DB load), direct PostgREST, and /api/auth-login
     const cloudReady = useSupabase || isSupabaseConfigured();
     if (!matchedEmp && !matchedHost && (authEmail || authId)) {
-      const lookupViaDirectSupabase = async (): Promise<{ emp?: Employee; host?: HostSupervisor } | null> => {
-        if (!cloudReady) return null;
+      type LookupOutcome = { emp?: Employee; host?: HostSupervisor; authoritativeEmpty?: boolean };
+
+      const mapRawHost = (rawHost: any): HostSupervisor => ({
+        id: rawHost.id,
+        employeeId: rawHost.employee_id || rawHost.id,
+        name: rawHost.name,
+        email: rawHost.email,
+        companyName: rawHost.company_name,
+        companyAddress: rawHost.company_address,
+        contactPerson: rawHost.contact_person || rawHost.name,
+        phone: rawHost.phone,
+        academicYear: rawHost.academic_year,
+        isApproved: rawHost.is_approved ?? true,
+        active: rawHost.active ?? true,
+      });
+
+      const lookupViaStorageIndex = async (): Promise<LookupOutcome> => {
+        try {
+          const idxRes = await lookupAccountInPublicStorageIndex(authEmail, authId);
+          if (idxRes.employee) {
+            return { emp: supabaseService.transformSupabaseEmployee(idxRes.employee) };
+          }
+          if (idxRes.hostSupervisor) {
+            return { host: mapRawHost(idxRes.hostSupervisor) };
+          }
+          return { authoritativeEmpty: false }; // Storage index may lag brand-new account by seconds; check DB/API before declaring empty
+        } catch {
+          return { authoritativeEmpty: false };
+        }
+      };
+
+      const lookupViaDirectSupabase = async (): Promise<LookupOutcome> => {
+        if (!cloudReady) return { authoritativeEmpty: false };
         try {
           const empCols =
-            'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, application_status, created_at';
-          const hostCols =
-            'id, employee_id, email, name, company_name, contact_person, phone, academic_year, is_approved, active';
+            'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at';
+          const hostCols = 'id, name, email, company_name, position, active, is_approved, created_at';
+
           const [empEmailRes, empIdRes, hostEmailRes, hostIdRes] = await Promise.allSettled([
-            authEmail ? supabase.from('employees').select(empCols).ilike('email', authEmail).limit(1) : Promise.resolve({ data: null }),
-            authId ? supabase.from('employees').select(empCols).eq('id', authId).limit(1) : Promise.resolve({ data: null }),
-            authEmail ? supabase.from('host_supervisors').select(hostCols).ilike('email', authEmail).limit(1) : Promise.resolve({ data: null }),
-            authId ? supabase.from('host_supervisors').select(hostCols).eq('id', authId).limit(1) : Promise.resolve({ data: null }),
+            authEmail ? supabase.from('employees').select(empCols).eq('email', authEmail).limit(1) : Promise.resolve({ data: [], error: null }),
+            authId ? supabase.from('employees').select(empCols).eq('id', authId).limit(1) : Promise.resolve({ data: [], error: null }),
+            authEmail ? supabase.from('host_supervisors').select(hostCols).eq('email', authEmail).limit(1) : Promise.resolve({ data: [], error: null }),
+            authId ? supabase.from('host_supervisors').select(hostCols).eq('id', authId).limit(1) : Promise.resolve({ data: [], error: null }),
           ]);
 
           const dbEmp =
@@ -3175,99 +3221,81 @@ export function AppProvider({ children }: { children: ReactNode }) {
             (hostEmailRes.status === 'fulfilled' ? hostEmailRes.value?.data?.[0] : null) ||
             (hostIdRes.status === 'fulfilled' ? hostIdRes.value?.data?.[0] : null);
           if (rawHost) {
-            return {
-              host: {
-                id: rawHost.id,
-                employeeId: rawHost.employee_id || rawHost.id,
-                name: rawHost.name,
-                email: rawHost.email,
-                companyName: rawHost.company_name,
-                companyAddress: rawHost.company_address,
-                contactPerson: rawHost.contact_person,
-                phone: rawHost.phone,
-                academicYear: rawHost.academic_year,
-                isApproved: rawHost.is_approved ?? true,
-                active: rawHost.active ?? true,
-              },
-            };
+            return { host: mapRawHost(rawHost) };
           }
+
+          const anyFailed = [empEmailRes, empIdRes, hostEmailRes, hostIdRes].some(
+            (r) => r.status === 'rejected' || Boolean((r as any).value?.error)
+          );
+          return { authoritativeEmpty: !anyFailed };
         } catch (lookupErr) {
           console.warn('OAuth direct Supabase lookup notice:', lookupErr);
+          return { authoritativeEmpty: false };
         }
-        return null;
       };
 
-      const lookupViaServerApi = async (): Promise<{ emp?: Employee; host?: HostSupervisor } | null> => {
-        if (!authEmail || typeof window === 'undefined') return null;
+      const lookupViaServerApi = async (): Promise<LookupOutcome> => {
+        if ((!authEmail && !authId) || typeof window === 'undefined') return { authoritativeEmpty: false };
         try {
           const controller = new AbortController();
-          const timer = setTimeout(() => controller.abort(), 1600);
-          const res = await fetch(`/api/employees?email=${encodeURIComponent(authEmail)}`, {
-            signal: controller.signal,
-            headers: { Accept: 'application/json' },
-          });
+          const timer = setTimeout(() => controller.abort(), 6500);
+          const res = await fetch(
+            `/api/auth-login?action=lookup-oauth-user&email=${encodeURIComponent(authEmail)}&id=${encodeURIComponent(authId)}`,
+            {
+              signal: controller.signal,
+              headers: { Accept: 'application/json' },
+            }
+          );
           clearTimeout(timer);
           if (res && res.ok) {
             const apiData = await res.json();
-            if (Array.isArray(apiData) && apiData.length > 0) {
-              const rawItem = apiData[0];
-              if (rawItem.is_host_supervisor) {
-                return {
-                  host: {
-                    id: rawItem.id,
-                    employeeId: rawItem.employee_id || rawItem.id,
-                    name: rawItem.name,
-                    email: rawItem.email,
-                    companyName: rawItem.company_name,
-                    companyAddress: rawItem.company_address,
-                    contactPerson: rawItem.contact_person,
-                    phone: rawItem.phone,
-                    academicYear: rawItem.academic_year,
-                    isApproved: rawItem.is_approved ?? true,
-                    active: rawItem.active ?? true,
-                  },
-                };
-              }
-              return { emp: supabaseService.transformSupabaseEmployee(rawItem) };
+            if (apiData?.employee) {
+              return { emp: supabaseService.transformSupabaseEmployee(apiData.employee) };
+            }
+            if (apiData?.hostSupervisor) {
+              return { host: mapRawHost(apiData.hostSupervisor) };
+            }
+            if (apiData?.success === true) {
+              return { authoritativeEmpty: true };
             }
           }
         } catch {}
-        return null;
+        return { authoritativeEmpty: false };
       };
 
+      const storagePromise = lookupViaStorageIndex();
       const directPromise = lookupViaDirectSupabase();
       const apiPromise = lookupViaServerApi();
 
-      // Return immediately on whichever finds a match first; if direct Supabase confirms not found, don't stall > 250ms on cold API
+      // Resolve in 0ms as soon as ANY source finds the user; only conclude "new user" once a healthy DB/API check confirms not found
       const winner = await new Promise<{ emp?: Employee; host?: HostSupervisor } | null>((resolve) => {
         let resolved = false;
-        let pendingCount = 2;
+        let pendingCount = 3;
         const finish = (val: { emp?: Employee; host?: HostSupervisor } | null) => {
           if (resolved) return;
           resolved = true;
           resolve(val);
         };
 
-        directPromise.then((res) => {
+        const handleOutcome = (res: LookupOutcome, allowShortGrace: boolean) => {
           pendingCount -= 1;
           if (res?.emp || res?.host) {
             finish(res);
-          } else if (pendingCount === 0) {
-            finish(null);
-          } else {
-            // Give server API at most 250ms grace in case RLS hid a record, otherwise proceed immediately
-            setTimeout(() => finish(null), 250);
+            return;
           }
-        });
+          if (pendingCount === 0) {
+            finish(null);
+            return;
+          }
+          if (allowShortGrace && res?.authoritativeEmpty) {
+            // Healthy DB/API confirmed account is not in tables; allow brief 400ms grace for sibling check then proceed to /register
+            setTimeout(() => finish(null), 400);
+          }
+        };
 
-        apiPromise.then((res) => {
-          pendingCount -= 1;
-          if (res?.emp || res?.host) {
-            finish(res);
-          } else if (pendingCount === 0) {
-            finish(null);
-          }
-        });
+        storagePromise.then((res) => handleOutcome(res, false));
+        directPromise.then((res) => handleOutcome(res, true));
+        apiPromise.then((res) => handleOutcome(res, true));
       });
 
       if (winner?.emp) {

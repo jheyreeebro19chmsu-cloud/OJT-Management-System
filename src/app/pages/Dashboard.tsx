@@ -471,93 +471,78 @@ export function Dashboard() {
       return;
     }
 
-    setDashboardUploadingKey(docKey);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target?.result as string;
-      const empId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || '';
+    const empId = currentEmp.id || currentEmp.employeeId || currentUser?.employeeId || '';
+    const uploadedAtIso = new Date().toISOString();
+    const previewUrl = URL.createObjectURL(file);
+    const baseDocs: TraineeDocuments = currentEmp.submittedDocuments || {};
 
-      // Cache base64 in sessionStorage for preview without exhausting localStorage 5MB limit
-      try {
-        sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
-        sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
-        sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
-      } catch {}
+    // 1. Instant optimistic UI update (< 15ms) with zero wait
+    const optimisticItem: TraineeDocumentItem = {
+      name: file.name,
+      size: file.size,
+      dataUrl: previewUrl,
+      fileUrl: previewUrl,
+      fileType: file.type || 'application/octet-stream',
+      uploadedAt: uploadedAtIso,
+      status: 'submitted',
+      source: 'portal',
+    };
+    const optimisticDocs: TraineeDocuments = {
+      ...baseDocs,
+      [docKey]: optimisticItem,
+    };
+    const allPassed = docKeys.every((k) => optimisticDocs[k]?.status === 'passed');
+    const finalStatus = allPassed ? 'passed' : 'submitted';
 
-      // Attempt cloud storage upload for permanent URL
-      let remoteUrl = '';
-      try {
-        const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
-        if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
-          remoteUrl = storedUrl;
+    updateEmployee(currentEmp.id, {
+      submittedDocuments: optimisticDocs,
+      documentsPassed: allPassed,
+      documentsStatus: finalStatus,
+    });
+
+    setDashboardUploadingKey(null);
+    const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
+    toast.success(`✓ "${meta?.title || 'Document'}" updated & submitted to your Instructor for review!`);
+
+    // 2. Upload to Supabase Storage in background and persist permanent HTTP URL
+    void uploadDocumentToStorage(empId, docKey, file, file.name)
+      .then((storedUrl) => {
+        const remoteUrl = storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey') ? storedUrl : '';
+        if (remoteUrl) {
           try {
-            localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
+            localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, remoteUrl);
           } catch {}
         }
-      } catch (uploadErr) {
-        console.warn('Dashboard storage upload notice:', uploadErr);
-      }
-
-      const currentDocs: TraineeDocuments = currentEmp.submittedDocuments || {};
-      const newDocItem: TraineeDocumentItem = {
-        name: file.name,
-        size: file.size,
-        dataUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''),
-        fileUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''), // Public or local URL
-        fileType: file.type || 'application/octet-stream',
-        uploadedAt: new Date().toISOString(),
-        status: 'submitted',
-        source: 'portal',
-      };
-
-      const updatedDocs: TraineeDocuments = {
-        ...currentDocs,
-        [docKey]: newDocItem,
-      };
-
-      const newUploadedCount = docKeys.filter((k) => Boolean(updatedDocs[k]?.dataUrl || updatedDocs[k]?.fileUrl || updatedDocs[k]?.name)).length;
-      const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
-      const finalStatus = allPassed ? 'passed' : 'submitted';
-      updateEmployee(currentEmp.id, {
-        submittedDocuments: updatedDocs,
-        documentsPassed: allPassed,
-        documentsStatus: finalStatus,
-      });
-
-      saveDocumentPassStatus(currentEmp.id || currentEmp.employeeId, {
-        docKey,
-        status: 'submitted',
-        allPassed,
-        documentsStatus: finalStatus,
-        submittedDocuments: updatedDocs,
-        documentItem: newDocItem,
-      }).catch(console.warn);
-
-      try {
-        window.dispatchEvent(
-          new CustomEvent('ojt_document_submitted', {
-            detail: {
-              employeeId: currentEmp.id || currentEmp.employeeId,
-              studentName: currentEmp.name,
-              docKey,
-              docTitle: docKey,
-              documentItem: newDocItem,
-            },
-          })
-        );
-      } catch {}
-
-      setDashboardUploadingKey(null);
-      const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
-      toast.success(`✓ "${meta?.title || 'Document'}" updated & submitted to your Instructor for review!`);
-    };
-
-    reader.onerror = () => {
-      setDashboardUploadingKey(null);
-      toast.error('Failed to read file. Please try again.');
-    };
-
-    reader.readAsDataURL(file);
+        const finalUrl = remoteUrl || previewUrl;
+        const finalItem: TraineeDocumentItem = {
+          ...optimisticItem,
+          dataUrl: finalUrl,
+          fileUrl: finalUrl,
+        };
+        const finalDocs: TraineeDocuments = {
+          ...baseDocs,
+          [docKey]: finalItem,
+        };
+        updateEmployee(currentEmp.id, {
+          submittedDocuments: finalDocs,
+          documentsPassed: allPassed,
+          documentsStatus: finalStatus,
+        });
+        try {
+          window.dispatchEvent(
+            new CustomEvent('ojt_document_submitted', {
+              detail: {
+                employeeId: currentEmp.id || currentEmp.employeeId,
+                studentName: currentEmp.name,
+                docKey,
+                docTitle: docKey,
+                documentItem: finalItem,
+              },
+            })
+          );
+        } catch {}
+      })
+      .catch((err) => console.warn('Dashboard background upload notice:', err));
   };
 
   const handleLinkStudent = async () => {

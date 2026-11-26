@@ -338,6 +338,63 @@ function parseQuery(req) {
   }
 }
 
+const EMP_LIGHT_COLS =
+  'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_lat, registration_lng, registration_address, registration_location, created_at';
+const HOST_LIGHT_COLS =
+  'id, name, email, company_name, position, active, is_approved, created_at';
+
+let _employeesListCache = { data: null, expiresAt: 0 };
+
+async function readStorageAccountsIndex() {
+  try {
+    const { data: blob, error } = await supabase.storage
+      .from('face-photos')
+      .download('settings/accounts_index.json');
+    if (!error && blob) {
+      const parsed = JSON.parse(await blob.text());
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch {}
+  return null;
+}
+
+function syncStorageAccountsIndexAsync() {
+  Promise.all([
+    supabase
+      .from('employees')
+      .select(
+        'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at'
+      )
+      .limit(1000),
+    supabase.from('host_supervisors').select(HOST_LIGHT_COLS).limit(200),
+  ])
+    .then(async ([empRes, hostRes]) => {
+      if (empRes.error) return;
+      const compactEmps = (empRes.data || []).map((e) => {
+        const out = {};
+        for (const [k, v] of Object.entries(e)) {
+          if (v !== null && v !== undefined && v !== '') {
+            if (k === 'photo' && String(v).startsWith('data:')) continue;
+            out[k] = v;
+          }
+        }
+        return out;
+      });
+      const payload = {
+        updatedAt: new Date().toISOString(),
+        employees: compactEmps,
+        hostSupervisors: hostRes.data || [],
+      };
+      const buf = Buffer.from(JSON.stringify(payload), 'utf8');
+      await supabase.storage.from('face-photos').upload('settings/accounts_index.json', buf, {
+        contentType: 'application/json',
+        cacheControl: '0',
+        upsert: true,
+      });
+    })
+    .catch(() => {});
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -356,7 +413,11 @@ export default async function handler(req, res) {
       const id = query?.id;
       const email = query?.email;
 
-      let queryBuilder = supabase.from('employees').select('id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at');
+      if (!id && !email && _employeesListCache.data && _employeesListCache.expiresAt > Date.now()) {
+        return sendJson(res, 200, _employeesListCache.data);
+      }
+
+      let queryBuilder = supabase.from('employees').select(EMP_LIGHT_COLS);
       if (id) {
         if (isUuid(id)) {
           queryBuilder = queryBuilder.eq('id', id).limit(1);
@@ -370,41 +431,84 @@ export default async function handler(req, res) {
       }
 
       let data = [];
+      let dbFailed = false;
       try {
-        const queryRes = await withTimeout(queryBuilder, 7500);
+        const queryRes = await withTimeout(queryBuilder, 5500);
         if (queryRes?.error) {
           console.warn('api/employees GET error:', queryRes.error.message);
-          return sendJson(res, 200, []);
+          dbFailed = true;
+        } else {
+          data = queryRes?.data || [];
         }
-        data = queryRes?.data || [];
       } catch (getErr) {
         console.warn('api/employees GET timeout/failure:', getErr.message);
+        dbFailed = true;
+      }
+
+      // Case-insensitive email fallback if exact lowercase match returned empty while DB is healthy
+      if (!dbFailed && (!data || data.length === 0) && email) {
+        try {
+          const { data: ilikeRows } = await withTimeout(
+            supabase.from('employees').select(EMP_LIGHT_COLS).ilike('email', email.trim().toLowerCase()).limit(1),
+            3500
+          );
+          if (ilikeRows && ilikeRows.length > 0) data = ilikeRows;
+        } catch {}
+      }
+
+      // Resilient Storage index fallback when PostgREST/Database is unhealthy or slow
+      if (dbFailed) {
+        const idx = await readStorageAccountsIndex();
+        if (idx && Array.isArray(idx.employees)) {
+          if (id) {
+            data = idx.employees.filter((e) => e.id === id || e.employee_id === id);
+          } else if (email) {
+            const target = email.trim().toLowerCase();
+            data = idx.employees.filter((e) => e.email && String(e.email).trim().toLowerCase() === target);
+            if (data.length === 0 && Array.isArray(idx.hostSupervisors)) {
+              const h = idx.hostSupervisors.find((s) => s.email && String(s.email).trim().toLowerCase() === target);
+              if (h) {
+                return sendJson(res, 200, [{
+                  id: h.id,
+                  employee_id: h.id,
+                  name: h.name,
+                  email: h.email,
+                  company_name: h.company_name,
+                  is_approved: h.is_approved ?? true,
+                  active: h.active ?? true,
+                  position: h.position || 'HTE Representative',
+                  role: 'hte',
+                  is_host_supervisor: true,
+                }]);
+              }
+            }
+          } else {
+            data = idx.employees;
+          }
+          return sendJson(res, 200, data || []);
+        }
         return sendJson(res, 200, []);
       }
 
       // Fast cross-lookup for HTE host supervisors if not found in employees
       if ((!data || data.length === 0) && email) {
         try {
-          const { data: hostData } = await supabase
-            .from('host_supervisors')
-            .select('*')
-            .ilike('email', email.trim().toLowerCase())
-            .limit(1);
+          const cleanEmail = email.trim().toLowerCase();
+          const { data: hostData } = await withTimeout(
+            supabase.from('host_supervisors').select(HOST_LIGHT_COLS).eq('email', cleanEmail).limit(1),
+            3500
+          );
           if (hostData && hostData.length > 0) {
             const h = hostData[0];
             return sendJson(res, 200, [{
               id: h.id,
-              employee_id: h.employee_id || h.id,
+              employee_id: h.id,
               name: h.name,
               email: h.email,
               company_name: h.company_name,
-              company_address: h.company_address,
-              contact_person: h.contact_person,
-              phone: h.phone,
-              academic_year: h.academic_year,
               is_approved: h.is_approved ?? true,
               active: h.active ?? true,
-              position: 'HTE Representative',
+              position: h.position || 'HTE Representative',
               role: 'hte',
               is_host_supervisor: true,
             }]);
@@ -412,6 +516,10 @@ export default async function handler(req, res) {
         } catch (hErr) {
           console.warn('host_supervisors cross-lookup notice:', hErr);
         }
+      }
+
+      if (!id && !email && Array.isArray(data) && data.length > 0) {
+        _employeesListCache = { data, expiresAt: Date.now() + 4000 };
       }
 
       return sendJson(res, 200, data || []);
@@ -571,11 +679,15 @@ export default async function handler(req, res) {
             console.error('api/employees insert error:', insertError);
             return sendJson(res, 500, { error: insertError.message });
           }
+          _employeesListCache = { data: null, expiresAt: 0 };
+          syncStorageAccountsIndexAsync();
           return sendJson(res, 200, { success: true, data: inserted });
         }
         return sendJson(res, 200, { success: true, data: existingEmp ? [existingEmp] : [] });
       }
 
+      _employeesListCache = { data: null, expiresAt: 0 };
+      syncStorageAccountsIndexAsync();
       return sendJson(res, 200, { success: true, data });
     }
 
@@ -598,6 +710,8 @@ export default async function handler(req, res) {
         return sendJson(res, 500, { error: error.message });
       }
 
+      _employeesListCache = { data: null, expiresAt: 0 };
+      syncStorageAccountsIndexAsync();
       return sendJson(res, 200, { success: true });
     }
 

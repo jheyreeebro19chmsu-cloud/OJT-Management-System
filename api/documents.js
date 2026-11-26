@@ -911,25 +911,26 @@ export default async function handler(req, res) {
         return sendJson(res, 500, { error: updateErr.message });
       }
 
-      // 5. Store / sync into dedicated documents table in database
+      // 5. Store / sync ONLY changed document(s) into dedicated documents table in parallel (instead of 20 sequential queries)
       const syncItems = [];
       if (docKey && documentItem) {
         syncItems.push({ key: docKey, item: documentItem });
-      }
-      if (body.submittedDocuments) {
+      } else if (body.submittedDocuments) {
         for (const [k, v] of Object.entries(body.submittedDocuments)) {
           if (v && typeof v === 'object') syncItems.push({ key: k, item: v });
         }
       }
 
-      for (const { key, item } of syncItems) {
-        const rawPath = item.fileUrl || item.dataUrl || '';
-        const filePath = (typeof rawPath === 'string' && (rawPath.startsWith('http://') || rawPath.startsWith('https://')))
-          ? rawPath
-          : '';
-        const fileName = item.name || `${key}.pdf`;
-        if (filePath && emp.id) {
-          try {
+      if (syncItems.length > 0 && emp.id) {
+        await Promise.allSettled(
+          syncItems.map(async ({ key, item }) => {
+            const rawPath = item.fileUrl || item.dataUrl || '';
+            const filePath =
+              typeof rawPath === 'string' && (rawPath.startsWith('http://') || rawPath.startsWith('https://'))
+                ? rawPath
+                : '';
+            const fileName = item.name || `${key}.pdf`;
+            if (!filePath) return;
             await supabase.from('documents').delete().eq('employee_id', emp.id).eq('file_name', fileName);
             await supabase.from('documents').insert({
               employee_id: emp.id,
@@ -939,10 +940,8 @@ export default async function handler(req, res) {
               file_size: item.size || 0,
               created_at: item.uploadedAt || new Date().toISOString(),
             });
-          } catch (dErr) {
-            console.warn('Sync document record notice:', dErr);
-          }
-        }
+          })
+        );
       }
 
       return sendJson(res, 200, {

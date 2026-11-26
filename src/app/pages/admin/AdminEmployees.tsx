@@ -328,41 +328,45 @@ export function AdminEmployees() {
       let fileName = '';
       let fileSize: number | undefined = undefined;
       let fileType: string | undefined = undefined;
-      const processedFiles: TraineeDocumentFile[] = [];
+      // Parallel concurrent upload instead of sequential blocking FileReader loop
+      const uploadedAtIso = new Date().toISOString();
+      const processedFiles: TraineeDocumentFile[] = await Promise.all(
+        filesToProcess.map(async (f, i) => {
+          let fRemoteUrl = '';
+          try {
+            const u = await uploadDocumentToStorage(
+              'instructor_templates',
+              addDocTargetKey === 'new' ? `custom_${Date.now()}_${i}` : `${addDocTargetKey}_${i}`,
+              f,
+              f.name
+            );
+            if (u && u.startsWith('http')) fRemoteUrl = u;
+          } catch (uploadErr) {
+            console.warn('Template cloud upload notice:', uploadErr);
+          }
 
-      for (let i = 0; i < filesToProcess.length; i++) {
-        const f = filesToProcess[i];
-        const fBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(f);
-        });
+          let fallbackB64 = '';
+          if (!fRemoteUrl && f.size <= 350 * 1024) {
+            fallbackB64 = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (e) => resolve((e.target?.result as string) || '');
+              reader.onerror = () => resolve('');
+              reader.readAsDataURL(f);
+            });
+          }
 
-        let fRemoteUrl = '';
-        try {
-          const u = await uploadDocumentToStorage(
-            'instructor_templates',
-            addDocTargetKey === 'new' ? `custom_${Date.now()}_${i}` : `${addDocTargetKey}_${i}`,
-            f,
-            f.name
-          );
-          if (u && u.startsWith('http')) fRemoteUrl = u;
-        } catch (uploadErr) {
-          console.warn('Template cloud upload notice:', uploadErr);
-        }
-
-        const resolvedUrl = fRemoteUrl || fBase64;
-        processedFiles.push({
-          id: `inst-tpl-${Date.now()}-${i}`,
-          name: f.name,
-          size: f.size,
-          dataUrl: resolvedUrl,
-          fileUrl: resolvedUrl,
-          fileType: f.type || 'application/pdf',
-          uploadedAt: new Date().toISOString(),
-        });
-      }
+          const resolvedUrl = fRemoteUrl || fallbackB64 || URL.createObjectURL(f);
+          return {
+            id: `inst-tpl-${Date.now()}-${i}`,
+            name: f.name,
+            size: f.size,
+            dataUrl: resolvedUrl,
+            fileUrl: resolvedUrl,
+            fileType: f.type || 'application/pdf',
+            uploadedAt: uploadedAtIso,
+          };
+        })
+      );
 
       if (processedFiles.length > 0) {
         const primary = processedFiles[0];
@@ -445,68 +449,68 @@ export function AdminEmployees() {
       return;
     }
 
-    setIsUploadingBatch(true);
+    const batchSnapshot = [...batchDocFiles];
+    setShowBatchUploadModal(false);
+    setBatchDocFiles([]);
+    setIsUploadingBatch(false);
+    toast.success(`Uploading & publishing ${batchSnapshot.length} document requirement(s)...`);
+
     try {
-      let count = 0;
-      for (const item of batchDocFiles) {
-        const fileBase64 = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (e) => resolve(e.target?.result as string);
-          reader.onerror = reject;
-          reader.readAsDataURL(item.file);
-        });
+      await Promise.all(
+        batchSnapshot.map(async (item) => {
+          let remoteUrl = '';
+          try {
+            const u = await uploadDocumentToStorage(
+              'instructor_templates',
+              item.targetKey || `batch_${Date.now()}`,
+              item.file,
+              item.file.name
+            );
+            if (u && u.startsWith('http')) remoteUrl = u;
+          } catch {}
 
-        let remoteUrl = '';
-        try {
-          const u = await uploadDocumentToStorage('instructor_templates', item.targetKey || `batch_${Date.now()}`, item.file, item.file.name);
-          if (u && u.startsWith('http')) remoteUrl = u;
-        } catch {}
+          const finalUrl = remoteUrl || URL.createObjectURL(item.file);
 
-        const finalUrl = remoteUrl || fileBase64;
+          if (item.targetKey && item.targetKey !== 'new') {
+            try {
+              localStorage.setItem(
+                `ojt_template_${item.targetKey}`,
+                JSON.stringify({
+                  name: item.file.name,
+                  url: finalUrl,
+                  size: item.size,
+                  notes: item.notes || item.description,
+                  uploadedAt: new Date().toISOString(),
+                })
+              );
+            } catch {}
+          }
 
-        if (item.targetKey && item.targetKey !== 'new') {
-          localStorage.setItem(
-            `ojt_template_${item.targetKey}`,
-            JSON.stringify({
-              name: item.file.name,
-              url: finalUrl,
-              size: item.size,
-              notes: item.notes || item.description,
-              uploadedAt: new Date().toISOString(),
-            })
-          );
-        }
-
-        addRequiredDocument('all', {
-          title: item.title,
-          description: item.description,
-          notes: item.notes,
-          dueDate: item.dueDate,
-          required: true,
-          academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
-          fileUrl: finalUrl,
-          dataUrl: fileBase64,
-          fileName: item.file.name,
-          fileSize: item.size,
-          fileType: item.file.type || 'application/pdf',
-          uploadedBy: currentUser?.name || 'Instructor',
-          templateUrl: finalUrl,
-          templateName: item.file.name,
-          targetRequirementKey: item.targetKey !== 'new' ? item.targetKey : undefined,
-          maxFileSize: 10 * 1024 * 1024,
-          allowedFileTypes: ['.pdf', '.docx', '.png', '.jpg'],
-        });
-        count++;
-      }
-
-      toast.success(`Successfully uploaded and published ${count} document requirements/templates!`);
-      setShowBatchUploadModal(false);
-      setBatchDocFiles([]);
+          addRequiredDocument('all', {
+            title: item.title,
+            description: item.description,
+            notes: item.notes,
+            dueDate: item.dueDate,
+            required: true,
+            academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
+            fileUrl: finalUrl,
+            dataUrl: finalUrl,
+            fileName: item.file.name,
+            fileSize: item.size,
+            fileType: item.file.type || 'application/pdf',
+            uploadedBy: currentUser?.name || 'Instructor',
+            templateUrl: finalUrl,
+            templateName: item.file.name,
+            targetRequirementKey: item.targetKey !== 'new' ? item.targetKey : undefined,
+            maxFileSize: 10 * 1024 * 1024,
+            allowedFileTypes: ['.pdf', '.docx', '.png', '.jpg'],
+          });
+        })
+      );
+      toast.success(`Successfully published ${batchSnapshot.length} document requirements/templates!`);
     } catch (err: any) {
       console.error('Batch upload error:', err);
       toast.error('Batch upload failed: ' + (err?.message || 'Error'));
-    } finally {
-      setIsUploadingBatch(false);
     }
   };
 
@@ -3298,35 +3302,44 @@ export function AdminEmployees() {
                                   id={`attach-std-${doc.key}`}
                                   accept=".pdf,.doc,.docx,.docs,.jpg,.jpeg,.png,.webp"
                                   className="hidden"
-                                  onChange={async (e) => {
+                                  onChange={(e) => {
                                     const file = e.target.files?.[0];
                                     if (!file) return;
-                                    const reader = new FileReader();
-                                    reader.onload = async (ev) => {
-                                      const dataUrl = ev.target?.result as string;
-                                      let remoteUrl = '';
-                                      try {
-                                        const u = await uploadDocumentToStorage('instructor_templates', doc.key, file, file.name);
-                                        if (u && u.startsWith('http')) remoteUrl = u;
-                                      } catch {}
-                                      const finalUrl = remoteUrl || dataUrl;
-                                      localStorage.setItem(
-                                        `ojt_template_${doc.key}`,
-                                        JSON.stringify({ name: file.name, url: finalUrl, size: file.size, uploadedAt: new Date().toISOString() })
-                                      );
-                                      addRequiredDocument('all', {
-                                        title: doc.title,
-                                        targetRequirementKey: doc.key,
-                                        fileUrl: finalUrl,
-                                        dataUrl,
-                                        fileName: file.name,
-                                        fileSize: file.size,
-                                        uploadedBy: 'Instructor',
-                                        required: true,
-                                      });
-                                      toast.success(`Attached "${file.name}" to ${doc.title}! Trainees can now download it.`);
-                                    };
-                                    reader.readAsDataURL(file);
+                                    const previewUrl = URL.createObjectURL(file);
+                                    const createdReq = addRequiredDocument('all', {
+                                      title: doc.title,
+                                      targetRequirementKey: doc.key,
+                                      fileUrl: previewUrl,
+                                      dataUrl: previewUrl,
+                                      fileName: file.name,
+                                      fileSize: file.size,
+                                      uploadedBy: 'Instructor',
+                                      required: true,
+                                    });
+                                    toast.success(`Attached "${file.name}" to ${doc.title}! Trainees can now download it.`);
+                                    void uploadDocumentToStorage('instructor_templates', doc.key, file, file.name)
+                                      .then((u) => {
+                                        const finalUrl = u && u.startsWith('http') ? u : previewUrl;
+                                        try {
+                                          localStorage.setItem(
+                                            `ojt_template_${doc.key}`,
+                                            JSON.stringify({ name: file.name, url: finalUrl, size: file.size, uploadedAt: new Date().toISOString() })
+                                          );
+                                        } catch {}
+                                        if (finalUrl !== previewUrl && createdReq?.id) {
+                                          addRequiredDocument('all', {
+                                            title: doc.title,
+                                            targetRequirementKey: doc.key,
+                                            fileUrl: finalUrl,
+                                            dataUrl: finalUrl,
+                                            fileName: file.name,
+                                            fileSize: file.size,
+                                            uploadedBy: 'Instructor',
+                                            required: true,
+                                          });
+                                        }
+                                      })
+                                      .catch(() => {});
                                     e.target.value = '';
                                   }}
                                 />
@@ -3732,75 +3745,71 @@ export function AdminEmployees() {
                       return;
                     }
 
-                    setIsUploadingBatch(true);
-                    let uploadedCount = 0;
-
-                    for (const item of batchDocFiles) {
-                      try {
-                        const dataUrl = await new Promise<string>((resolve, reject) => {
-                          const reader = new FileReader();
-                          reader.onload = () => resolve(reader.result as string);
-                          reader.onerror = reject;
-                          reader.readAsDataURL(item.file);
-                        });
-
-                        let remoteUrl = '';
-                        try {
-                          const u = await uploadDocumentToStorage('instructor_templates', item.targetKey, item.file, item.file.name);
-                          if (u && u.startsWith('http')) remoteUrl = u;
-                        } catch {}
-
-                        const finalUrl = remoteUrl || dataUrl;
-
-                        addRequiredDocument('all', {
-                          title: item.title.trim(),
-                          description: item.description.trim(),
-                          notes: item.notes.trim(),
-                          dueDate: item.dueDate.trim() || 'Prior to Deployment',
-                          required: true,
-                          academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
-                          targetRequirementKey: item.targetKey !== 'new' ? item.targetKey : undefined,
-                          fileName: item.file.name,
-                          fileSize: item.file.size,
-                          fileType: item.file.type,
-                          dataUrl,
-                          fileUrl: finalUrl,
-                          templateUrl: finalUrl,
-                          templateName: item.file.name,
-                          uploadedBy: currentUser?.name || 'Instructor',
-                        });
-
-                        if (item.targetKey !== 'new') {
-                          localStorage.setItem(
-                            `ojt_template_${item.targetKey}`,
-                            JSON.stringify({
-                              name: item.file.name,
-                              fileName: item.file.name,
-                              url: finalUrl,
-                              dataUrl,
-                              size: item.file.size,
-                              notes: item.notes,
-                              title: item.title,
-                              updatedAt: new Date().toISOString(),
-                            })
-                          );
-                        }
-
-                        uploadedCount++;
-                      } catch (err) {
-                        console.warn(`Failed to process ${item.file.name}:`, err);
-                      }
-                    }
-
-                    window.dispatchEvent(new Event('storage'));
-                    window.dispatchEvent(new CustomEvent('ojt_template_updated'));
-
+                    const batchSnapshot = [...batchDocFiles];
                     setIsUploadingBatch(false);
                     setShowBatchUploadModal(false);
                     setBatchDocFiles([]);
                     toast.success(
-                      `Successfully uploaded & distributed ${uploadedCount} document${uploadedCount > 1 ? 's' : ''}! Trainees can now download and pass their submissions.`
+                      `Uploading & distributing ${batchSnapshot.length} document${batchSnapshot.length > 1 ? 's' : ''}...`
                     );
+
+                    void Promise.all(
+                      batchSnapshot.map(async (item) => {
+                        try {
+                          let remoteUrl = '';
+                          try {
+                            const u = await uploadDocumentToStorage('instructor_templates', item.targetKey, item.file, item.file.name);
+                            if (u && u.startsWith('http')) remoteUrl = u;
+                          } catch {}
+
+                          const finalUrl = remoteUrl || URL.createObjectURL(item.file);
+
+                          addRequiredDocument('all', {
+                            title: item.title.trim(),
+                            description: item.description.trim(),
+                            notes: item.notes.trim(),
+                            dueDate: item.dueDate.trim() || 'Prior to Deployment',
+                            required: true,
+                            academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
+                            targetRequirementKey: item.targetKey !== 'new' ? item.targetKey : undefined,
+                            fileName: item.file.name,
+                            fileSize: item.file.size,
+                            fileType: item.file.type,
+                            dataUrl: finalUrl,
+                            fileUrl: finalUrl,
+                            templateUrl: finalUrl,
+                            templateName: item.file.name,
+                            uploadedBy: currentUser?.name || 'Instructor',
+                          });
+
+                          if (item.targetKey !== 'new') {
+                            try {
+                              localStorage.setItem(
+                                `ojt_template_${item.targetKey}`,
+                                JSON.stringify({
+                                  name: item.file.name,
+                                  fileName: item.file.name,
+                                  url: finalUrl,
+                                  dataUrl: finalUrl,
+                                  size: item.file.size,
+                                  notes: item.notes,
+                                  title: item.title,
+                                  updatedAt: new Date().toISOString(),
+                                })
+                              );
+                            } catch {}
+                          }
+                        } catch (err) {
+                          console.warn(`Failed to process ${item.file.name}:`, err);
+                        }
+                      })
+                    ).then(() => {
+                      window.dispatchEvent(new Event('storage'));
+                      window.dispatchEvent(new CustomEvent('ojt_template_updated'));
+                      toast.success(
+                        `✓ ${batchSnapshot.length} document${batchSnapshot.length > 1 ? 's' : ''} distributed to Trainees!`
+                      );
+                    });
                   }}
                   className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-indigo-200 transition-all disabled:opacity-50 cursor-pointer"
                 >
@@ -3988,58 +3997,16 @@ export function AdminEmployees() {
                     let fileDataUrl: string | undefined;
                     let fileRemoteUrl: string | undefined;
 
-                    if (addDocFile) {
-                      fileDataUrl = await new Promise<string>((resolve, reject) => {
-                        const reader = new FileReader();
-                        reader.onload = () => resolve(reader.result as string);
-                        reader.onerror = reject;
-                        reader.readAsDataURL(addDocFile);
-                      });
+                    const fileSnap = addDocFile;
+                    const titleSnap = docTitle.trim();
+                    const descSnap = docDescription.trim();
+                    const notesSnap = docNotes.trim();
+                    const dueSnap = docDueDate.trim() || 'Prior to Deployment';
+                    const targetKeySnap = addDocTargetKey;
+                    const aySnap = selectedYear === 'all' ? settings.activeAcademicYear : selectedYear;
+                    const previewUrl = fileSnap ? URL.createObjectURL(fileSnap) : '';
 
-                      try {
-                        const u = await uploadDocumentToStorage('instructor_templates', addDocTargetKey, addDocFile, addDocFile.name);
-                        if (u && u.startsWith('http')) fileRemoteUrl = u;
-                      } catch {}
-                    }
-
-                    const workingUrl = fileRemoteUrl || fileDataUrl;
-
-                    addRequiredDocument('all', {
-                      title: docTitle.trim(),
-                      description: docDescription.trim(),
-                      notes: docNotes.trim(),
-                      dueDate: docDueDate.trim() || 'Prior to Deployment',
-                      required: true,
-                      academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
-                      targetRequirementKey: addDocTargetKey !== 'new' ? addDocTargetKey : undefined,
-                      fileName: addDocFile?.name,
-                      fileSize: addDocFile?.size,
-                      fileType: addDocFile?.type,
-                      dataUrl: fileDataUrl,
-                      fileUrl: workingUrl,
-                      templateUrl: workingUrl,
-                      templateName: addDocFile?.name,
-                      uploadedBy: currentUser?.name || 'Instructor',
-                    });
-
-                    if (addDocTargetKey !== 'new' && (workingUrl || addDocFile)) {
-                      localStorage.setItem(
-                        `ojt_template_${addDocTargetKey}`,
-                        JSON.stringify({
-                          name: addDocFile?.name || `${docTitle}.pdf`,
-                          fileName: addDocFile?.name || `${docTitle}.pdf`,
-                          url: workingUrl,
-                          dataUrl: fileDataUrl,
-                          size: addDocFile?.size,
-                          notes: docNotes,
-                          title: docTitle,
-                          updatedAt: new Date().toISOString(),
-                        })
-                      );
-                      window.dispatchEvent(new Event('storage'));
-                      window.dispatchEvent(new CustomEvent('ojt_template_updated'));
-                    }
-
+                    // Close modal & add requirement immediately (< 15ms)
                     setDocTitle('');
                     setDocDescription('');
                     setDocNotes('');
@@ -4048,6 +4015,54 @@ export function AdminEmployees() {
                     setAddDocTargetKey('new');
                     setShowAddDocModal(false);
                     toast.success('Document requirement saved! Trainees can now download and submit this credential.');
+
+                    void (async () => {
+                      let workingUrl = previewUrl;
+                      if (fileSnap) {
+                        try {
+                          const u = await uploadDocumentToStorage('instructor_templates', targetKeySnap, fileSnap, fileSnap.name);
+                          if (u && u.startsWith('http')) workingUrl = u;
+                        } catch {}
+                      }
+
+                      addRequiredDocument('all', {
+                        title: titleSnap,
+                        description: descSnap,
+                        notes: notesSnap,
+                        dueDate: dueSnap,
+                        required: true,
+                        academicYear: aySnap,
+                        targetRequirementKey: targetKeySnap !== 'new' ? targetKeySnap : undefined,
+                        fileName: fileSnap?.name,
+                        fileSize: fileSnap?.size,
+                        fileType: fileSnap?.type,
+                        dataUrl: workingUrl,
+                        fileUrl: workingUrl,
+                        templateUrl: workingUrl,
+                        templateName: fileSnap?.name,
+                        uploadedBy: currentUser?.name || 'Instructor',
+                      });
+
+                      if (targetKeySnap !== 'new' && (workingUrl || fileSnap)) {
+                        try {
+                          localStorage.setItem(
+                            `ojt_template_${targetKeySnap}`,
+                            JSON.stringify({
+                              name: fileSnap?.name || `${titleSnap}.pdf`,
+                              fileName: fileSnap?.name || `${titleSnap}.pdf`,
+                              url: workingUrl,
+                              dataUrl: workingUrl,
+                              size: fileSnap?.size,
+                              notes: notesSnap,
+                              title: titleSnap,
+                              updatedAt: new Date().toISOString(),
+                            })
+                          );
+                        } catch {}
+                        window.dispatchEvent(new Event('storage'));
+                        window.dispatchEvent(new CustomEvent('ojt_template_updated'));
+                      }
+                    })();
                   }}
                   className="px-5 py-2 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-bold shadow-md shadow-violet-200 transition-all cursor-pointer"
                 >

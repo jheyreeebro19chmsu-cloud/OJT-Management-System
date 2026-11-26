@@ -661,6 +661,21 @@ export function Documents() {
     };
   };
 
+  // Eager background upload map: starts uploading to Supabase Storage the instant a file is selected in any dialog
+  const inflightDocUploadsRef = React.useRef<Map<string, Promise<string>>>(new Map());
+
+  const preuploadSelectedFile = (docKey: string, item: SubmitDialogFile) => {
+    if (!item.file || !item.id || inflightDocUploadsRef.current.has(item.id)) return;
+    const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || 'trainee';
+    const promise = Promise.race([
+      uploadDocumentToStorage(empId, `${docKey}_${Date.now()}`, item.file, item.file.name),
+      new Promise<string>((_, reject) => setTimeout(() => reject(new Error('Storage upload timed out')), 30000)),
+    ])
+      .then((url) => (url && url.startsWith('http') && !url.includes('NoSuchKey') ? url : ''))
+      .catch(() => '');
+    inflightDocUploadsRef.current.set(item.id, promise);
+  };
+
   const onSelectFiles = (
     docKey: string,
     title: string,
@@ -691,13 +706,15 @@ export function Documents() {
         continue;
       }
 
-      validFiles.push({
+      const fileObj: SubmitDialogFile = {
         id: `file-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         file,
         name: file.name,
         size: file.size,
         fileType: file.type || 'application/octet-stream',
-      });
+      };
+      preuploadSelectedFile(docKey, fileObj);
+      validFiles.push(fileObj);
     }
 
     if (validFiles.length === 0) return;
@@ -756,13 +773,15 @@ export function Documents() {
         toast.error(`"${file.name}": File exceeds ${maxMB}MB limit.`);
         continue;
       }
-      validFiles.push({
+      const fileObj: SubmitDialogFile = {
         id: `add-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         file,
         name: file.name,
         size: file.size,
         fileType: file.type || 'application/octet-stream',
-      });
+      };
+      preuploadSelectedFile(submitDialog?.docKey || 'custom_doc', fileObj);
+      validFiles.push(fileObj);
     }
 
     if (validFiles.length > 0) {
@@ -918,37 +937,42 @@ export function Documents() {
 
         setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: docItem }));
 
-        if (employee) {
-          updateEmployee(employee.id, {
-            submittedDocuments: updatedDocs,
-            documentsPassed: allDocsPassed,
-            documentsStatus: finalDocStatus,
-          });
+        // Only trigger remote employee/document API persistence once permanent URLs are ready (avoids duplicate DB roundtrips)
+        if (persistRemote) {
+          if (employee) {
+            updateEmployee(employee.id, {
+              submittedDocuments: updatedDocs,
+              documentsPassed: allDocsPassed,
+              documentsStatus: finalDocStatus,
+            });
+          }
+
+          if (targetEmpId) {
+            submitRequiredDocument(meta?.id || docKey, targetEmpId, {
+              fileName: displayName,
+              fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
+              fileDataUrl: primaryFile.dataUrl,
+              fileSize: totalBytes,
+              fileType: primaryFile.fileType,
+              files: filesToApply,
+              note: (customNotes ?? '').trim(),
+              notes: (customDescription ?? '').trim(),
+            });
+
+            if (!employee) {
+              saveDocumentPassStatus(targetEmpId, {
+                docKey,
+                status: passStatus,
+                allPassed: allDocsPassed,
+                documentsStatus: finalDocStatus,
+                submittedDocuments: updatedDocs,
+                documentItem: docItem,
+              }).catch(console.warn);
+            }
+          }
         }
 
         if (targetEmpId) {
-          submitRequiredDocument(meta?.id || docKey, targetEmpId, {
-            fileName: displayName,
-            fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
-            fileDataUrl: primaryFile.dataUrl,
-            fileSize: totalBytes,
-            fileType: primaryFile.fileType,
-            files: filesToApply,
-            note: (customNotes ?? '').trim(),
-            notes: (customDescription ?? '').trim(),
-          });
-
-          if (persistRemote) {
-            saveDocumentPassStatus(targetEmpId, {
-              docKey,
-              status: passStatus,
-              allPassed: allDocsPassed,
-              documentsStatus: finalDocStatus,
-              submittedDocuments: updatedDocs,
-              documentItem: docItem,
-            }).catch(console.warn);
-          }
-
           try {
             window.dispatchEvent(
               new CustomEvent('ojt_document_submitted', {
@@ -998,24 +1022,32 @@ export function Documents() {
               return optimisticFiles[idx];
             }
 
-            const readDataUrlPromise = new Promise<string>((resolve) => {
-              const reader = new FileReader();
-              reader.onload = (e) => resolve((e.target?.result as string) || '');
-              reader.onerror = () => resolve('');
-              reader.readAsDataURL(item.file!);
-            });
+            // Only read small files (< 350KB) as base64 fallback; large PDFs/DOCX use native blob: + Storage HTTP URLs (zero main-thread freeze!)
+            const readDataUrlPromise =
+              item.file.size <= 350 * 1024
+                ? new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => resolve((e.target?.result as string) || '');
+                    reader.onerror = () => resolve('');
+                    reader.readAsDataURL(item.file!);
+                  })
+                : Promise.resolve('');
 
-            const uploadRemotePromise = Promise.race([
-              uploadDocumentToStorage(empId, `${docKey}_${idx}_${Date.now()}`, item.file, item.file.name),
-              new Promise<string>((_, reject) =>
-                setTimeout(() => reject(new Error('Storage upload timed out')), 30000)
-              ),
-            ]).catch((uploadErr) => {
-              console.warn('Document storage upload notice (using local base64 fallback):', uploadErr);
-              return '';
-            });
+            const prestarted = item.id ? inflightDocUploadsRef.current.get(item.id) : undefined;
+            const uploadRemotePromise =
+              prestarted ||
+              Promise.race([
+                uploadDocumentToStorage(empId, `${docKey}_${idx}_${Date.now()}`, item.file, item.file.name),
+                new Promise<string>((_, reject) =>
+                  setTimeout(() => reject(new Error('Storage upload timed out')), 30000)
+                ),
+              ]).catch((uploadErr) => {
+                console.warn('Document storage upload notice (using local fallback):', uploadErr);
+                return '';
+              });
 
             const [dataUrl, storedUrl] = await Promise.all([readDataUrlPromise, uploadRemotePromise]);
+            if (item.id) inflightDocUploadsRef.current.delete(item.id);
             const remoteUrl =
               storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey') ? storedUrl : '';
 
@@ -1178,13 +1210,15 @@ export function Documents() {
         toast.error(`"${file.name}": File exceeds 10MB limit.`);
         continue;
       }
-      validFiles.push({
+      const fileObj: SubmitDialogFile = {
         id: `add-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         file,
         name: file.name,
         size: file.size,
         fileType: file.type || 'application/octet-stream',
-      });
+      };
+      preuploadSelectedFile(submitDialog?.docKey || 'custom_doc', fileObj);
+      validFiles.push(fileObj);
     }
 
     if (validFiles.length > 0) {
@@ -1220,30 +1254,33 @@ export function Documents() {
 
     setIsAddingDoc(true);
     try {
+      const dialogSnapshot = { ...addDocDialog, files: [...addDocDialog.files] };
+      // Close dialog immediately so UI never blocks
+      setAddDocDialog(null);
+      setIsAddingDoc(false);
+
       // 1. Add requirement to AppContext / storage
       const createdReq = addRequiredDocument(targetEmpId, {
         title,
-        description: addDocDialog.description.trim() || 'Custom OJT document submitted by trainee.',
-        notes: addDocDialog.notes.trim() || '',
+        description: dialogSnapshot.description.trim() || 'Custom OJT document submitted by trainee.',
+        notes: dialogSnapshot.notes.trim() || '',
         required: false,
         academicYear: settings?.activeAcademicYear,
       });
       const docKey = createdReq?.id || `doc-custom-${Date.now()}`;
 
-      // 2. If files were selected, upload and attach them
-      if (addDocDialog.files.length > 0) {
-        await handleFileUpload(
+      // 2. If files were selected, attach optimistically & finish upload in background
+      if (dialogSnapshot.files.length > 0) {
+        void handleFileUpload(
           docKey,
-          addDocDialog.files,
-          addDocDialog.description.trim(),
-          addDocDialog.notes.trim(),
+          dialogSnapshot.files,
+          dialogSnapshot.description.trim(),
+          dialogSnapshot.notes.trim(),
           false
         );
       } else {
         toast.success(`Document requirement "${title}" added! You can attach files anytime.`);
       }
-
-      setAddDocDialog(null);
     } catch (err: any) {
       console.error('Failed to add document:', err);
       toast.error('Failed to add document: ' + (err?.message || 'Error occurred'));
@@ -1293,13 +1330,15 @@ export function Documents() {
         toast.error(`"${file.name}": File exceeds 10MB limit.`);
         continue;
       }
-      validFiles.push({
+      const fileObj: SubmitDialogFile = {
         id: `edit-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
         file,
         name: file.name,
         size: file.size,
         fileType: file.type || 'application/octet-stream',
-      });
+      };
+      preuploadSelectedFile(editDocDialog.docKey, fileObj);
+      validFiles.push(fileObj);
     }
 
     if (validFiles.length > 0) {
@@ -1329,81 +1368,34 @@ export function Documents() {
     }
 
     const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
-    setIsSavingEdit(true);
+    const uploadedAtIso = new Date().toISOString();
+    const existingDoc = submittedDocs[docKey];
+    const baseSubmittedDocs = { ...submittedDocs };
 
-    try {
-      const processedFiles: TraineeDocumentFile[] = [];
-      for (let idx = 0; idx < files.length; idx++) {
-        const item = files[idx];
-        if (item.file) {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target?.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(item.file!);
-          });
+    // 1. Instant optimistic UI update (< 15ms) + immediate modal close
+    const optimisticFiles: TraineeDocumentFile[] = files.map((item, idx) => {
+      const previewUrl = item.file ? URL.createObjectURL(item.file) : item.fileUrl || item.dataUrl || '';
+      return {
+        id: item.id || `file-${Date.now()}-${idx}`,
+        name: item.name,
+        size: item.size,
+        dataUrl: item.dataUrl || previewUrl,
+        fileUrl: item.fileUrl || previewUrl,
+        fileType: item.fileType || item.file?.type || 'application/octet-stream',
+        uploadedAt: uploadedAtIso,
+      };
+    });
 
-          let remoteUrl = '';
-          try {
-            const storedUrl = await Promise.race([
-              uploadDocumentToStorage(targetEmpId, `${docKey}_${idx}_${Date.now()}`, item.file, item.file.name),
-              new Promise<string>((_, reject) =>
-                setTimeout(() => reject(new Error('Storage upload timed out')), 25000)
-              ),
-            ]);
-            if (storedUrl && storedUrl.startsWith('http')) {
-              remoteUrl = storedUrl;
-            }
-          } catch {}
-
-          processedFiles.push({
-            id: item.id || `file-${Date.now()}-${idx}`,
-            name: item.name,
-            size: item.size,
-            dataUrl: remoteUrl || dataUrl,
-            fileUrl: remoteUrl || dataUrl,
-            fileType: item.fileType || item.file.type || 'application/octet-stream',
-            uploadedAt: new Date().toISOString(),
-          });
-          try {
-            localStorage.setItem(`ojt_doc_base64_${targetEmpId}_${docKey}_${idx}`, remoteUrl || dataUrl);
-            if (idx === 0) {
-              localStorage.setItem(`ojt_doc_base64_${targetEmpId}_${docKey}`, remoteUrl || dataUrl);
-              localStorage.setItem(`ojt_doc_base64_${docKey}`, remoteUrl || dataUrl);
-            }
-          } catch {}
-        } else {
-          processedFiles.push({
-            id: item.id || `file-${Date.now()}-${idx}`,
-            name: item.name,
-            size: item.size,
-            dataUrl: item.dataUrl,
-            fileUrl: item.fileUrl || item.dataUrl,
-            fileType: item.fileType,
-            uploadedAt: new Date().toISOString(),
-          });
-        }
-      }
-
-      try {
-        const serializedFiles = JSON.stringify(processedFiles);
-        localStorage.setItem(`ojt_shared_doc_files_${targetEmpId}_${docKey}`, serializedFiles);
-        localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serializedFiles);
-        if (employee?.employeeId) {
-          localStorage.setItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`, serializedFiles);
-        }
-      } catch {}
-
-      const existingDoc = submittedDocs[docKey];
-      const hasFiles = processedFiles.length > 0;
-      const primaryFile = processedFiles[0];
-      const count = processedFiles.length;
+    const applyEditedState = (filesToApply: TraineeDocumentFile[], persistRemote: boolean) => {
+      const hasFiles = filesToApply.length > 0;
+      const primaryFile = filesToApply[0];
+      const count = filesToApply.length;
       const displayName = hasFiles
         ? count > 1
           ? `${count} Files (${primaryFile.name})`
           : primaryFile.name
         : existingDoc?.name || '';
-      const totalBytes = processedFiles.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
+      const totalBytes = filesToApply.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
 
       const updatedDocItem: TraineeDocumentItem = {
         name: displayName,
@@ -1411,65 +1403,128 @@ export function Documents() {
         dataUrl: primaryFile?.dataUrl || existingDoc?.dataUrl,
         fileUrl: primaryFile?.fileUrl || existingDoc?.fileUrl,
         fileType: primaryFile?.fileType || existingDoc?.fileType,
-        uploadedAt: existingDoc?.uploadedAt || new Date().toISOString(),
+        uploadedAt: existingDoc?.uploadedAt || uploadedAtIso,
         status: existingDoc?.status || (hasFiles ? 'submitted' : 'pending'),
         description: description.trim(),
         notes: notes.trim(),
         source: 'portal',
-        files: processedFiles,
+        files: filesToApply,
         title: isCustom ? cleanTitle : undefined,
       };
 
       const updatedDocs: TraineeDocuments = {
-        ...submittedDocs,
+        ...baseSubmittedDocs,
         [docKey]: updatedDocItem,
       };
 
       setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: updatedDocItem }));
 
-      if (employee) {
-        updateEmployee(employee.id, {
-          submittedDocuments: updatedDocs,
-        });
-      }
+      if (persistRemote) {
+        if (employee) {
+          updateEmployee(employee.id, {
+            submittedDocuments: updatedDocs,
+          });
+        } else if (targetEmpId) {
+          saveDocumentPassStatus(targetEmpId, {
+            docKey,
+            status: updatedDocItem.status || 'submitted',
+            submittedDocuments: updatedDocs,
+            documentItem: updatedDocItem,
+          }).catch(console.warn);
+        }
 
-      if (targetEmpId) {
-        saveDocumentPassStatus(targetEmpId, {
-          docKey,
-          status: updatedDocItem.status || 'submitted',
-          submittedDocuments: updatedDocs,
-          documentItem: updatedDocItem,
-        }).catch(console.warn);
-
-        if (hasFiles) {
+        if (targetEmpId && hasFiles) {
           submitRequiredDocument(docKey, targetEmpId, {
             fileName: displayName,
             fileUrl: primaryFile?.fileUrl || primaryFile?.dataUrl,
             fileDataUrl: primaryFile?.dataUrl,
             fileSize: totalBytes,
             fileType: primaryFile?.fileType,
-            files: processedFiles,
+            files: filesToApply,
             note: notes.trim(),
             notes: description.trim(),
           });
         }
       }
+    };
 
-      if (isCustom && updateRequiredDocument) {
-        updateRequiredDocument(docKey, {
-          title: cleanTitle,
-          description: description.trim(),
-          notes: notes.trim(),
-        });
-      }
+    const hasNewFiles = files.some((f) => Boolean(f.file));
+    applyEditedState(optimisticFiles, !hasNewFiles);
 
-      toast.success(`Document "${cleanTitle}" updated successfully!`);
-      setEditDocDialog(null);
-    } catch (err: any) {
-      console.error('Failed to update document:', err);
-      toast.error('Failed to update document: ' + (err?.message || 'Error occurred'));
-    } finally {
-      setIsSavingEdit(false);
+    if (isCustom && updateRequiredDocument) {
+      updateRequiredDocument(docKey, {
+        title: cleanTitle,
+        description: description.trim(),
+        notes: notes.trim(),
+      });
+    }
+
+    setIsSavingEdit(false);
+    setEditDocDialog(null);
+    toast.success(`Document "${cleanTitle}" updated successfully!`);
+
+    // 2. Parallel background cloud upload for any newly added files (reuses pre-started upload promises!)
+    if (hasNewFiles) {
+      void Promise.all(
+        files.map(async (item, idx): Promise<TraineeDocumentFile> => {
+          if (!item.file) return optimisticFiles[idx];
+
+          const prestarted = item.id ? inflightDocUploadsRef.current.get(item.id) : undefined;
+          const storedUrl = await (prestarted ||
+            Promise.race([
+              uploadDocumentToStorage(targetEmpId, `${docKey}_${idx}_${Date.now()}`, item.file, item.file.name),
+              new Promise<string>((_, reject) =>
+                setTimeout(() => reject(new Error('Storage upload timed out')), 30000)
+              ),
+            ]).catch(() => ''));
+          if (item.id) inflightDocUploadsRef.current.delete(item.id);
+
+          const remoteUrl = storedUrl && storedUrl.startsWith('http') ? storedUrl : '';
+          let fallbackDataUrl = '';
+          if (!remoteUrl && item.file.size <= 350 * 1024) {
+            fallbackDataUrl = await new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (e) => resolve((e.target?.result as string) || '');
+              reader.onerror = () => resolve('');
+              reader.readAsDataURL(item.file!);
+            });
+          }
+
+          const finalUrl = remoteUrl || fallbackDataUrl || optimisticFiles[idx].fileUrl || '';
+          try {
+            if (finalUrl) {
+              localStorage.setItem(`ojt_doc_base64_${targetEmpId}_${docKey}_${idx}`, finalUrl);
+              if (idx === 0) {
+                localStorage.setItem(`ojt_doc_base64_${targetEmpId}_${docKey}`, finalUrl);
+                localStorage.setItem(`ojt_doc_base64_${docKey}`, finalUrl);
+              }
+            }
+          } catch {}
+
+          return {
+            id: optimisticFiles[idx].id,
+            name: item.name,
+            size: item.size,
+            dataUrl: finalUrl,
+            fileUrl: finalUrl,
+            fileType: item.fileType || item.file.type || 'application/octet-stream',
+            uploadedAt: uploadedAtIso,
+          };
+        })
+      )
+        .then((processedFiles) => {
+          try {
+            const serializedFiles = JSON.stringify(processedFiles);
+            localStorage.setItem(`ojt_shared_doc_files_${targetEmpId}_${docKey}`, serializedFiles);
+            localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serializedFiles);
+            if (employee?.employeeId) {
+              localStorage.setItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`, serializedFiles);
+            }
+          } catch {}
+
+          applyEditedState(processedFiles, true);
+        })
+        .catch((err) => console.warn('Background edit document sync notice:', err));
     }
   };
 
@@ -3239,12 +3294,8 @@ export function Documents() {
                               },
                             ];
                             handleFileUpload(previewDoc.key as any, submitFiles, undefined, undefined, false);
-                            const reader = new FileReader();
-                            reader.onload = (ev) => {
-                              const newUrl = ev.target?.result as string;
-                              setPreviewDoc((prev) => (prev ? { ...prev, dataUrl: newUrl, status: 'pending' } : null));
-                            };
-                            reader.readAsDataURL(file);
+                            const newUrl = URL.createObjectURL(file);
+                            setPreviewDoc((prev) => (prev ? { ...prev, dataUrl: newUrl, status: 'pending' } : null));
                           }
                         }}
                       />

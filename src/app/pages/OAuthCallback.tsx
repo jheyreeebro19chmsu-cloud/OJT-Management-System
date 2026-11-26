@@ -7,6 +7,7 @@ import {
   resolveFastGoogleOAuthUrl,
   decodeSupabaseJwtUser,
   purgeStaleSupabaseAuth,
+  lookupAccountInPublicStorageIndex,
 } from '../lib/supabase';
 import { preloadRoute } from '../routes';
 import { useApp } from '../store/AppContext';
@@ -75,10 +76,10 @@ export default function OAuthCallback() {
     if (hasProcessedRef.current) return;
     hasProcessedRef.current = true;
 
-    // Safety watchdog: after 15 seconds, if still loading, provide user control
+    // Safety watchdog: after 22 seconds, if still loading, provide user control
     const watchdogTimer = setTimeout(() => {
       setError((prev) => prev || 'Sign in took longer than expected. Please select an option below to proceed.');
-    }, 15000);
+    }, 22000);
 
     const processOAuth = async () => {
       try {
@@ -206,13 +207,21 @@ export default function OAuthCallback() {
                     finish(data.session);
                   } else {
                     return supabase.auth.exchangeCodeForSession(code).then((res) => {
-                      if (res.data?.session?.user) finish(res.data.session);
+                      if (res.data?.session?.user) {
+                        finish(res.data.session);
+                      } else if (res.error) {
+                        // Check if GoTrue auto-detection on another tick already stored the session
+                        return supabase.auth.getSession().then(({ data: retryData }) => {
+                          if (retryData?.session?.user) finish(retryData.session);
+                          else finish(null);
+                        });
+                      }
                     });
                   }
                 })
                 .catch(() => {});
 
-              setTimeout(() => finish(null), 1800);
+              setTimeout(() => finish(null), 12000);
             });
           } catch (codeEx) {
             console.warn('Code exchange notice:', codeEx);
@@ -302,31 +311,52 @@ export default function OAuthCallback() {
           }
         }
 
-        // ── 7B. Fallback lookup ONLY if loginWithOAuthUser threw an error ──
+        // ── 7B. Resilient Storage CDN + Server API + DB fallback if loginWithOAuthUser returned null ──
         let dbEmp: any = null;
         let dbHost: any = null;
 
-        if (!hookCompletedCleanly && isSupabaseConfigured() && email) {
+        if (email || authUser.id) {
           try {
             const cleanEmail = email.trim().toLowerCase();
-            const empCols = 'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, application_status, created_at';
-            const [empByEmailRes, empByIdRes, hostByEmailRes, hostByIdRes] = await Promise.allSettled([
-              supabase.from('employees').select(empCols).ilike('email', cleanEmail).limit(1),
-              supabase.from('employees').select(empCols).eq('id', authUser.id).limit(1),
-              supabase.from('host_supervisors').select('id, employee_id, email, name, company_name, contact_person, phone, academic_year, is_approved, active').ilike('email', cleanEmail).limit(1),
-              supabase.from('host_supervisors').select('id, employee_id, email, name, company_name, contact_person, phone, academic_year, is_approved, active').eq('id', authUser.id).limit(1),
+            const [storageIdxRes, serverLookupRes] = await Promise.allSettled([
+              lookupAccountInPublicStorageIndex(cleanEmail, authUser.id),
+              fetch(
+                `/api/auth-login?action=lookup-oauth-user&email=${encodeURIComponent(cleanEmail)}&id=${encodeURIComponent(authUser.id || '')}`,
+                { headers: { Accept: 'application/json' } }
+              ).then((r) => (r.ok ? r.json() : null)),
             ]);
 
-            if (empByEmailRes.status === 'fulfilled' && empByEmailRes.value.data?.[0]) {
-              dbEmp = empByEmailRes.value.data[0];
-            } else if (empByIdRes.status === 'fulfilled' && empByIdRes.value.data?.[0]) {
-              dbEmp = empByIdRes.value.data[0];
+            if (storageIdxRes.status === 'fulfilled' && storageIdxRes.value) {
+              if (storageIdxRes.value.employee) dbEmp = storageIdxRes.value.employee;
+              else if (storageIdxRes.value.hostSupervisor) dbHost = storageIdxRes.value.hostSupervisor;
+            }
+            if (!dbEmp && !dbHost && serverLookupRes.status === 'fulfilled' && serverLookupRes.value) {
+              if (serverLookupRes.value.employee) dbEmp = serverLookupRes.value.employee;
+              else if (serverLookupRes.value.hostSupervisor) dbHost = serverLookupRes.value.hostSupervisor;
             }
 
-            if (hostByEmailRes.status === 'fulfilled' && hostByEmailRes.value.data?.[0]) {
-              dbHost = hostByEmailRes.value.data[0];
-            } else if (hostByIdRes.status === 'fulfilled' && hostByIdRes.value.data?.[0]) {
-              dbHost = hostByIdRes.value.data[0];
+            if (!dbEmp && !dbHost && !hookCompletedCleanly && isSupabaseConfigured() && cleanEmail) {
+              const empCols =
+                'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, application_status, created_at';
+              const hostCols = 'id, name, email, company_name, position, active, is_approved, created_at';
+              const [empByEmailRes, empByIdRes, hostByEmailRes, hostByIdRes] = await Promise.allSettled([
+                supabase.from('employees').select(empCols).eq('email', cleanEmail).limit(1),
+                supabase.from('employees').select(empCols).eq('id', authUser.id).limit(1),
+                supabase.from('host_supervisors').select(hostCols).eq('email', cleanEmail).limit(1),
+                supabase.from('host_supervisors').select(hostCols).eq('id', authUser.id).limit(1),
+              ]);
+
+              if (empByEmailRes.status === 'fulfilled' && empByEmailRes.value.data?.[0]) {
+                dbEmp = empByEmailRes.value.data[0];
+              } else if (empByIdRes.status === 'fulfilled' && empByIdRes.value.data?.[0]) {
+                dbEmp = empByIdRes.value.data[0];
+              }
+
+              if (hostByEmailRes.status === 'fulfilled' && hostByEmailRes.value.data?.[0]) {
+                dbHost = hostByEmailRes.value.data[0];
+              } else if (hostByIdRes.status === 'fulfilled' && hostByIdRes.value.data?.[0]) {
+                dbHost = hostByIdRes.value.data[0];
+              }
             }
           } catch (dbErr) {
             console.warn('Database user search error:', dbErr);

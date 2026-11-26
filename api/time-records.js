@@ -216,6 +216,8 @@ function transformToDbPayload(r) {
   return payload;
 }
 
+let _unfilteredTimeRecordsCache = { data: null, expiresAt: 0 };
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, OPTIONS');
@@ -243,24 +245,28 @@ export default async function handler(req, res) {
         empIds.push(...queryParams.altIds.split(',').map((s) => s.trim()).filter(Boolean));
       }
 
+      if (
+        empIds.length === 0 &&
+        !queryParams.month &&
+        !includePhotos &&
+        _unfilteredTimeRecordsCache.data &&
+        _unfilteredTimeRecordsCache.expiresAt > Date.now()
+      ) {
+        return sendJson(res, 200, _unfilteredTimeRecordsCache.data);
+      }
+
       let uniqueEmpIds = [];
       if (empIds.length > 0) {
-        const resolvedIds = [];
-        for (const raw of empIds) {
-          const resolved = await resolveToUuid(raw);
-          if (resolved && isUuid(resolved)) {
-            resolvedIds.push(resolved);
-          }
-        }
-        uniqueEmpIds = Array.from(new Set(resolvedIds));
+        const resolvedIds = await Promise.all(empIds.map((raw) => resolveToUuid(raw)));
+        uniqueEmpIds = Array.from(new Set(resolvedIds.filter((r) => r && isUuid(r))));
         if (uniqueEmpIds.length === 0) {
           // If IDs could not be resolved to any valid UUID, return empty result safely
           return sendJson(res, 200, []);
         }
       }
 
-      const defaultLimit = empIds.length > 0 ? 1500 : 1000;
-      const limit = parseInt(queryParams.limit, 10) || defaultLimit;
+      const defaultLimit = empIds.length > 0 ? 1500 : 400;
+      const limit = Math.min(parseInt(queryParams.limit, 10) || defaultLimit, 2000);
 
       const executeQuery = async (fields) => {
         let q = supabase
@@ -315,11 +321,16 @@ export default async function handler(req, res) {
         return sendJson(res, 200, []);
       }
 
-      return sendJson(res, 200, (data || []).map(enrichRecordWithSlots));
+      const enrichedList = (data || []).map(enrichRecordWithSlots);
+      if (empIds.length === 0 && !queryParams.month && !includePhotos && enrichedList.length > 0) {
+        _unfilteredTimeRecordsCache = { data: enrichedList, expiresAt: Date.now() + 4000 };
+      }
+      return sendJson(res, 200, enrichedList);
     }
 
     // ─── POST / PUT: Create or Upsert Time Records (Service Role) ─────────────
     if (req.method === 'POST' || req.method === 'PUT') {
+      _unfilteredTimeRecordsCache = { data: null, expiresAt: 0 };
       const body = await parseBody(req);
       const incomingRecords = Array.isArray(body.records)
         ? body.records

@@ -193,7 +193,7 @@ export function prefetchGoogleOAuthUrl(redirectOrigin?: string): Promise<string 
   const p = (async (): Promise<string | null> => {
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 7500);
+      const timer = setTimeout(() => controller.abort(), 11500);
       const res = await fetch(
         `/api/auth-login?action=google-url&redirectTo=${encodeURIComponent(canonicalRedirect)}`,
         { signal: controller.signal, headers: { Accept: 'application/json' } }
@@ -269,6 +269,70 @@ export function decodeSupabaseJwtUser(rawToken?: string | null): any | null {
     };
   } catch {
     return null;
+  }
+}
+
+// Fast zero-DB account lookup against Supabase Storage CDN (`settings/accounts_index.json`),
+// ensuring Google OAuth & sign-in succeed in ~120ms even when PostgREST/Postgres is unhealthy!
+let _clientAccountsIndexCache: { data: any; expiresAt: number } | null = null;
+
+export async function lookupAccountInPublicStorageIndex(
+  email?: string | null,
+  authUserId?: string | null
+): Promise<{ employee: any | null; hostSupervisor: any | null; indexAvailable: boolean }> {
+  if (!supabaseUrl) return { employee: null, hostSupervisor: null, indexAvailable: false };
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const cleanId = (authUserId || '').trim();
+  if (!cleanEmail && !cleanId) return { employee: null, hostSupervisor: null, indexAvailable: false };
+
+  try {
+    let parsed =
+      _clientAccountsIndexCache && _clientAccountsIndexCache.expiresAt > Date.now()
+        ? _clientAccountsIndexCache.data
+        : null;
+
+    if (!parsed) {
+      const base = supabaseUrl.replace(/\/$/, '');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`${base}/storage/v1/object/public/face-photos/settings/accounts_index.json`, {
+        cache: 'no-cache',
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      if (res.ok) {
+        parsed = await res.json();
+        if (parsed && typeof parsed === 'object') {
+          _clientAccountsIndexCache = { data: parsed, expiresAt: Date.now() + 15000 };
+        }
+      }
+    }
+
+    if (!parsed || typeof parsed !== 'object') {
+      return { employee: null, hostSupervisor: null, indexAvailable: false };
+    }
+
+    const emps = Array.isArray(parsed.employees) ? parsed.employees : [];
+    const hosts = Array.isArray(parsed.hostSupervisors) ? parsed.hostSupervisors : [];
+
+    const matchedEmp =
+      emps.find(
+        (e: any) =>
+          (cleanEmail && e?.email && String(e.email).trim().toLowerCase() === cleanEmail) ||
+          (cleanId && e?.id === cleanId)
+      ) || null;
+
+    const matchedHost = matchedEmp
+      ? null
+      : hosts.find(
+          (h: any) =>
+            (cleanEmail && h?.email && String(h.email).trim().toLowerCase() === cleanEmail) ||
+            (cleanId && h?.id === cleanId)
+        ) || null;
+
+    return { employee: matchedEmp, hostSupervisor: matchedHost, indexAvailable: true };
+  } catch {
+    return { employee: null, hostSupervisor: null, indexAvailable: false };
   }
 }
 

@@ -258,10 +258,16 @@ function transformTimeRecord(data: any): TimeRecord {
 
 // ─── API Operations ───
 
+const MOBILE_EMP_COLS =
+  'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, linked_at, application_status, registration_lat, registration_lng, registration_address, created_at';
+
+const MOBILE_TIME_RECORD_COLS =
+  'id, employee_id, date, time_in, time_out, time_in_lat, time_in_lng, time_out_lat, time_out_lng, time_in_geofenced, time_out_geofenced, time_in_face_verified, time_out_face_verified, time_in_photo, time_out_photo, total_hours, status, notes, created_at';
+
 export const mobileDb = {
   // Employees / Profiles
   async getEmployees(academicYear?: string): Promise<Employee[]> {
-    let query = supabase.from('employees').select('*').order('created_at', { ascending: false });
+    let query = supabase.from('employees').select(MOBILE_EMP_COLS).order('created_at', { ascending: false }).limit(1000);
     if (academicYear) {
       query = query.or(`academic_year.eq.${academicYear},academic_year.is.null,position.eq.OJT Instructor,position.eq.HTE Representative`);
     }
@@ -274,7 +280,7 @@ export const mobileDb = {
   },
 
   async getEmployeeById(id: string): Promise<Employee | null> {
-    const { data, error } = await supabase.from('employees').select('*').eq('id', id).maybeSingle();
+    const { data, error } = await supabase.from('employees').select(MOBILE_EMP_COLS).eq('id', id).maybeSingle();
     if (error || !data) return null;
     return transformEmployee(data);
   },
@@ -282,9 +288,10 @@ export const mobileDb = {
   async getTraineesByInstructor(instructorId: string, academicYear?: string): Promise<Employee[]> {
     let query = supabase
       .from('employees')
-      .select('*')
+      .select(MOBILE_EMP_COLS)
       .or(`instructor_id.eq.${instructorId},id.eq.${instructorId}`)
-      .order('name', { ascending: true });
+      .order('name', { ascending: true })
+      .limit(500);
     
     if (academicYear) {
       query = query.or(`academic_year.eq.${academicYear},academic_year.is.null`);
@@ -303,8 +310,9 @@ export const mobileDb = {
   async getTraineesByHte(hteId: string, academicYear?: string, companyName?: string): Promise<Employee[]> {
     let query = supabase
       .from('employees')
-      .select('*')
-      .order('name', { ascending: true });
+      .select(MOBILE_EMP_COLS)
+      .order('name', { ascending: true })
+      .limit(500);
 
     if (hteId && companyName && companyName.trim() !== '') {
       query = query.or(`hte_id.eq.${hteId},company_name.ilike.%${companyName.trim()}%`);
@@ -375,8 +383,12 @@ export const mobileDb = {
 
   // Time Records / Attendance
   async getTimeRecords(employeeId?: string, academicYear?: string, altId?: string): Promise<TimeRecord[]> {
-    let query = supabase.from('time_records').select('*').order('date', { ascending: false });
     const ids = [employeeId, altId].filter(Boolean) as string[];
+    let query = supabase
+      .from('time_records')
+      .select(MOBILE_TIME_RECORD_COLS)
+      .order('date', { ascending: false })
+      .limit(ids.length > 0 ? 500 : 300);
     if (ids.length > 0) query = query.in('employee_id', ids);
     // Note: Do not query academic_year in SQL as column does not exist on time_records in Supabase
     const { data, error } = await query;
@@ -401,7 +413,7 @@ export const mobileDb = {
     const ids = [employeeId, altId].filter(Boolean) as string[];
     const { data, error } = await supabase
       .from('time_records')
-      .select('*')
+      .select(MOBILE_TIME_RECORD_COLS)
       .in('employee_id', ids)
       .in('date', targetDates)
       .order('created_at', { ascending: false })

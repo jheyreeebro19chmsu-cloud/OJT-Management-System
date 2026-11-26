@@ -399,6 +399,8 @@ export async function optimizeUploadFile(file: File | Blob, maxDim = 1600, quali
   });
 }
 
+let _directFacePhotosUploadAllowed: boolean | null = null;
+
 export async function uploadDocumentToStorage(
   employeeId: string,
   docKey: string,
@@ -443,31 +445,72 @@ export async function uploadDocumentToStorage(
           : 'pdf';
     const storagePath = `documents/${cleanEmpId}/${docKey}_${Date.now()}.${ext}`;
 
-    // 1. Primary path: Signed Upload URL via service-role backend
-    try {
-      const signRes = await fetch(`/api/documents?action=get-upload-url&path=${encodeURIComponent(storagePath)}&bucket=face-photos`);
-      if (signRes.ok) {
-        const signInfo = await signRes.json();
-        if (signInfo?.token && signInfo?.path && isSupabaseConfigured()) {
-          const { error: upErr } = await supabase.storage.from('face-photos').uploadToSignedUrl(signInfo.path, signInfo.token, blob, {
-            contentType,
-          });
-          if (!upErr && signInfo.publicUrl) {
-            console.log(`[Storage] Uploaded document ${docKey} via signed URL:`, signInfo.publicUrl);
-            return signInfo.publicUrl;
+    // Fast 1-hop direct Supabase Storage upload (skips /api/documents Vercel cold start when allowed)
+    const tryDirectUpload = async (): Promise<string> => {
+      if (!isSupabaseConfigured() || _directFacePhotosUploadAllowed === false) return '';
+      try {
+        const { data, error } = await supabase.storage.from('face-photos').upload(storagePath, blob, {
+          contentType,
+          upsert: true,
+          cacheControl: '604800',
+        });
+        if (!error && data) {
+          _directFacePhotosUploadAllowed = true;
+          const { data: urlData } = supabase.storage.from('face-photos').getPublicUrl(storagePath);
+          if (urlData?.publicUrl) return urlData.publicUrl;
+        } else if (error) {
+          const msg = String(error.message || '').toLowerCase();
+          if (msg.includes('row-level security') || msg.includes('unauthorized') || msg.includes('403')) {
+            _directFacePhotosUploadAllowed = false;
           }
         }
+      } catch {}
+      return '';
+    };
+
+    const trySignedUpload = async (): Promise<string> => {
+      try {
+        const signRes = await fetch(
+          `/api/documents?action=get-upload-url&path=${encodeURIComponent(storagePath)}&bucket=face-photos`
+        );
+        if (signRes.ok) {
+          const signInfo = await signRes.json();
+          if (signInfo?.token && signInfo?.path && isSupabaseConfigured()) {
+            const { error: upErr } = await supabase.storage
+              .from('face-photos')
+              .uploadToSignedUrl(signInfo.path, signInfo.token, blob, { contentType });
+            if (!upErr && signInfo.publicUrl) {
+              return signInfo.publicUrl;
+            }
+          }
+        }
+      } catch (signErr) {
+        console.warn('[Storage] Signed upload URL notice:', signErr);
       }
-    } catch (signErr) {
-      console.warn('[Storage] Signed upload URL notice:', signErr);
+      return '';
+    };
+
+    // 1. If direct 1-hop upload was already confirmed allowed, use it immediately (0 Vercel roundtrips!)
+    if (_directFacePhotosUploadAllowed === true) {
+      const directUrl = await tryDirectUpload();
+      if (directUrl) return directUrl;
     }
 
-    // 2. Secondary path: Direct server upload via /api/documents?action=upload
+    // 2. If unknown (first upload of session), race direct 1-hop upload with signed upload so whichever finishes first wins
+    if (_directFacePhotosUploadAllowed === null && isSupabaseConfigured()) {
+      const [directRes, signedRes] = await Promise.all([tryDirectUpload(), trySignedUpload()]);
+      if (directRes || signedRes) return directRes || signedRes;
+    } else {
+      const signedUrl = await trySignedUpload();
+      if (signedUrl) return signedUrl;
+    }
+
+    // 3. Fallback: Direct server upload via /api/documents?action=upload (for < 2.8MB files)
     try {
       let b64 = '';
       if (typeof fileDataOrBlob === 'string') {
         b64 = fileDataOrBlob;
-      } else {
+      } else if (blob.size < 2800000) {
         b64 = await new Promise<string>((resolve) => {
           const reader = new FileReader();
           reader.onload = () => resolve(reader.result as string);
@@ -489,36 +532,26 @@ export async function uploadDocumentToStorage(
         });
         if (srvRes.ok) {
           const srvData = await srvRes.json();
-          if (srvData?.publicUrl) {
-            console.log(`[Storage] Server uploaded document ${docKey}:`, srvData.publicUrl);
-            return srvData.publicUrl;
-          }
+          if (srvData?.publicUrl) return srvData.publicUrl;
         }
       }
     } catch (srvErr) {
       console.warn('[Storage] Server upload fallback notice:', srvErr);
     }
 
-    // 3. Tertiary path: Direct anonymous upload fallback
+    // 4. Final fallback to 'documents' bucket if present
     if (isSupabaseConfigured()) {
-      const bucketsToTry = ['face-photos', 'documents'];
-      for (const bucket of bucketsToTry) {
-        try {
-          const { data, error } = await supabase.storage.from(bucket).upload(storagePath, blob, {
-            contentType,
-            upsert: true,
-            cacheControl: '604800',
-          });
-          if (!error && data) {
-            const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(storagePath);
-            if (urlData?.publicUrl) {
-              return urlData.publicUrl;
-            }
-          }
-        } catch (bucketErr) {
-          console.warn(`[Storage] Upload to "${bucket}" notice:`, bucketErr);
+      try {
+        const { data, error } = await supabase.storage.from('documents').upload(storagePath, blob, {
+          contentType,
+          upsert: true,
+          cacheControl: '604800',
+        });
+        if (!error && data) {
+          const { data: urlData } = supabase.storage.from('documents').getPublicUrl(storagePath);
+          if (urlData?.publicUrl) return urlData.publicUrl;
         }
-      }
+      } catch {}
     }
   } catch (err) {
     console.warn('uploadDocumentToStorage notice:', err);
@@ -3827,7 +3860,11 @@ export async function fetchHostSupervisors(): Promise<HostSupervisor[]> {
   if (!isSupabaseConfigured()) return [];
 
   try {
-    const { data, error } = await supabase.from('host_supervisors').select('*').order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('host_supervisors')
+      .select('id, name, email, company_name, position, active, is_approved, approved_by, created_at')
+      .order('created_at', { ascending: false })
+      .limit(200);
     if (error) {
       console.warn('fetchHostSupervisors database note:', error.message);
       return [];
@@ -4731,40 +4768,64 @@ export function mergeMonthlyDttrsList(
   return Array.from(map.values());
 }
 
+let _dttrFetchCache: {
+  data: { monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] } | null;
+  expiresAt: number;
+  inflight: Promise<{ monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] }> | null;
+} = { data: null, expiresAt: 0, inflight: null };
+
 export async function fetchDttrStoreFromStorage(): Promise<{
   monthlyDttrs: MonthlyDttrRecord[];
   timeRecords: TimeRecord[];
 }> {
-  try {
-    const apiRes = await fetch(`/api/documents?action=get-dttr&t=${Date.now()}`, { cache: 'no-store' });
-    if (apiRes.ok) {
-      const data = await apiRes.json();
-      if (data && typeof data === 'object') {
-        return {
-          monthlyDttrs: Array.isArray(data.monthlyDttrs) ? mergeMonthlyDttrsList(data.monthlyDttrs) : [],
-          timeRecords: Array.isArray(data.timeRecords) ? data.timeRecords : [],
-        };
-      }
-    }
-  } catch {}
+  if (_dttrFetchCache.data && _dttrFetchCache.expiresAt > Date.now()) {
+    return _dttrFetchCache.data;
+  }
+  if (_dttrFetchCache.inflight) {
+    return _dttrFetchCache.inflight;
+  }
 
-  try {
-    const pubRes = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/dttr_store.json`,
-      { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
-    );
-    if (pubRes.ok) {
-      const data = await pubRes.json();
-      if (data && typeof data === 'object') {
-        return {
-          monthlyDttrs: Array.isArray(data.monthlyDttrs) ? mergeMonthlyDttrsList(data.monthlyDttrs) : [],
-          timeRecords: Array.isArray(data.timeRecords) ? data.timeRecords : [],
-        };
+  const p = (async (): Promise<{ monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] }> => {
+    try {
+      const pubRes = await fetch(
+        `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/dttr_store.json`,
+        { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(4500) : undefined }
+      );
+      if (pubRes.ok) {
+        const data = await pubRes.json();
+        if (data && typeof data === 'object') {
+          const out = {
+            monthlyDttrs: Array.isArray(data.monthlyDttrs) ? mergeMonthlyDttrsList(data.monthlyDttrs) : [],
+            timeRecords: Array.isArray(data.timeRecords) ? data.timeRecords : [],
+          };
+          _dttrFetchCache = { data: out, expiresAt: Date.now() + 6000, inflight: null };
+          return out;
+        }
       }
-    }
-  } catch {}
+    } catch {}
 
-  return { monthlyDttrs: [], timeRecords: [] };
+    try {
+      const apiRes = await fetch(`/api/documents?action=get-dttr`, { cache: 'no-store' });
+      if (apiRes.ok) {
+        const data = await apiRes.json();
+        if (data && typeof data === 'object') {
+          const out = {
+            monthlyDttrs: Array.isArray(data.monthlyDttrs) ? mergeMonthlyDttrsList(data.monthlyDttrs) : [],
+            timeRecords: Array.isArray(data.timeRecords) ? data.timeRecords : [],
+          };
+          _dttrFetchCache = { data: out, expiresAt: Date.now() + 6000, inflight: null };
+          return out;
+        }
+      }
+    } catch {}
+
+    return { monthlyDttrs: [], timeRecords: [] };
+  })().finally(() => {
+    _dttrFetchCache.inflight = null;
+  });
+
+  _dttrFetchCache.inflight = p;
+  return p;
 }
 
 let _dttrSaveChain: Promise<boolean> = Promise.resolve(true);
@@ -4774,6 +4835,7 @@ export async function saveDttrStoreToStorage(payload: {
   timeRecords?: TimeRecord[];
 }): Promise<boolean> {
   // Immediately broadcast delta to all open Instructor, HTE, and Trainee browsers (<80ms latency!)
+  _dttrFetchCache = { data: null, expiresAt: 0, inflight: null };
   broadcastLiveEvent('task_updated', {
     monthlyDttrs: payload.monthlyDttrs,
     timeRecords: payload.timeRecords,

@@ -322,84 +322,71 @@ export function Profile() {
       return;
     }
 
-    setDocUploadingKey(docKey);
-    const reader = new FileReader();
-    reader.onload = async (e) => {
-      const dataUrl = e.target?.result as string;
-      const empId = employee?.id || employee?.employeeId || '';
+    const empId = employee?.id || employee?.employeeId || '';
+    const uploadedAtIso = new Date().toISOString();
+    const previewUrl = URL.createObjectURL(file);
+    const baseDocs: TraineeDocuments = employee?.submittedDocuments || {};
 
-      // Cache base64 in sessionStorage for preview without exhausting localStorage 5MB limit
-      try {
-        sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
-        sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
-        sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
-      } catch {}
+    // 1. Instant optimistic UI update (< 15ms)
+    const optimisticItem: TraineeDocumentItem = {
+      name: file.name,
+      size: file.size,
+      dataUrl: previewUrl,
+      fileUrl: previewUrl,
+      fileType: file.type || 'application/octet-stream',
+      uploadedAt: uploadedAtIso,
+      status: 'submitted',
+      source: 'portal',
+    };
+    updateEmployee(employee.id, {
+      submittedDocuments: { ...baseDocs, [docKey]: optimisticItem },
+      documentsPassed: false,
+      documentsStatus: 'submitted',
+    });
 
-      // Attempt cloud storage upload for permanent URL
-      let remoteUrl = '';
-      try {
-        const storedUrl = await uploadDocumentToStorage(empId, docKey, file, file.name);
-        if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
-          remoteUrl = storedUrl;
+    setDocUploadingKey(null);
+    const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
+    toast.success(`✓ "${meta?.title || 'Document'}" updated & submitted to your Instructor for review!`);
+
+    // 2. Upload to Supabase Storage in background and persist permanent HTTP URL
+    void uploadDocumentToStorage(empId, docKey, file, file.name)
+      .then((storedUrl) => {
+        const remoteUrl = storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey') ? storedUrl : '';
+        if (remoteUrl) {
           try {
-            localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
+            localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, remoteUrl);
           } catch {}
         }
-      } catch (uploadErr) {
-        console.warn('Profile storage upload notice:', uploadErr);
-      }
-
-      const newDocItem: TraineeDocumentItem = {
-        name: file.name,
-        size: file.size,
-        dataUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''),
-        fileUrl: remoteUrl || (dataUrl.length < 5000 ? dataUrl : ''), // Public or local URL
-        fileType: file.type || 'application/octet-stream',
-        uploadedAt: new Date().toISOString(),
-        status: 'submitted',
-        source: 'portal',
-      };
-      const updatedDocs: TraineeDocuments = {
-        ...(employee?.submittedDocuments || {}),
-        [docKey]: newDocItem,
-      };
-      updateEmployee(employee.id, {
-        submittedDocuments: updatedDocs,
-        documentsPassed: false,
-        documentsStatus: 'submitted',
-      });
-      saveDocumentPassStatus(employee.id || employee.employeeId, {
-        docKey: docKey as string,
-        status: 'submitted',
-        allPassed: false,
-        documentsStatus: 'submitted',
-        submittedDocuments: updatedDocs,
-        documentItem: newDocItem,
-      }).catch(console.warn);
-
-      try {
-        window.dispatchEvent(
-          new CustomEvent('ojt_document_submitted', {
-            detail: {
-              employeeId: employee.id || employee.employeeId,
-              studentName: employee.name,
-              docKey,
-              docTitle: docKey,
-              documentItem: newDocItem,
-            },
-          })
-        );
-      } catch {}
-
-      setDocUploadingKey(null);
-      const meta = STANDARD_REQUIRED_DOCS.find((d) => d.key === docKey);
-      toast.success(`✓ "${meta?.title || 'Document'}" updated & submitted to your Instructor for review!`);
-    };
-    reader.onerror = () => {
-      setDocUploadingKey(null);
-      toast.error('Failed to read file. Please try again.');
-    };
-    reader.readAsDataURL(file);
+        const finalUrl = remoteUrl || previewUrl;
+        const finalItem: TraineeDocumentItem = {
+          ...optimisticItem,
+          dataUrl: finalUrl,
+          fileUrl: finalUrl,
+        };
+        const updatedDocs: TraineeDocuments = {
+          ...baseDocs,
+          [docKey]: finalItem,
+        };
+        updateEmployee(employee.id, {
+          submittedDocuments: updatedDocs,
+          documentsPassed: false,
+          documentsStatus: 'submitted',
+        });
+        try {
+          window.dispatchEvent(
+            new CustomEvent('ojt_document_submitted', {
+              detail: {
+                employeeId: employee.id || employee.employeeId,
+                studentName: employee.name,
+                docKey,
+                docTitle: docKey,
+                documentItem: finalItem,
+              },
+            })
+          );
+        } catch {}
+      })
+      .catch((err) => console.warn('Profile background upload notice:', err));
   };
 
   const handleProfileFaceSuccess = async (img?: string) => {

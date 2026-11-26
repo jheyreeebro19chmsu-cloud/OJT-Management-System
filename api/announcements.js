@@ -10,6 +10,68 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
 const isUuid = (val) =>
   Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val)));
 
+let _announcementsListCache = { data: null, expiresAt: 0 };
+
+async function offloadDataUriToStorage(dataUri, prefix = 'ann') {
+  if (!dataUri || typeof dataUri !== 'string' || !dataUri.startsWith('data:')) return dataUri;
+  const match = dataUri.match(/^data:([^;,]+)?(?:;charset=[^;,]+)?;base64,(.+)$/s);
+  if (!match) return dataUri;
+  try {
+    const mime = (match[1] || 'application/octet-stream').trim();
+    const buf = Buffer.from(match[2].trim(), 'base64');
+    const ext = mime.includes('png')
+      ? 'png'
+      : mime.includes('pdf')
+      ? 'pdf'
+      : mime.includes('webp')
+      ? 'webp'
+      : mime.includes('word') || mime.includes('officedocument')
+      ? 'docx'
+      : 'jpg';
+    const storagePath = `announcements/${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 7)}.${ext}`;
+    const { error } = await supabase.storage.from('face-photos').upload(storagePath, buf, {
+      contentType: mime,
+      upsert: true,
+    });
+    if (!error) {
+      return supabase.storage.from('face-photos').getPublicUrl(storagePath).data.publicUrl;
+    }
+  } catch {}
+  return dataUri;
+}
+
+async function scrubAnnouncementBlobs(val, prefix = 'ann') {
+  if (!val) return val;
+  if (typeof val === 'string') {
+    if (val.startsWith('data:') && val.length > 512) {
+      return await offloadDataUriToStorage(val, prefix);
+    }
+    if ((val.startsWith('{') || val.startsWith('[')) && val.includes('data:')) {
+      try {
+        return JSON.stringify(await scrubAnnouncementBlobs(JSON.parse(val), prefix));
+      } catch {
+        return val;
+      }
+    }
+    return val;
+  }
+  if (Array.isArray(val)) {
+    const out = [];
+    for (let i = 0; i < val.length; i++) {
+      out.push(await scrubAnnouncementBlobs(val[i], `${prefix}_${i}`));
+    }
+    return out;
+  }
+  if (typeof val === 'object') {
+    const out = {};
+    for (const [k, v] of Object.entries(val)) {
+      out[k] = await scrubAnnouncementBlobs(v, `${prefix}_${k}`);
+    }
+    return out;
+  }
+  return val;
+}
+
 async function readStorageAnnouncements() {
   try {
     const { data: blob, error } = await supabase.storage
@@ -167,6 +229,10 @@ export default async function handler(req, res) {
         }
       }
 
+      if (_announcementsListCache.data && _announcementsListCache.expiresAt > Date.now()) {
+        return sendJson(res, 200, _announcementsListCache.data);
+      }
+
       let dbRecords = [];
       let dbSucceeded = false;
       try {
@@ -174,7 +240,8 @@ export default async function handler(req, res) {
           .from('announcements')
           .select('*')
           .order('is_pinned', { ascending: false, nullsFirst: false })
-          .order('created_at', { ascending: false });
+          .order('created_at', { ascending: false })
+          .limit(100);
 
         if (!error && Array.isArray(data)) {
           dbRecords = data;
@@ -206,11 +273,13 @@ export default async function handler(req, res) {
         if (diff !== 0) return diff;
         return String(b.id || '').localeCompare(String(a.id || ''), undefined, { numeric: true });
       });
+      _announcementsListCache = { data: formatted, expiresAt: Date.now() + 4000 };
       return sendJson(res, 200, formatted);
     }
 
     // POST: Create new announcement or comment
     if (req.method === 'POST') {
+      _announcementsListCache = { data: null, expiresAt: 0 };
       const body = await parseBody(req);
       const action = getQueryParam(req, 'action') || body.action;
 
@@ -301,12 +370,13 @@ export default async function handler(req, res) {
         files,
       } = body;
 
-      let finalPhoto = photo ?? null;
-      const attachedFiles = (files && Array.isArray(files) && files.length > 0)
+      let finalPhoto = await scrubAnnouncementBlobs(photo ?? null, 'post_photo');
+      const rawAttachedFiles = (files && Array.isArray(files) && files.length > 0)
         ? files
         : (body.files && Array.isArray(body.files) && body.files.length > 0)
         ? body.files
         : null;
+      const attachedFiles = rawAttachedFiles ? await scrubAnnouncementBlobs(rawAttachedFiles, 'post_file') : null;
 
       if (attachedFiles && attachedFiles.length > 0) {
         const first = attachedFiles[0];
@@ -377,6 +447,7 @@ export default async function handler(req, res) {
 
     // PUT / PATCH: Update announcement
     if (req.method === 'PUT' || req.method === 'PATCH') {
+      _announcementsListCache = { data: null, expiresAt: 0 };
       const body = await parseBody(req);
       const id = getQueryParam(req, 'id') || body.id;
 
@@ -400,9 +471,10 @@ export default async function handler(req, res) {
       if (body.academicYear !== undefined || body.academic_year !== undefined) {
         updates.academic_year = body.academicYear ?? body.academic_year;
       }
-      if (body.photo !== undefined) updates.photo = body.photo;
+      if (body.photo !== undefined) updates.photo = await scrubAnnouncementBlobs(body.photo, `put_${id}`);
       if (body.files !== undefined && Array.isArray(body.files) && body.files.length > 0) {
-        const first = body.files[0];
+        const cleanFiles = await scrubAnnouncementBlobs(body.files, `putf_${id}`);
+        const first = cleanFiles[0];
         const url = first.fileUrl || first.dataUrl || (typeof updates.photo === 'string' ? updates.photo : '');
         updates.photo = JSON.stringify({
           url,
@@ -413,7 +485,7 @@ export default async function handler(req, res) {
             ? 'pdf'
             : 'doc',
           size: first.size || '',
-          files: body.files,
+          files: cleanFiles,
         });
       }
       if (body.reminder !== undefined) updates.reminder = body.reminder;
@@ -459,6 +531,7 @@ export default async function handler(req, res) {
 
     // DELETE: Delete announcement
     if (req.method === 'DELETE') {
+      _announcementsListCache = { data: null, expiresAt: 0 };
       const body = await parseBody(req);
       const id = getQueryParam(req, 'id') || body?.id;
       if (!id) {
