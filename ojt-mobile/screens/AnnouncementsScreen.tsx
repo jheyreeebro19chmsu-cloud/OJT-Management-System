@@ -171,6 +171,36 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
 
   useEffect(() => {
     fetchAnnouncements();
+
+    const pgChannel = supabase
+      .channel('ojt-mobile-announcements-pg')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'announcements' },
+        () => {
+          fetchAnnouncements();
+        }
+      )
+      .subscribe();
+
+    const liveChannel = supabase
+      .channel('ojt-instant-sync-v1', { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'live_sync' }, ({ payload }) => {
+        if (
+          payload?.type === 'announcement_created' ||
+          payload?.type === 'announcement_updated' ||
+          payload?.type === 'announcement_deleted' ||
+          payload?.type === 'announcement_comment'
+        ) {
+          fetchAnnouncements();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(pgChannel);
+      supabase.removeChannel(liveChannel);
+    };
   }, [fetchAnnouncements]);
 
   const onRefresh = () => {
@@ -227,21 +257,37 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
       Alert.alert('Required', 'Please write a message or attach a photo for your submission.');
       return;
     }
+
+    const createdAt = new Date().toISOString();
+    const effectiveMsg = message || 'Assignment attachment submitted';
+    const optimisticResp: AnnouncementResponse = {
+      id: `resp-${Date.now()}`,
+      announcement_id: announcement.id,
+      employee_id: profile.id,
+      message: effectiveMsg,
+      photo: photo || undefined,
+      created_at: createdAt,
+    };
+
+    // Optimistically reflect submission & clear form immediately
+    setResponses((prev) => ({ ...prev, [announcement.id]: optimisticResp }));
+    setMessageDrafts((prev) => ({ ...prev, [announcement.id]: '' }));
+    setPhotoDrafts((prev) => ({ ...prev, [announcement.id]: null }));
     setSubmitting((prev) => ({ ...prev, [announcement.id]: true }));
+
     try {
       const { error } = await supabase.from('announcement_responses').upsert({
         announcement_id: announcement.id,
         employee_id: profile.id,
-        message: message || 'Assignment attachment submitted',
+        message: effectiveMsg,
         photo: photo || null,
-        created_at: new Date().toISOString(),
+        created_at: createdAt,
       });
       if (error) throw error;
-      setMessageDrafts((prev) => ({ ...prev, [announcement.id]: '' }));
-      setPhotoDrafts((prev) => ({ ...prev, [announcement.id]: null }));
-      await fetchAnnouncements();
       Alert.alert('Success', 'Assignment response submitted successfully!');
     } catch {
+      setMessageDrafts((prev) => ({ ...prev, [announcement.id]: message }));
+      setPhotoDrafts((prev) => ({ ...prev, [announcement.id]: photo || null }));
       Alert.alert('Error', 'Failed to submit assignment response.');
     } finally {
       setSubmitting((prev) => ({ ...prev, [announcement.id]: false }));
@@ -257,24 +303,51 @@ export default function AnnouncementsScreen({ profile, activeAcademicYear, onBac
       Alert.alert('Required', 'Title and content are required.');
       return;
     }
+
+    const titleSnapshot = newTitle.trim();
+    const contentSnapshot = newContent.trim();
+    const expirySnapshot = newExpiry || null;
+    const createdAt = new Date().toISOString();
+    const tempId = `temp-ann-${Date.now()}`;
+
+    // Optimistically prepend announcement and close modal immediately
+    const optimisticAnn: Announcement = {
+      id: tempId,
+      title: titleSnapshot,
+      content: contentSnapshot,
+      type: 'general',
+      expiry_date: expirySnapshot || undefined,
+      academic_year: activeAcademicYear,
+      created_at: createdAt,
+    };
+    setAnnouncements((prev) => [optimisticAnn, ...prev]);
+    setNewTitle('');
+    setNewContent('');
+    setNewExpiry('');
+    setShowCreate(false);
     setPosting(true);
+
     try {
-      const { error } = await supabase.from('announcements').insert({
-        title: newTitle.trim(),
-        content: newContent.trim(),
-        type: 'general',
-        expiry_date: newExpiry || null,
-        academic_year: activeAcademicYear,
-        created_at: new Date().toISOString(),
-      });
+      const { data: inserted, error } = await supabase
+        .from('announcements')
+        .insert({
+          title: titleSnapshot,
+          content: contentSnapshot,
+          type: 'general',
+          expiry_date: expirySnapshot,
+          academic_year: activeAcademicYear,
+          created_at: createdAt,
+        })
+        .select()
+        .single();
       if (error) throw error;
-      setNewTitle('');
-      setNewContent('');
-      setNewExpiry('');
-      setShowCreate(false);
-      await fetchAnnouncements();
+
+      if (inserted) {
+        setAnnouncements((prev) => prev.map((a) => (a.id === tempId ? inserted : a)));
+      }
       Alert.alert('Posted!', 'Announcement posted successfully.');
     } catch {
+      setAnnouncements((prev) => prev.filter((a) => a.id !== tempId));
       Alert.alert('Error', 'Failed to post announcement.');
     } finally {
       setPosting(false);

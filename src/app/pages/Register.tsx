@@ -55,7 +55,7 @@ import { Country, State, City } from 'country-state-city';
 
 
 import { authAPI } from '../services/authApi';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getDirectGoogleOAuthUrl, purgeStaleSupabaseAuth } from '../lib/supabase';
 import { createEmployee as createEmployeeDb } from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
@@ -616,6 +616,11 @@ export function Register() {
     if (googleLoading) return; // debounce: block re-entry while OAuth redirect is starting
     const effectiveRole = targetRole || role || 'trainee';
     localStorage.setItem('pending_oauth_role', effectiveRole);
+    try {
+      sessionStorage.setItem('pending_oauth_role', effectiveRole);
+      sessionStorage.setItem('ojt_oauth_redirecting', '1');
+      purgeStaleSupabaseAuth(true);
+    } catch {}
     setGoogleLoading(true);
     try {
       if (!isSupabaseConfigured()) {
@@ -627,10 +632,16 @@ export function Register() {
         typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
+      const redirectTo = `${redirectOrigin}/oauth-callback?role=${effectiveRole}`;
+      const directUrl = getDirectGoogleOAuthUrl(redirectTo);
+      if (directUrl && typeof window !== 'undefined') {
+        window.location.assign(directUrl);
+        return;
+      }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${redirectOrigin}/oauth-callback?role=${effectiveRole}`,
+          redirectTo,
         },
       });
       if (error) {

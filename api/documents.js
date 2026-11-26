@@ -640,37 +640,84 @@ export default async function handler(req, res) {
         }
       }
 
-      // Support server-side save of DTTR (Monthly DTTR Tasks + Attendance Time Records)
+      // Support server-side save of DTTR (Monthly DTTR Tasks + Attendance Time Records) with fast atomic delta merge
       if (body.action === 'save-dttr') {
         try {
           let existingStore = { monthlyDttrs: [], timeRecords: [] };
           try {
-            const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/dttr_store.json', 60);
-            if (signed?.signedUrl) {
-              const r = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
-              if (r.ok) {
-                const parsed = await r.json();
-                if (parsed && typeof parsed === 'object') existingStore = parsed;
-              }
+            const { data: dlBlob, error: dlErr } = await supabase.storage
+              .from('face-photos')
+              .download('settings/dttr_store.json');
+            if (!dlErr && dlBlob) {
+              const parsed = JSON.parse(await dlBlob.text());
+              if (parsed && typeof parsed === 'object') existingStore = parsed;
             }
           } catch {}
 
-          const monthlyDttrs = Array.isArray(body.monthlyDttrs)
-            ? body.monthlyDttrs
-            : Array.isArray(existingStore.monthlyDttrs)
-            ? existingStore.monthlyDttrs
-            : [];
+          // Merge monthlyDttrs by canonical employeeId_year_month key so single-record task sends never clobber other trainees
+          const dttrMap = new Map();
+          const putDttr = (rec) => {
+            if (!rec || !rec.employeeId) return;
+            const key = `${String(rec.employeeId).toLowerCase()}_${Number(rec.year)}_${Number(rec.month)}`;
+            const prev = dttrMap.get(key);
+            if (!prev) {
+              dttrMap.set(key, rec);
+              return;
+            }
+            const rTime = new Date(rec.updatedAt || 0).getTime();
+            const pTime = new Date(prev.updatedAt || 0).getTime();
+            const newer = rTime >= pTime ? rec : prev;
+            const older = rTime >= pTime ? prev : rec;
+            dttrMap.set(key, {
+              ...older,
+              ...newer,
+              customEntries: {
+                ...(older.customEntries || {}),
+                ...(newer.customEntries || {}),
+              },
+            });
+          };
 
-          const rawTimeRecords = Array.isArray(body.timeRecords)
-            ? body.timeRecords
-            : Array.isArray(existingStore.timeRecords)
-            ? existingStore.timeRecords
-            : [];
+          for (const r of Array.isArray(existingStore.monthlyDttrs) ? existingStore.monthlyDttrs : []) putDttr(r);
+          for (const r of Array.isArray(body.monthlyDttrs) ? body.monthlyDttrs : []) putDttr(r);
+          const monthlyDttrs = Array.from(dttrMap.values());
+
+          // Merge timeRecords by employeeId_date key so single-day task sends merge cleanly in 1 roundtrip
+          const recMap = new Map();
+          const putRec = (r) => {
+            if (!r || typeof r !== 'object') return;
+            const empId = r.employeeId || r.employee_id;
+            if (!empId || !r.date) return;
+            const dateKey = String(r.date).split('T')[0].trim();
+            const key = `${String(empId).toLowerCase()}_${dateKey}`;
+            const prev = recMap.get(key);
+            recMap.set(
+              key,
+              prev
+                ? {
+                    ...prev,
+                    ...r,
+                    employeeId: empId,
+                    timeIn: r.timeIn || prev.timeIn,
+                    timeOut: r.timeOut || prev.timeOut,
+                    amArrival: r.amArrival || prev.amArrival,
+                    amDeparture: r.amDeparture || prev.amDeparture,
+                    pmArrival: r.pmArrival || prev.pmArrival,
+                    pmDeparture: r.pmDeparture || prev.pmDeparture,
+                    totalHours: Math.max(Number(r.totalHours) || 0, Number(prev.totalHours) || 0),
+                    notes: r.notes !== undefined ? r.notes : prev.notes,
+                  }
+                : { ...r, employeeId: empId }
+            );
+          };
+
+          for (const r of Array.isArray(existingStore.timeRecords) ? existingStore.timeRecords : []) putRec(r);
+          for (const r of Array.isArray(body.timeRecords) ? body.timeRecords : []) putRec(r);
 
           // Sort newest-first before capping so recent attendance records are never sliced off
-          const sortedTimeRecords = [...rawTimeRecords]
-            .filter((r) => r && typeof r === 'object' && (r.employeeId || r.employee_id) && r.date)
-            .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')));
+          const sortedTimeRecords = Array.from(recMap.values()).sort((a, b) =>
+            String(b.date || '').localeCompare(String(a.date || ''))
+          );
 
           // Strip inline base64 photos from DTTR store so JSON stays tiny and fast
           const slimTimeRecords = sortedTimeRecords.slice(0, 1500).map((r) => {

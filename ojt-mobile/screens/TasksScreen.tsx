@@ -31,37 +31,59 @@ export default function TasksScreen({ onBack, profile }: TasksScreenProps) {
 
   useEffect(() => {
     fetchTasks();
+
+    const liveChannel = supabase
+      .channel('ojt-mobile-tasks-live')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'announcements' },
+        () => {
+          fetchTasks();
+        }
+      )
+      .subscribe();
+
+    const broadcastChannel = supabase
+      .channel('ojt-instant-sync-v1', { config: { broadcast: { self: false } } })
+      .on('broadcast', { event: 'live_sync' }, ({ payload }) => {
+        if (
+          payload?.type === 'announcement_created' ||
+          payload?.type === 'announcement_updated' ||
+          payload?.type === 'announcement_deleted'
+        ) {
+          fetchTasks();
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(liveChannel);
+      supabase.removeChannel(broadcastChannel);
+    };
   }, []);
 
   async function fetchTasks() {
     try {
-      // If student, we need to know their instructor
-      const instructorId = profile.instructor_id;
-      if (!instructorId) {
-        setTasks([]);
-        return;
-      }
-
-      const res = await announcementApi.list(instructorId);
-      if (res.success) {
-        const data = res.announcements || [];
-        setTasks(data);
-        
-        // Initialize response state
-        const initialResponses: any = {};
-        data.forEach((t: any) => {
-          initialResponses[t.id] = { message: '', photo: null };
-        });
-        setResponses(initialResponses);
-      }
-    } catch (err: any) {
-      console.error('Fetch tasks error:', err);
-      // Fallback to supabase if API fails
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('announcements')
         .select('*')
         .order('created_at', { ascending: false });
-      if (data) setTasks(data);
+
+      if (error) throw error;
+      const list = data || [];
+      setTasks(list);
+
+      setResponses((prev) => {
+        const next: Record<string, { message: string; photo: string | null }> = { ...prev };
+        list.forEach((t: any) => {
+          if (!next[t.id]) {
+            next[t.id] = { message: '', photo: null };
+          }
+        });
+        return next;
+      });
+    } catch (err: any) {
+      console.error('Fetch tasks error:', err);
     } finally {
       setLoading(false);
     }
@@ -89,64 +111,98 @@ export default function TasksScreen({ onBack, profile }: TasksScreenProps) {
 
   async function handleSubmit(task: any) {
     const response = responses[task.id];
-    if (!response.message && !response.photo) {
+    if (!response?.message && !response?.photo) {
       Alert.alert('Empty Submission', 'Please provide a message or a photo.');
       return;
     }
 
+    const msgSnapshot = response.message || 'Task submission attached';
+    const photoSnapshot = response.photo;
+    const submittedAt = new Date().toISOString();
+
+    // Optimistically clear inputs right away so UI feels instantaneous
+    updateResponse(task.id, 'message', '');
+    updateResponse(task.id, 'photo', null);
     setSubmitting(task.id);
+
     try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not found');
+      const userId = profile?.id || (await supabase.auth.getUser()).data?.user?.id;
+      if (!userId) throw new Error('User not found');
 
-      // 1. Primary: Use Django API
-      try {
-        const formData = {
-          announcement_id: task.id,
-          user_id: user.id,
-          message: response.message,
-          image_b64: response.photo ? await FileSystem.readAsStringAsync(response.photo, { encoding: FileSystem.EncodingType.Base64 }) : null
-        };
-        await announcementApi.submit(formData);
-      } catch (apiErr) {
-        console.warn('API submission failed, falling back to direct Supabase:', apiErr);
-        
-        // 2. Fallback: Supabase direct insert
-        let photoUrl = null;
-        if (response.photo) {
-          const base64 = await FileSystem.readAsStringAsync(response.photo, { encoding: FileSystem.EncodingType.Base64 });
-          const filePath = `submissions/${user.id}/${task.id}_${Date.now()}.jpg`;
-          
-          const { error: uploadError } = await supabase.storage
-            .from('task-submissions')
-            .upload(filePath, decode(base64), { contentType: 'image/jpeg' });
+      let photoUrl: string | null = null;
+      if (photoSnapshot) {
+        const base64 = await FileSystem.readAsStringAsync(photoSnapshot, {
+          encoding: FileSystem.EncodingType.Base64,
+        });
+        const arrayBuf = decode(base64);
+        const filePath = `submissions/${userId}/${task.id}_${Date.now()}.jpg`;
 
-          if (!uploadError) {
-            const { data: { publicUrl } } = supabase.storage
-              .from('task-submissions')
-              .getPublicUrl(filePath);
-            photoUrl = publicUrl;
+        const { error: uploadError } = await supabase.storage
+          .from('task-submissions')
+          .upload(filePath, arrayBuf, { contentType: 'image/jpeg', upsert: true });
+
+        if (!uploadError) {
+          const { data: pub } = supabase.storage.from('task-submissions').getPublicUrl(filePath);
+          photoUrl = pub.publicUrl;
+        } else {
+          const fallbackPath = `documents/${userId}/sub_${task.id}_${Date.now()}.jpg`;
+          const { error: fbErr } = await supabase.storage
+            .from('face-photos')
+            .upload(fallbackPath, arrayBuf, { contentType: 'image/jpeg', upsert: true });
+          if (!fbErr) {
+            const { data: fbPub } = supabase.storage.from('face-photos').getPublicUrl(fallbackPath);
+            photoUrl = fbPub.publicUrl;
           }
         }
-
-        const { error } = await supabase
-          .from('announcement_submissions')
-          .insert({
-            announcement_id: task.id,
-            employee_id: user.id,
-            message: response.message,
-            photo: photoUrl,
-            submitted_at: new Date().toISOString()
-          });
-
-        if (error) throw error;
       }
 
+      await Promise.allSettled([
+        supabase.from('announcement_submissions').insert({
+          announcement_id: task.id,
+          employee_id: userId,
+          message: msgSnapshot,
+          photo: photoUrl,
+          submitted_at: submittedAt,
+        }),
+        supabase.from('announcement_responses').upsert({
+          announcement_id: task.id,
+          employee_id: userId,
+          message: msgSnapshot,
+          photo: photoUrl,
+          created_at: submittedAt,
+        }),
+      ]);
+
+      try {
+        const ch = supabase.channel('ojt-instant-sync-v1');
+        ch.subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            ch.send({
+              type: 'broadcast',
+              event: 'live_sync',
+              payload: {
+                type: 'announcement_submission',
+                payload: {
+                  announcementId: task.id,
+                  submission: {
+                    id: `sub-${Date.now()}`,
+                    announcementId: task.id,
+                    employeeId: userId,
+                    message: msgSnapshot,
+                    photo: photoUrl || undefined,
+                    submittedAt,
+                  },
+                },
+              },
+            }).finally(() => supabase.removeChannel(ch));
+          }
+        });
+      } catch {}
+
       Alert.alert('Success', 'Your response has been submitted.');
-      // Refresh or clear
-      updateResponse(task.id, 'message', '');
-      updateResponse(task.id, 'photo', null);
     } catch (err: any) {
+      updateResponse(task.id, 'message', msgSnapshot);
+      updateResponse(task.id, 'photo', photoSnapshot);
       Alert.alert('Submission Failed', err.message);
     } finally {
       setSubmitting(null);

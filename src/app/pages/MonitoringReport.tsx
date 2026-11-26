@@ -327,22 +327,22 @@ export function MonitoringReport() {
   };
 
   const uploadFilesList = async (files: File[], prefix: string): Promise<TraineeDocumentFile[]> => {
-    const uploaded: TraineeDocumentFile[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const res = await uploadDocumentToStorage(file, traineeId || 'trainee', `${prefix}_${i}`);
-      uploaded.push({
-        id: `tmrf-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
-        name: file.name,
-        fileType: file.type || 'application/octet-stream',
-        size: file.size,
-        uploadedAt: new Date().toISOString(),
-        fileUrl: res.fileUrl,
-        dataUrl: res.dataUrl,
-        status: 'submitted',
-      });
-    }
-    return uploaded;
+    const uploadedAt = new Date().toISOString();
+    return Promise.all(
+      files.map(async (file, i) => {
+        const res = await uploadDocumentToStorage(file, traineeId || 'trainee', `${prefix}_${i}`);
+        return {
+          id: `tmrf-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+          name: file.name,
+          fileType: file.type || 'application/octet-stream',
+          size: file.size,
+          uploadedAt,
+          fileUrl: res.fileUrl,
+          dataUrl: res.dataUrl,
+          status: 'submitted' as const,
+        };
+      })
+    );
   };
 
   const attachFilesToReport = async (

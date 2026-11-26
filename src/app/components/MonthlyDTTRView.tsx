@@ -147,14 +147,34 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       if (typeof document !== 'undefined' && document.hidden) return;
       syncFromCloud(false);
     };
+
+    const onLiveDttrUpdated = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      const incomingTimeRecords: TimeRecord[] = Array.isArray(detail?.timeRecords) ? detail.timeRecords : [];
+      if (incomingTimeRecords.length > 0 && mounted) {
+        const validIds = new Set([lookupId, ...altIds].filter(Boolean));
+        const relevant = incomingTimeRecords.filter((r) => validIds.has(r.employeeId));
+        if (relevant.length > 0) {
+          setExtraEmployeeRecords((prev) => {
+            const byKey = new Map<string, TimeRecord>();
+            prev.forEach((r) => byKey.set(`${r.employeeId}_${r.date}`, r));
+            relevant.forEach((r) => byKey.set(`${r.employeeId}_${r.date}`, { ...(byKey.get(`${r.employeeId}_${r.date}`) || {}), ...r }));
+            return Array.from(byKey.values());
+          });
+        }
+      }
+    };
+
     window.addEventListener('focus', onFocusOrVisible);
     document.addEventListener('visibilitychange', onFocusOrVisible);
-    const interval = setInterval(onFocusOrVisible, 30000);
+    window.addEventListener('ojt_live_dttr_updated', onLiveDttrUpdated as EventListener);
+    const interval = setInterval(onFocusOrVisible, 12000);
 
     return () => {
       mounted = false;
       window.removeEventListener('focus', onFocusOrVisible);
       document.removeEventListener('visibilitychange', onFocusOrVisible);
+      window.removeEventListener('ojt_live_dttr_updated', onLiveDttrUpdated as EventListener);
       clearInterval(interval);
     };
   }, [selectedEmployeeId, selectedEmployee?.id]);
@@ -689,7 +709,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     }).length;
   }, [taskEdits, dailyRows]);
 
-  // Auto-save modified tasks after 1.5s of inactivity so mobile users don't lose edits if they switch devices without pressing Enter/Send
+  // Auto-save modified tasks after 0.7s of inactivity so mobile users don't lose edits if they switch devices without pressing Enter/Send
   useEffect(() => {
     if (!canEditTasks || !selectedEmployee || modifiedDayCount === 0) return;
     const timer = setTimeout(() => {
@@ -701,7 +721,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           handleSendSingleTask(day);
         }
       });
-    }, 1500);
+    }, 700);
     return () => clearTimeout(timer);
   }, [taskEdits, canEditTasks, selectedEmployee, modifiedDayCount]);
 
@@ -775,9 +795,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         updatedAt: nowIso,
       };
       saveMonthlyDttr(record);
-      await supabaseService.saveDttrStoreToStorage({ monthlyDttrs: [record] }).catch(() => {});
 
-      // 3. Clear draft for this day
+      // 3. Clear draft for this day immediately (cloud sync + live broadcast run in background)
       setTaskEdits((prev) => {
         const next = { ...prev };
         delete next[day];
@@ -883,7 +902,6 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       };
 
       saveMonthlyDttr(record);
-      await supabaseService.saveDttrStoreToStorage({ monthlyDttrs: [record] }).catch(() => {});
       setTaskEdits({});
       setJustSentDays(new Set(modifiedDays));
       setTimeout(() => setJustSentDays(new Set()), 3000);
@@ -981,7 +999,6 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         updatedAt: nowIso,
       };
       saveMonthlyDttr(record);
-      await supabaseService.saveDttrStoreToStorage({ monthlyDttrs: [record] }).catch(() => {});
       setTaskEdits({});
       setIsEditingTasks(false);
       toast.success('Tasks updated and sent successfully!');

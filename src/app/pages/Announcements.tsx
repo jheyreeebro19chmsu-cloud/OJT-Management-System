@@ -37,6 +37,22 @@ import type { Announcement, TraineeDocumentFile } from '../types';
 import { AnnouncementAttachmentView } from '../components/AnnouncementAttachmentView';
 import { formatFileSize } from '../utils/attachmentHelper';
 import { sortAnnouncements } from '../utils/announcementHelper';
+import { uploadDocumentToStorage as uploadDocFast } from '../utils/documentStorage';
+
+const inflightFeedUploads = new Map<string, Promise<{ fileUrl: string; dataUrl: string }>>();
+
+function serializePrimaryAttachment(files: TraineeDocumentFile[]): string {
+  const first = files[0];
+  if (!first) return '';
+  const url = first.fileUrl || first.dataUrl || '';
+  if (first.fileType.startsWith('image/')) return url;
+  return JSON.stringify({
+    url,
+    name: first.name,
+    type: first.fileType.includes('pdf') || first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'doc',
+    size: formatFileSize(Number(first.size)),
+  });
+}
 
 function toLocalDateStr(isoStr?: string): string {
   if (!isoStr) return '';
@@ -363,39 +379,54 @@ export function Announcements() {
     sortOrder,
   ]);
 
-  const onPickFiles = async (announcementId: string, fileList?: FileList | null) => {
+  const onPickFiles = (announcementId: string, fileList?: FileList | null) => {
     if (!fileList || fileList.length === 0) return;
     const selected = Array.from(fileList);
-    const processed: TraineeDocumentFile[] = [];
-    for (const f of selected) {
-      const b64 = await readAsDataUrl(f);
-      processed.push({
-        id: `file-${Date.now()}-${processed.length}`,
+    const nowIso = new Date().toISOString();
+    const batchTs = Date.now();
+
+    const optimistic: TraineeDocumentFile[] = selected.map((f, idx) => {
+      const fileId = `subfile-${batchTs}-${idx}`;
+      const previewUrl = URL.createObjectURL(f);
+      const uploadPromise = uploadDocFast(
+        f,
+        activeUser?.id || 'trainee',
+        `ann_sub_${announcementId}_${batchTs}_${idx}`
+      )
+        .then((res) => {
+          setFilesDrafts((prev) => {
+            const current = prev[announcementId];
+            if (!current || !current.some((item) => item.id === fileId)) return prev;
+            const updated = current.map((item) =>
+              item.id === fileId ? { ...item, fileUrl: res.fileUrl, dataUrl: res.dataUrl } : item
+            );
+            setPhotoDrafts((p) => ({ ...p, [announcementId]: serializePrimaryAttachment(updated) }));
+            return { ...prev, [announcementId]: updated };
+          });
+          return res;
+        })
+        .finally(() => {
+          inflightFeedUploads.delete(fileId);
+        });
+      inflightFeedUploads.set(fileId, uploadPromise);
+
+      return {
+        id: fileId,
         name: f.name,
         fileType: f.type || 'application/octet-stream',
         size: f.size,
-        uploadedAt: new Date().toISOString(),
-        dataUrl: b64,
-        fileUrl: b64,
-      });
-    }
+        uploadedAt: nowIso,
+        dataUrl: previewUrl,
+        fileUrl: previewUrl,
+      };
+    });
+
     setFilesDrafts((prev) => {
-      const next = [...(prev[announcementId] || []), ...processed];
-      const first = next[0];
-      if (first) {
-        const serialized = first.fileType.startsWith('image/')
-          ? first.dataUrl
-          : JSON.stringify({
-              url: first.dataUrl || first.fileUrl,
-              name: first.name,
-              type: first.fileType.includes('pdf') || first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'doc',
-              size: formatFileSize(Number(first.size)),
-            });
-        setPhotoDrafts((p) => ({ ...p, [announcementId]: serialized }));
-      }
+      const next = [...(prev[announcementId] || []), ...optimistic];
+      setPhotoDrafts((p) => ({ ...p, [announcementId]: serializePrimaryAttachment(next) }));
       return { ...prev, [announcementId]: next };
     });
-    toast.success(`${processed.length} file${processed.length > 1 ? 's' : ''} attached`);
+    toast.success(`${optimistic.length} file${optimistic.length > 1 ? 's' : ''} attached`);
   };
 
   const submit = (announcement: Announcement) => {
@@ -414,50 +445,38 @@ export function Announcements() {
         ? `Submitted ${attachedFiles.length} file${attachedFiles.length > 1 ? 's' : ''}: ${attachedFiles.map((f) => f.name).join(', ')}`
         : 'Submitted');
 
+    // Clear drafts & show instant confirmation immediately (zero network wait)
+    setMessageDrafts((prev) => ({ ...prev, [announcement.id]: '' }));
+    setPhotoDrafts((prev) => ({ ...prev, [announcement.id]: undefined }));
+    setFilesDrafts((prev) => ({ ...prev, [announcement.id]: [] }));
+    toast.success('File(s) & response submitted!');
+
+    // Optimistic state update right away
+    submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
+
+    // If any file upload is still completing in background, upgrade URLs as soon as it finishes
+    if (attachedFiles.some((f) => inflightFeedUploads.has(f.id))) {
+      void Promise.all(
+        attachedFiles.map(async (f) => {
+          const pending = inflightFeedUploads.get(f.id);
+          if (!pending) return f;
+          const res = await pending;
+          return { ...f, fileUrl: res.fileUrl, dataUrl: res.dataUrl };
+        })
+      ).then((resolvedFiles) => {
+        const resolvedPhoto = serializePrimaryAttachment(resolvedFiles) || photo;
+        submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, resolvedPhoto, resolvedFiles);
+      });
+    }
+
+    // Non-blocking optional legacy API sync
     if (API_BASE) {
       const formData = new FormData();
       formData.append('announcement_id', announcement.id);
       formData.append('user_id', String(activeUser.id));
       formData.append('message', effectiveMessage);
-      if (photo && photo.startsWith('data:')) {
-        fetch(photo)
-          .then((r) => r.blob())
-          .then((blob) => {
-            formData.append('image', blob, `submission_${Date.now()}.jpg`);
-            authAPI
-              .submitAnnouncementResponse(announcement.id, Number(activeUser.id), formData)
-              .then(() => {
-                submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
-                toast.success('File(s) & response submitted!');
-              })
-              .catch(() => {
-                submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
-                toast.success('File(s) & response submitted!');
-              });
-          })
-          .catch(() => {
-            submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
-            toast.success('File(s) & response submitted!');
-          });
-      } else {
-        authAPI
-          .submitAnnouncementResponse(announcement.id, Number(activeUser.id), formData)
-          .then(() => {
-            submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
-            toast.success('File(s) & response submitted!');
-          })
-          .catch(() => {
-            submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
-            toast.success('File(s) & response submitted!');
-          });
-      }
-    } else {
-      submitAnnouncementResponse(announcement.id, activeUser.id, effectiveMessage, photo, attachedFiles);
-      toast.success('File(s) & response submitted!');
+      authAPI.submitAnnouncementResponse(announcement.id, Number(activeUser.id), formData).catch(() => {});
     }
-    setMessageDrafts((prev) => ({ ...prev, [announcement.id]: '' }));
-    setPhotoDrafts((prev) => ({ ...prev, [announcement.id]: undefined }));
-    setFilesDrafts((prev) => ({ ...prev, [announcement.id]: [] }));
   };
 
   const handleCreatePost = async () => {
@@ -469,27 +488,68 @@ export function Announcements() {
       toast.error('Please provide both a title and details.');
       return;
     }
-    setIsSubmittingPost(true);
-    try {
-      let postCreatedAt = new Date().toISOString();
-      if (newPost.customDate) {
-        const timePart = newPost.customTime || toLocalTimeStr(new Date().toISOString()) || '08:00';
-        const parsed = new Date(`${newPost.customDate}T${timePart}`);
-        if (!isNaN(parsed.getTime())) {
-          postCreatedAt = parsed.toISOString();
-        }
+
+    const postSnapshot = { ...newPost, files: [...newPost.files] };
+    let postCreatedAt = new Date().toISOString();
+    if (postSnapshot.customDate) {
+      const timePart = postSnapshot.customTime || toLocalTimeStr(new Date().toISOString()) || '08:00';
+      const parsed = new Date(`${postSnapshot.customDate}T${timePart}`);
+      if (!isNaN(parsed.getTime())) {
+        postCreatedAt = parsed.toISOString();
+      }
+    }
+
+    // Reset composer & show immediate feedback without blocking on storage upload
+    const now = new Date();
+    setNewPost({
+      title: '',
+      content: '',
+      photo: '',
+      files: [],
+      requiresSubmission: false,
+      type: 'info',
+      targetRole: 'all',
+      customDate: toLocalDateStr(now.toISOString()),
+      customTime: toLocalTimeStr(now.toISOString()),
+    });
+    setIsPosting(false);
+    setIsSubmittingPost(false);
+
+    toast.success(
+      isHte
+        ? postSnapshot.files.length > 0
+          ? `HTE announcement & ${postSnapshot.files.length} file(s) posted!`
+          : 'HTE announcement posted successfully!'
+        : postSnapshot.files.length > 0
+          ? `Instructor announcement & ${postSnapshot.files.length} file(s) synced to Trainee accounts!`
+          : 'Instructor announcement posted!'
+    );
+
+    const finalizePost = async () => {
+      let resolvedFiles = postSnapshot.files;
+      if (resolvedFiles.some((f) => inflightFeedUploads.has(f.id))) {
+        resolvedFiles = await Promise.all(
+          resolvedFiles.map(async (f) => {
+            const pending = inflightFeedUploads.get(f.id);
+            if (!pending) return f;
+            const res = await pending;
+            return { ...f, fileUrl: res.fileUrl, dataUrl: res.dataUrl };
+          })
+        );
       }
 
-      const hasFiles = newPost.files.length > 0 || Boolean(newPost.photo);
+      const finalPhoto =
+        resolvedFiles.length > 0 ? serializePrimaryAttachment(resolvedFiles) : postSnapshot.photo;
+      const hasFiles = resolvedFiles.length > 0 || Boolean(finalPhoto);
 
       addAnnouncement({
-        title: newPost.title.trim(),
-        content: newPost.content.trim(),
-        photo: newPost.photo || undefined,
-        files: newPost.files.length > 0 ? newPost.files : undefined,
-        requiresSubmission: newPost.requiresSubmission || hasFiles,
-        type: newPost.type,
-        targetRole: newPost.targetRole,
+        title: postSnapshot.title.trim(),
+        content: postSnapshot.content.trim(),
+        photo: finalPhoto || undefined,
+        files: resolvedFiles.length > 0 ? resolvedFiles : undefined,
+        requiresSubmission: postSnapshot.requiresSubmission || hasFiles,
+        type: postSnapshot.type,
+        targetRole: postSnapshot.targetRole,
         isPinned: false,
         createdAt: postCreatedAt,
         createdBy: authorName,
@@ -497,12 +557,11 @@ export function Announcements() {
         academicYear: settings?.activeAcademicYear,
       });
 
-      // Automatically sync attached file(s) to Trainees' Documents requirements so it appears in their Documents account too
-      if (newPost.files.length > 0) {
-        const primaryFile = newPost.files[0];
+      if (resolvedFiles.length > 0) {
+        const primaryFile = resolvedFiles[0];
         addRequiredDocument('', {
-          title: newPost.title.trim(),
-          description: newPost.content.trim(),
+          title: postSnapshot.title.trim(),
+          description: postSnapshot.content.trim(),
           submittedBy: authorName,
           submittedByRole: isInstructor ? 'admin' : 'host',
           fileName: primaryFile.name,
@@ -510,34 +569,13 @@ export function Announcements() {
           fileSize: primaryFile.size,
           dataUrl: primaryFile.dataUrl,
           fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
-          files: newPost.files,
-          notes: `Synced from ${isHte ? 'HTE' : 'Instructor'} Announcement (${newPost.files.length} file${newPost.files.length > 1 ? 's' : ''})`,
+          files: resolvedFiles,
+          notes: `Synced from ${isHte ? 'HTE' : 'Instructor'} Announcement (${resolvedFiles.length} file${resolvedFiles.length > 1 ? 's' : ''})`,
         });
       }
+    };
 
-      toast.success(
-        isHte
-          ? (newPost.files.length > 0 ? `HTE announcement & ${newPost.files.length} file(s) posted!` : 'HTE announcement posted successfully!')
-          : (newPost.files.length > 0 ? `Instructor announcement & ${newPost.files.length} file(s) synced to Trainee accounts!` : 'Instructor announcement posted!')
-      );
-      const now = new Date();
-      setNewPost({
-        title: '',
-        content: '',
-        photo: '',
-        files: [],
-        requiresSubmission: false,
-        type: 'info',
-        targetRole: 'all',
-        customDate: toLocalDateStr(now.toISOString()),
-        customTime: toLocalTimeStr(now.toISOString()),
-      });
-      setIsPosting(false);
-    } catch (err: any) {
-      toast.error('Failed to post announcement: ' + (err?.message || 'Error'));
-    } finally {
-      setIsSubmittingPost(false);
-    }
+    void finalizePost();
   };
 
   const handleDeleteAnnouncement = (id: string) => {
@@ -818,44 +856,68 @@ export function Announcements() {
                     multiple
                     accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
                     className="hidden"
-                    onChange={async (e) => {
+                    onChange={(e) => {
                       const selected = Array.from(e.target.files || []);
                       if (selected.length === 0) return;
-                      const processed: TraineeDocumentFile[] = [];
-                      for (const f of selected) {
-                        const b64 = await readAsDataUrl(f);
-                        processed.push({
-                          id: `file-${Date.now()}-${processed.length}`,
+                      const nowIso = new Date().toISOString();
+                      const batchTs = Date.now();
+
+                      const optimistic: TraineeDocumentFile[] = selected.map((f, idx) => {
+                        const fileId = `postfile-${batchTs}-${idx}`;
+                        const previewUrl = URL.createObjectURL(f);
+                        const uploadPromise = uploadDocFast(
+                          f,
+                          activeUser?.id || 'instructor',
+                          `ann_post_${batchTs}_${idx}`
+                        )
+                          .then((res) => {
+                            setNewPost((prev) => {
+                              if (!prev.files.some((item) => item.id === fileId)) return prev;
+                              const updated = prev.files.map((item) =>
+                                item.id === fileId
+                                  ? { ...item, fileUrl: res.fileUrl, dataUrl: res.dataUrl }
+                                  : item
+                              );
+                              return {
+                                ...prev,
+                                files: updated,
+                                photo: serializePrimaryAttachment(updated),
+                              };
+                            });
+                            return res;
+                          })
+                          .finally(() => {
+                            inflightFeedUploads.delete(fileId);
+                          });
+                        inflightFeedUploads.set(fileId, uploadPromise);
+
+                        return {
+                          id: fileId,
                           name: f.name,
                           fileType: f.type || 'application/octet-stream',
                           size: f.size,
-                          uploadedAt: new Date().toISOString(),
-                          dataUrl: b64,
-                          fileUrl: b64,
-                        });
-                      }
+                          uploadedAt: nowIso,
+                          dataUrl: previewUrl,
+                          fileUrl: previewUrl,
+                        };
+                      });
+
                       setNewPost((p) => {
-                        const combined = [...p.files, ...processed];
+                        const combined = [...p.files, ...optimistic];
                         const first = combined[0];
-                        const primarySerialized = first
-                          ? first.fileType.startsWith('image/')
-                            ? first.dataUrl || ''
-                            : JSON.stringify({
-                                url: first.dataUrl || first.fileUrl,
-                                name: first.name,
-                                type: first.fileType.includes('pdf') || first.name.toLowerCase().endsWith('.pdf') ? 'pdf' : 'doc',
-                                size: formatFileSize(Number(first.size)),
-                              })
-                          : '';
                         return {
                           ...p,
-                          title: p.title.trim() ? p.title : first ? first.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ') : p.title,
+                          title: p.title.trim()
+                            ? p.title
+                            : first
+                              ? first.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ')
+                              : p.title,
                           files: combined,
-                          photo: primarySerialized,
+                          photo: serializePrimaryAttachment(combined),
                           requiresSubmission: true,
                         };
                       });
-                      toast.success(`Attached ${processed.length} file${processed.length > 1 ? 's' : ''}`);
+                      toast.success(`Attached ${optimistic.length} file${optimistic.length > 1 ? 's' : ''}`);
                       e.target.value = '';
                     }}
                   />

@@ -4,6 +4,8 @@ import { createBrowserRouter, isRouteErrorResponse, useRouteError, Navigate } fr
 import { AdminLayout } from './components/AdminLayout';
 import { EmployeeLayout } from './components/EmployeeLayout';
 import { HTELayout } from './components/HTELayout';
+import { Login } from './pages/Login';
+import OAuthCallback from './pages/OAuthCallback';
 function lazyWithRetry<T extends React.ComponentType<any>>(
   factory: () => Promise<{ default: T } | any>,
   componentName: string
@@ -56,8 +58,6 @@ const HTEAnnouncements = lazyWithRetry(() => import('./pages/HTEAnnouncements').
 const HTERecords = lazyWithRetry(() => import('./pages/HTERecords').then(m => ({ default: m.HTERecords })), 'HTERecords');
 const HTESettings = lazyWithRetry(() => import('./pages/HTESettings').then(m => ({ default: m.HTESettings })), 'HTESettings');
 const InstructorQR = lazyWithRetry(() => import('./pages/InstructorQR'), 'InstructorQR');
-const Login = lazyWithRetry(() => import('./pages/Login').then(m => ({ default: m.Login })), 'Login');
-const OAuthCallback = lazyWithRetry(() => import('./pages/OAuthCallback'), 'OAuthCallback');
 const Profile = lazyWithRetry(() => import('./pages/Profile').then(m => ({ default: m.Profile })), 'Profile');
 const QRScanner = lazyWithRetry(() => import('./pages/QRScanner'), 'QRScanner');
 const Records = lazyWithRetry(() => import('./pages/Records').then(m => ({ default: m.Records })), 'Records');
@@ -69,6 +69,9 @@ const AdminMonitoringReport = lazyWithRetry(() => import('./pages/admin/AdminMon
 const MonitoringReport = lazyWithRetry(() => import('./pages/MonitoringReport').then(m => ({ default: m.MonitoringReport })), 'MonitoringReport');
 
 const routeLoaders: Record<string, () => Promise<any>> = {
+  '/app': () => import('./pages/Dashboard'),
+  '/app/dashboard': () => import('./pages/Dashboard'),
+  '/register': () => import('./pages/Register'),
   '/admin': () => import('./pages/admin/AdminDashboard'),
   '/admin/dashboard': () => import('./pages/admin/AdminDashboard'),
   '/admin/employees': () => import('./pages/admin/AdminEmployees'),
@@ -215,12 +218,12 @@ function withSuspense(Component: React.ComponentType) {
 export const router = createBrowserRouter([
   {
     path: '/',
-    element: withSuspense(Login),
+    element: React.createElement(Login),
     errorElement: routeErrorElement,
   },
   {
     path: '/login',
-    element: withSuspense(Login),
+    element: React.createElement(Login),
     errorElement: routeErrorElement,
   },
   {
@@ -230,7 +233,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/oauth-callback',
-    element: withSuspense(OAuthCallback),
+    element: React.createElement(OAuthCallback),
     errorElement: routeErrorElement,
   },
   {

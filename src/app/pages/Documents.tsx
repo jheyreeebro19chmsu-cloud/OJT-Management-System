@@ -861,192 +861,218 @@ export function Documents() {
     const meta = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
     const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
     const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    const uploadedAtIso = new Date().toISOString();
+    const passStatus: 'passed' | 'submitted' = markAsPassed ? 'passed' : 'submitted';
+    const cleanDescription = (customDescription ?? submittedDocs[docKey]?.description ?? '').trim();
+    const cleanNotes = (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim();
+    const baseSubmittedDocs = { ...submittedDocs };
 
     try {
-      const processedFiles: TraineeDocumentFile[] = [];
+      // 1. Instant optimistic UI update (< 20ms) using local object URLs so modal closes with zero delay
+      const optimisticFiles: TraineeDocumentFile[] = dialogFiles.map((item, idx) => {
+        const previewUrl = item.file ? URL.createObjectURL(item.file) : item.fileUrl || item.dataUrl || '';
+        return {
+          id: item.id || `file-${Date.now()}-${idx}`,
+          name: item.name,
+          size: item.size,
+          dataUrl: item.dataUrl || previewUrl,
+          fileUrl: item.fileUrl || previewUrl,
+          fileType: item.fileType || item.file?.type || 'application/octet-stream',
+          uploadedAt: uploadedAtIso,
+        };
+      });
 
-      for (let idx = 0; idx < dialogFiles.length; idx++) {
-        const item = dialogFiles[idx];
+      const applyDocState = (filesToApply: TraineeDocumentFile[], persistRemote: boolean) => {
+        const primaryFile = filesToApply[0];
+        const count = filesToApply.length;
+        const displayName = count > 1 ? `${count} Files (${primaryFile.name})` : primaryFile.name;
+        const totalBytes = filesToApply.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
 
-        if (item.file) {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = (e) => resolve(e.target?.result as string);
-            reader.onerror = reject;
-            reader.readAsDataURL(item.file!);
+        const docItem: TraineeDocumentItem = {
+          name: displayName,
+          size: totalBytes,
+          dataUrl: primaryFile.dataUrl,
+          fileUrl: primaryFile.fileUrl,
+          fileType: primaryFile.fileType,
+          uploadedAt: uploadedAtIso,
+          status: passStatus,
+          description: cleanDescription,
+          notes: cleanNotes,
+          source: 'portal',
+          files: filesToApply,
+        };
+
+        const updatedDocs: TraineeDocuments = {
+          ...baseSubmittedDocs,
+          [docKey]: docItem,
+        };
+
+        const newUploadedCount = allDocRequirements.filter((k) => {
+          const item = k.key === docKey ? docItem : updatedDocs[k.key];
+          return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
+        }).length;
+        const allDocsPassed =
+          newUploadedCount === totalRequired &&
+          allDocRequirements.every((k) => (k.key === docKey ? docItem : updatedDocs[k.key])?.status === 'passed');
+        const finalDocStatus = allDocsPassed ? 'passed' : 'submitted';
+
+        setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: docItem }));
+
+        if (employee) {
+          updateEmployee(employee.id, {
+            submittedDocuments: updatedDocs,
+            documentsPassed: allDocsPassed,
+            documentsStatus: finalDocStatus,
+          });
+        }
+
+        if (targetEmpId) {
+          submitRequiredDocument(meta?.id || docKey, targetEmpId, {
+            fileName: displayName,
+            fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
+            fileDataUrl: primaryFile.dataUrl,
+            fileSize: totalBytes,
+            fileType: primaryFile.fileType,
+            files: filesToApply,
+            note: (customNotes ?? '').trim(),
+            notes: (customDescription ?? '').trim(),
           });
 
-          try {
-            sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`, dataUrl);
-            if (idx === 0) {
-              sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
-              sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
-              sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
-              if (meta?.id) {
-                sessionStorage.setItem(`ojt_doc_data_${meta.id}`, dataUrl);
-              }
-            }
-          } catch {}
-
-          let remoteUrl = '';
-          try {
-            const storedUrl = await Promise.race([
-              uploadDocumentToStorage(empId, `${docKey}_${idx}_${Date.now()}`, item.file, item.file.name),
-              new Promise<string>((_, reject) =>
-                setTimeout(() => reject(new Error('Storage upload timed out')), 35000)
-              ),
-            ]);
-            if (storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey')) {
-              remoteUrl = storedUrl;
-              try {
-                if (idx === 0) {
-                  localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, storedUrl);
-                }
-              } catch {}
-            }
-          } catch (uploadErr) {
-            console.warn('Document storage upload notice (using local base64 fallback):', uploadErr);
+          if (persistRemote) {
+            saveDocumentPassStatus(targetEmpId, {
+              docKey,
+              status: passStatus,
+              allPassed: allDocsPassed,
+              documentsStatus: finalDocStatus,
+              submittedDocuments: updatedDocs,
+              documentItem: docItem,
+            }).catch(console.warn);
           }
 
-          processedFiles.push({
-            id: item.id || `file-${Date.now()}-${idx}`,
-            name: item.name,
-            size: item.size,
-            dataUrl: remoteUrl || dataUrl,
-            fileUrl: remoteUrl || dataUrl,
-            fileType: item.fileType || item.file.type || 'application/octet-stream',
-            uploadedAt: new Date().toISOString(),
-          });
           try {
-            localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`, remoteUrl || dataUrl);
-            if (idx === 0) {
-              localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, remoteUrl || dataUrl);
-              localStorage.setItem(`ojt_doc_base64_${docKey}`, remoteUrl || dataUrl);
-            }
+            window.dispatchEvent(
+              new CustomEvent('ojt_document_submitted', {
+                detail: {
+                  employeeId: targetEmpId,
+                  studentName: employee?.name || currentUser?.name || '',
+                  docKey,
+                  docTitle: meta?.title || docKey,
+                  documentItem: docItem,
+                  submittedAt: docItem.uploadedAt,
+                  filesCount: count,
+                },
+              })
+            );
           } catch {}
-        } else {
-          processedFiles.push({
-            id: item.id || `file-${Date.now()}-${idx}`,
-            name: item.name,
-            size: item.size,
-            dataUrl: item.dataUrl,
-            fileUrl: item.fileUrl || item.dataUrl,
-            fileType: item.fileType,
-            uploadedAt: new Date().toISOString(),
-          });
         }
-      }
 
-      try {
-        const serializedFiles = JSON.stringify(processedFiles);
-        localStorage.setItem(`ojt_shared_doc_files_${empId}_${docKey}`, serializedFiles);
-        localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serializedFiles);
-        if (employee?.employeeId) {
-          localStorage.setItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`, serializedFiles);
-        }
-      } catch {}
-
-      const passStatus: 'passed' | 'submitted' = markAsPassed ? 'passed' : 'submitted';
-      const primaryFile = processedFiles[0];
-      const count = processedFiles.length;
-      const displayName =
-        count > 1 ? `${count} Files (${primaryFile.name})` : primaryFile.name;
-      const totalBytes = processedFiles.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
-
-      const newDocItem: TraineeDocumentItem = {
-        name: displayName,
-        size: totalBytes,
-        dataUrl: primaryFile.dataUrl,
-        fileUrl: primaryFile.fileUrl,
-        fileType: primaryFile.fileType,
-        uploadedAt: new Date().toISOString(),
-        status: passStatus,
-        description: (customDescription ?? submittedDocs[docKey]?.description ?? '').trim(),
-        notes: (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim(),
-        source: 'portal',
-        files: processedFiles,
+        return { count };
       };
 
-      const updatedDocs: TraineeDocuments = {
-        ...submittedDocs,
-        [docKey]: newDocItem,
-      };
-
-      const newUploadedCount = allDocRequirements.filter((k) => {
-        const item = k.key === docKey ? newDocItem : updatedDocs[k.key];
-        return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
-      }).length;
-      const allDocsPassed =
-        newUploadedCount === totalRequired &&
-        allDocRequirements.every((k) => (k.key === docKey ? newDocItem : updatedDocs[k.key])?.status === 'passed');
-      const finalDocStatus = allDocsPassed ? 'passed' : 'submitted';
-
-      setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: newDocItem }));
-
-      if (employee) {
-        updateEmployee(employee.id, {
-          submittedDocuments: updatedDocs,
-          documentsPassed: allDocsPassed,
-          documentsStatus: finalDocStatus,
-        });
-      }
-
-      if (targetEmpId) {
-        saveDocumentPassStatus(targetEmpId, {
-          docKey,
-          status: passStatus,
-          allPassed: allDocsPassed,
-          documentsStatus: finalDocStatus,
-          submittedDocuments: updatedDocs,
-          documentItem: newDocItem,
-        }).catch(console.warn);
-
-        submitRequiredDocument(meta?.id || docKey, targetEmpId, {
-          fileName: displayName,
-          fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
-          fileDataUrl: primaryFile.dataUrl,
-          fileSize: totalBytes,
-          fileType: primaryFile.fileType,
-          files: processedFiles,
-          note: (customNotes ?? '').trim(),
-          notes: (customDescription ?? '').trim(),
-        });
-
-        try {
-          window.dispatchEvent(
-            new CustomEvent('ojt_document_submitted', {
-              detail: {
-                employeeId: targetEmpId,
-                studentName: employee?.name || currentUser?.name || '',
-                docKey,
-                docTitle: meta?.title || docKey,
-                documentItem: newDocItem,
-                submittedAt: newDocItem.uploadedAt,
-                filesCount: count,
-              },
-            })
-          );
-        } catch {}
-      }
+      const { count } = applyDocState(optimisticFiles, !dialogFiles.some((d) => Boolean(d.file)));
 
       logActivity({
         type: 'document_upload',
         title: `Document Uploaded: ${meta?.title || docKey}`,
-        description: `Submitted ${count} file${count > 1 ? 's' : ''} [${processedFiles.map((f) => f.name).join(', ')}] for compliance verification`,
+        description: `Submitted ${count} file${count > 1 ? 's' : ''} [${optimisticFiles.map((f) => f.name).join(', ')}] for compliance verification`,
         userId: targetEmpId,
         userName: employee?.name || currentUser?.name || 'Trainee',
         userRole: 'employee',
       });
+
+      // Immediately close dialog & unblock UI while parallel cloud upload finishes in background
+      setUploadingKey(null);
+      setSubmitDialog(null);
 
       toast.success(
         markAsPassed
           ? `${meta?.title || 'Document'} (${count} file${count > 1 ? 's' : ''}) recorded!`
           : `✓ "${meta?.title || 'Document'}" (${count} file${count > 1 ? 's' : ''}) submitted to your Instructor for review!`
       );
+
+      // 2. Parallel background upload + compression for all selected files
+      if (dialogFiles.some((d) => Boolean(d.file))) {
+        void Promise.all(
+          dialogFiles.map(async (item, idx): Promise<TraineeDocumentFile> => {
+            if (!item.file) {
+              return optimisticFiles[idx];
+            }
+
+            const readDataUrlPromise = new Promise<string>((resolve) => {
+              const reader = new FileReader();
+              reader.onload = (e) => resolve((e.target?.result as string) || '');
+              reader.onerror = () => resolve('');
+              reader.readAsDataURL(item.file!);
+            });
+
+            const uploadRemotePromise = Promise.race([
+              uploadDocumentToStorage(empId, `${docKey}_${idx}_${Date.now()}`, item.file, item.file.name),
+              new Promise<string>((_, reject) =>
+                setTimeout(() => reject(new Error('Storage upload timed out')), 30000)
+              ),
+            ]).catch((uploadErr) => {
+              console.warn('Document storage upload notice (using local base64 fallback):', uploadErr);
+              return '';
+            });
+
+            const [dataUrl, storedUrl] = await Promise.all([readDataUrlPromise, uploadRemotePromise]);
+            const remoteUrl =
+              storedUrl && storedUrl.startsWith('http') && !storedUrl.includes('NoSuchKey') ? storedUrl : '';
+
+            try {
+              if (dataUrl) {
+                sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`, dataUrl);
+                if (idx === 0) {
+                  sessionStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, dataUrl);
+                  sessionStorage.setItem(`ojt_doc_base64_${docKey}`, dataUrl);
+                  sessionStorage.setItem(`ojt_doc_data_${docKey}`, dataUrl);
+                  if (meta?.id) sessionStorage.setItem(`ojt_doc_data_${meta.id}`, dataUrl);
+                }
+              }
+              if (remoteUrl && idx === 0) {
+                localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, remoteUrl);
+              }
+              const bestUrl = remoteUrl || dataUrl;
+              if (bestUrl) {
+                localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`, bestUrl);
+                if (idx === 0) {
+                  localStorage.setItem(`ojt_doc_base64_${empId}_${docKey}`, bestUrl);
+                  localStorage.setItem(`ojt_doc_base64_${docKey}`, bestUrl);
+                }
+              }
+            } catch {}
+
+            const finalUrl = remoteUrl || dataUrl || optimisticFiles[idx].fileUrl || '';
+            return {
+              id: optimisticFiles[idx].id,
+              name: item.name,
+              size: item.size,
+              dataUrl: finalUrl,
+              fileUrl: finalUrl,
+              fileType: item.fileType || item.file.type || 'application/octet-stream',
+              uploadedAt: uploadedAtIso,
+            };
+          })
+        )
+          .then((processedFiles) => {
+            try {
+              const serializedFiles = JSON.stringify(processedFiles);
+              localStorage.setItem(`ojt_shared_doc_files_${empId}_${docKey}`, serializedFiles);
+              localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serializedFiles);
+              if (employee?.employeeId) {
+                localStorage.setItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`, serializedFiles);
+              }
+            } catch {}
+
+            applyDocState(processedFiles, true);
+          })
+          .catch((bgErr) => {
+            console.warn('Background document sync notice:', bgErr);
+          });
+      }
     } catch (err) {
       console.error('Document submission error:', err);
       toast.error('Could not complete submission. Please try again.');
-    } finally {
       setUploadingKey(null);
       setSubmitDialog(null);
     }

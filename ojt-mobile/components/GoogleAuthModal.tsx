@@ -10,8 +10,33 @@ import {
   Platform,
 } from 'react-native';
 import { WebView, WebViewNavigation } from 'react-native-webview';
-import { X, Lock, RefreshCw } from 'lucide-react-native';
-import { supabase } from '../lib/supabase';
+import { X, Lock } from 'lucide-react-native';
+import { decode } from 'base64-arraybuffer';
+import { supabase, SUPABASE_URL } from '../lib/supabase';
+
+function decodeJwtUserFast(rawToken?: string | null): any | null {
+  if (!rawToken) return null;
+  try {
+    const parts = rawToken.trim().split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const bytes = new Uint8Array(decode(padded));
+    let str = '';
+    for (let i = 0; i < bytes.length; i++) str += String.fromCharCode(bytes[i]);
+    const payload = JSON.parse(str);
+    if (!payload?.sub) return null;
+    return {
+      id: payload.sub,
+      email: payload.email || payload.user_metadata?.email || '',
+      role: payload.role || 'authenticated',
+      user_metadata: payload.user_metadata || {},
+      app_metadata: payload.app_metadata || {},
+    };
+  } catch {
+    return null;
+  }
+}
 
 interface GoogleAuthModalProps {
   visible: boolean;
@@ -50,15 +75,29 @@ export default function GoogleAuthModal({
       try {
         if (Platform.OS === 'web' && typeof window !== 'undefined') {
           const origin = window.location.origin;
+          const redirectUrl = `${origin}/oauth-callback${targetRole ? `?role=${targetRole}` : ''}`;
+          if (SUPABASE_URL) {
+            window.location.assign(
+              `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectUrl)}`
+            );
+            return;
+          }
           await supabase.auth.signInWithOAuth({
             provider: 'google',
             options: {
-              redirectTo: `${origin}/oauth-callback`,
-              queryParams: {
-                prompt: 'select_account',
-              },
+              redirectTo: redirectUrl,
             },
           });
+          return;
+        }
+
+        // Instant zero-wait URL generation for native WebView
+        if (SUPABASE_URL) {
+          const directAuthUrl = `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(REDIRECT_URI)}&prompt=select_account`;
+          if (isMounted) {
+            setAuthUrl(directAuthUrl);
+            setLoading(false);
+          }
           return;
         }
 
@@ -115,6 +154,24 @@ export default function GoogleAuthModal({
       const refreshToken = params.get('refresh_token');
 
       if (accessToken && refreshToken) {
+        const fastUser = decodeJwtUserFast(accessToken);
+        if (fastUser) {
+          // Persist session in background while completing sign-in UI immediately
+          supabase.auth
+            .setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            })
+            .catch(() => {});
+          onSuccess(
+            { access_token: accessToken, refresh_token: refreshToken, user: fastUser },
+            fastUser,
+            targetRole
+          );
+          onClose();
+          return;
+        }
+
         const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,

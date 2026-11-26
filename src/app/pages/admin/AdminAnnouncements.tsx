@@ -28,12 +28,35 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { toast } from 'sonner';
 
 import { authAPI } from '../../services/authApi';
+import * as supabaseService from '../../services/supabaseService';
+import { uploadDocumentToStorage as uploadDocFast } from '../../utils/documentStorage';
 import { useApp } from '../../store/AppContext';
 import { API_BASE } from '../../services/config';
 import { Announcement, TraineeDocumentFile } from '../../types';
 import { AnnouncementAttachmentView } from '../../components/AnnouncementAttachmentView';
 import { formatFileSize } from '../../utils/attachmentHelper';
 import { sortAnnouncements } from '../../utils/announcementHelper';
+
+const inflightAdminAnnUploads = new Map<string, Promise<{ fileUrl: string; dataUrl: string }>>();
+
+function serializeAdminAnnFiles(combined: TraineeDocumentFile[]): string {
+  const first = combined[0];
+  if (!first) return '';
+  if (combined.length === 1 && first.fileType.startsWith('image/')) {
+    return first.fileUrl || first.dataUrl || '';
+  }
+  let type: 'pdf' | 'doc' | 'file' = 'file';
+  if (first.fileType === 'application/pdf' || first.name.toLowerCase().endsWith('.pdf')) type = 'pdf';
+  else if (first.name.match(/\.(doc|docx|txt|rtf|csv|xlsx|xls)$/i)) type = 'doc';
+  else if (first.fileType.startsWith('image/')) type = 'image' as any;
+  return JSON.stringify({
+    url: first.fileUrl || first.dataUrl,
+    name: first.name,
+    type,
+    size: formatFileSize(Number(first.size)),
+    files: combined,
+  });
+}
 
 function toLocalDateStr(isoStr?: string): string {
   if (!isoStr) return '';
@@ -299,57 +322,91 @@ export function AdminAnnouncements() {
       createdByRole: (currentUser?.role === 'host' ? 'host' : 'admin') as 'admin' | 'host',
     };
 
-    if (editId) {
-      const existing = announcements.find((a) => a.id === editId);
-      if (existing?.comments && existing.comments.trim().startsWith('[')) {
-        (data as any).comments = existing.comments;
-      }
-      updateAnnouncement(editId, data);
-      toast.success('Announcement updated!');
-    } else {
-      addAnnouncement(data);
-      if (form.files && form.files.length > 0) {
-        const primaryFile = form.files[0];
-        addRequiredDocument('', {
-          title: form.title.trim(),
-          description: form.content.trim(),
-          submittedBy: currentUser?.name || 'OJT Instructor',
-          submittedByRole: 'admin',
-          fileName: primaryFile.name,
-          fileType: primaryFile.fileType,
-          fileSize: primaryFile.size,
-          dataUrl: primaryFile.dataUrl,
-          fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
-          files: form.files,
-          notes: `Synced from Instructor Announcement (${form.files.length} file${form.files.length > 1 ? 's' : ''})`,
-        });
-      }
-      toast.success(
-        form.files && form.files.length > 0
-          ? `Announcement & ${form.files.length} file(s) synced to Trainees' accounts!`
-          : 'Announcement posted successfully!'
-      );
-    }
+    const editIdSnapshot = editId;
+    const formSnapshot = { ...form, files: [...(form.files || [])] };
 
+    // Close modal & show instant confirmation without waiting on any network roundtrip
     setShowForm(false);
+    toast.success(
+      editIdSnapshot
+        ? 'Announcement updated!'
+        : formSnapshot.files.length > 0
+          ? `Announcement & ${formSnapshot.files.length} file(s) synced to Trainees' accounts!`
+          : 'Announcement posted successfully!'
+    );
 
-    // Optional background sync with Django backend
-    if (API_BASE && !editId) {
-      try {
-        const formData = new FormData();
-        formData.append('user_id', String(currentUser?.id || ''));
-        formData.append('title', form.title);
-        formData.append('content', form.content);
-        if (form.photo && form.photo.startsWith('data:')) {
-          const res = await fetch(form.photo);
-          const blob = await res.blob();
-          formData.append('image', blob, `announcement_${Date.now()}.jpg`);
-        }
-        authAPI.postAnnouncement(Number(currentUser?.id || 0), formData).catch(() => {});
-      } catch {
-        // ignore background sync errors
+    const finalizeSave = async () => {
+      let resolvedFiles = formSnapshot.files;
+      const hasPending = resolvedFiles.some((f) => inflightAdminAnnUploads.has(f.id));
+      if (hasPending) {
+        resolvedFiles = await Promise.all(
+          resolvedFiles.map(async (f) => {
+            const pending = inflightAdminAnnUploads.get(f.id);
+            if (!pending) return f;
+            const res = await pending;
+            return {
+              ...f,
+              fileUrl: res.fileUrl || f.fileUrl,
+              dataUrl: res.dataUrl || f.dataUrl,
+            };
+          })
+        );
       }
-    }
+
+      const finalPhoto =
+        resolvedFiles.length > 0 ? serializeAdminAnnFiles(resolvedFiles) : data.photo;
+      const finalData = {
+        ...data,
+        photo: finalPhoto || undefined,
+        files: resolvedFiles.length > 0 ? resolvedFiles : data.files,
+      };
+
+      if (editIdSnapshot) {
+        const existing = announcements.find((a) => a.id === editIdSnapshot);
+        if (existing?.comments && existing.comments.trim().startsWith('[')) {
+          (finalData as any).comments = existing.comments;
+        }
+        updateAnnouncement(editIdSnapshot, finalData);
+      } else {
+        addAnnouncement(finalData);
+        if (resolvedFiles.length > 0) {
+          const primaryFile = resolvedFiles[0];
+          addRequiredDocument('', {
+            title: formSnapshot.title.trim(),
+            description: formSnapshot.content.trim(),
+            submittedBy: currentUser?.name || 'OJT Instructor',
+            submittedByRole: 'admin',
+            fileName: primaryFile.name,
+            fileType: primaryFile.fileType,
+            fileSize: primaryFile.size,
+            dataUrl: primaryFile.dataUrl,
+            fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
+            files: resolvedFiles,
+            notes: `Synced from Instructor Announcement (${resolvedFiles.length} file${resolvedFiles.length > 1 ? 's' : ''})`,
+          });
+        }
+      }
+
+      // Optional background sync with Django backend
+      if (API_BASE && !editIdSnapshot) {
+        try {
+          const formData = new FormData();
+          formData.append('user_id', String(currentUser?.id || ''));
+          formData.append('title', formSnapshot.title);
+          formData.append('content', formSnapshot.content);
+          if (finalPhoto && finalPhoto.startsWith('data:')) {
+            const res = await fetch(finalPhoto);
+            const blob = await res.blob();
+            formData.append('image', blob, `announcement_${Date.now()}.jpg`);
+          }
+          authAPI.postAnnouncement(Number(currentUser?.id || 0), formData).catch(() => {});
+        } catch {
+          // ignore background sync errors
+        }
+      }
+    };
+
+    void finalizeSave();
   };
 
   const handleDelete = (id: string) => {
@@ -1078,75 +1135,69 @@ export function AdminAnnouncements() {
                         type="file"
                         multiple
                         accept="image/*,.pdf,.doc,.docx,.txt,.csv,.xlsx,.xls"
-                        onChange={async (e) => {
+                        onChange={(e) => {
                           const selected = Array.from(e.target.files || []);
                           if (selected.length === 0) return;
-                          toast.loading(`Processing ${selected.length} file(s)...`, { id: 'attach-upload' });
-                          const processed: TraineeDocumentFile[] = [];
-                          for (const f of selected) {
-                            const dataUrl = await new Promise<string>((resolve) => {
-                              const reader = new FileReader();
-                              reader.onload = () => resolve(String(reader.result || ''));
-                              reader.onerror = () => resolve('');
-                              reader.readAsDataURL(f);
-                            });
-                            if (!dataUrl) continue;
-                            let finalUrl = dataUrl;
-                            try {
-                              const remoteUrl = await supabaseService.uploadDocumentToStorage(
-                                currentUser?.id || 'admin',
-                                `ann_${Date.now()}_${processed.length}`,
-                                f,
-                                f.name
-                              );
-                              if (remoteUrl && remoteUrl.startsWith('http')) {
-                                finalUrl = remoteUrl;
-                              }
-                            } catch {}
+                          const nowIso = new Date().toISOString();
+                          const batchTs = Date.now();
 
-                            processed.push({
-                              id: `file-${Date.now()}-${processed.length}`,
+                          // Attach chips instantaneously (< 5ms) with local preview URLs while uploading in parallel
+                          const optimisticFiles: TraineeDocumentFile[] = selected.map((f, idx) => {
+                            const fileId = `file-${batchTs}-${idx}`;
+                            const previewUrl = URL.createObjectURL(f);
+                            const uploadPromise = uploadDocFast(
+                              f,
+                              currentUser?.id || 'admin',
+                              `ann_${batchTs}_${idx}`
+                            )
+                              .then((res) => {
+                                setForm((prev) => {
+                                  if (!prev.files || !prev.files.some((item) => item.id === fileId)) return prev;
+                                  const updatedFiles = prev.files.map((item) =>
+                                    item.id === fileId
+                                      ? { ...item, fileUrl: res.fileUrl, dataUrl: res.dataUrl }
+                                      : item
+                                  );
+                                  return {
+                                    ...prev,
+                                    files: updatedFiles,
+                                    photo: serializeAdminAnnFiles(updatedFiles),
+                                  };
+                                });
+                                return res;
+                              })
+                              .finally(() => {
+                                inflightAdminAnnUploads.delete(fileId);
+                              });
+                            inflightAdminAnnUploads.set(fileId, uploadPromise);
+
+                            return {
+                              id: fileId,
                               name: f.name,
                               fileType: f.type || 'application/octet-stream',
                               size: f.size,
-                              uploadedAt: new Date().toISOString(),
-                              dataUrl: finalUrl,
-                              fileUrl: finalUrl,
-                            });
-                          }
-                          toast.dismiss('attach-upload');
-                          if (processed.length > 0) {
-                            setForm((p) => {
-                              const combined = [...(p.files || []), ...processed];
-                              const first = combined[0];
-                              let serialized = '';
-                              if (first) {
-                                if (combined.length === 1 && first.fileType.startsWith('image/')) {
-                                  serialized = first.dataUrl || first.fileUrl || '';
-                                } else {
-                                  let type: 'pdf' | 'doc' | 'file' = 'file';
-                                  if (first.fileType === 'application/pdf' || first.name.toLowerCase().endsWith('.pdf')) type = 'pdf';
-                                  else if (first.name.match(/\.(doc|docx|txt|rtf|csv|xlsx|xls)$/i)) type = 'doc';
-                                  else if (first.fileType.startsWith('image/')) type = 'image' as any;
-                                  serialized = JSON.stringify({
-                                    url: first.dataUrl || first.fileUrl,
-                                    name: first.name,
-                                    type,
-                                    size: formatFileSize(Number(first.size)),
-                                    files: combined,
-                                  });
-                                }
-                              }
-                              return {
-                                ...p,
-                                title: p.title.trim() ? p.title : first ? first.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ') : p.title,
-                                files: combined,
-                                photo: serialized,
-                                requiresSubmission: true,
-                              };
-                            });
-                            toast.success(`Attached ${processed.length} file${processed.length > 1 ? 's' : ''}`);
-                          }
+                              uploadedAt: nowIso,
+                              dataUrl: previewUrl,
+                              fileUrl: previewUrl,
+                            };
+                          });
+
+                          setForm((p) => {
+                            const combined = [...(p.files || []), ...optimisticFiles];
+                            const first = combined[0];
+                            return {
+                              ...p,
+                              title: p.title.trim()
+                                ? p.title
+                                : first
+                                  ? first.name.replace(/\.[^/.]+$/, '').replace(/[_-]+/g, ' ')
+                                  : p.title,
+                              files: combined,
+                              photo: serializeAdminAnnFiles(combined),
+                              requiresSubmission: true,
+                            };
+                          });
+                          toast.success(`Attached ${optimisticFiles.length} file${optimisticFiles.length > 1 ? 's' : ''}`);
                           e.target.value = '';
                         }}
                         className="hidden"

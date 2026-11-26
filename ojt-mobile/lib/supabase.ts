@@ -32,7 +32,8 @@ const ExpoSecureStoreAdapter = {
     Platform.OS === 'web' ? webStorage.removeItem(key) : SecureStore.deleteItemAsync(key),
 };
 
-const supabaseUrl = 'https://wooighmdckuoebsuegzz.supabase.co';
+export const SUPABASE_URL = 'https://wooighmdckuoebsuegzz.supabase.co';
+const supabaseUrl = SUPABASE_URL;
 const supabaseAnonKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indvb2lnaG1kY2t1b2Vic3VlZ3p6Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2OTE4MDcsImV4cCI6MjA4ODI2NzgwN30.ETVnzajdLNdezhh-lraSrubf1MC--VSyKKV3KUh9vWk';
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {

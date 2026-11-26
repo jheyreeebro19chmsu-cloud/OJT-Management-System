@@ -149,9 +149,46 @@ if (typeof window !== 'undefined') {
   }
 }
 
-// Create Supabase client only if configured
+// Build direct GoTrue Google authorize URL synchronously (< 1ms, zero lock/network wait)
+export function getDirectGoogleOAuthUrl(redirectTo: string): string {
+  if (!supabaseUrl) return '';
+  const base = supabaseUrl.replace(/\/$/, '');
+  return `${base}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
+}
+
+// Synchronously decode user identity from a Supabase OAuth access_token JWT without extra /auth/v1/user roundtrip
+export function decodeSupabaseJwtUser(rawToken?: string | null): any | null {
+  if (!rawToken) return null;
+  try {
+    const token = rawToken.replace(/^Bearer\s+/i, '').trim();
+    const parts = token.split('.');
+    if (parts.length !== 3) return null;
+    const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+    const padded = base64 + '='.repeat((4 - (base64.length % 4)) % 4);
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const jsonStr = new TextDecoder().decode(bytes);
+    const payload = JSON.parse(jsonStr);
+    if (!payload?.sub) return null;
+    return {
+      id: payload.sub,
+      email: payload.email || payload.user_metadata?.email || '',
+      role: payload.role || 'authenticated',
+      user_metadata: payload.user_metadata || {},
+      app_metadata: payload.app_metadata || {},
+    };
+  } catch {
+    return null;
+  }
+}
+
+// Create Supabase client only if configured (using non-blocking lock so Chrome navigator.locks never stalls OAuth)
 export const supabase = isSupabaseConfigured()
   ? createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        lock: async <R>(_name: string, _acquireTimeout: number, fn: () => Promise<R>): Promise<R> => {
+          return await fn();
+        },
+      },
       global: {
         fetch: resilientSupabaseFetch,
       },

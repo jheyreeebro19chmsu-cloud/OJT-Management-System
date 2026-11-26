@@ -329,22 +329,22 @@ export function AdminMonitoringReport() {
   };
 
   const processFilesUpload = async (files: File[], prefixId: string): Promise<TraineeDocumentFile[]> => {
-    const uploaded: TraineeDocumentFile[] = [];
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      const res = await uploadDocumentToStorage(file, 'instructor-monitoring', `${prefixId}_${i}`);
-      uploaded.push({
-        id: `mrf-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
-        name: file.name,
-        fileType: file.type || 'application/octet-stream',
-        size: file.size,
-        uploadedAt: new Date().toISOString(),
-        fileUrl: res.fileUrl,
-        dataUrl: res.dataUrl,
-        status: 'submitted',
-      });
-    }
-    return uploaded;
+    const uploadedAt = new Date().toISOString();
+    return Promise.all(
+      files.map(async (file, i) => {
+        const res = await uploadDocumentToStorage(file, 'instructor-monitoring', `${prefixId}_${i}`);
+        return {
+          id: `mrf-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+          name: file.name,
+          fileType: file.type || 'application/octet-stream',
+          size: file.size,
+          uploadedAt,
+          fileUrl: res.fileUrl,
+          dataUrl: res.dataUrl,
+          status: 'submitted' as const,
+        };
+      })
+    );
   };
 
   const handleCreateMonitoringReportFile = async (e: React.FormEvent) => {

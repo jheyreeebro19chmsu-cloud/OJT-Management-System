@@ -1632,7 +1632,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
             pathname.startsWith('/reset-password') ||
             isOAuthCallbackRoute;
 
-          if (isOAuthCallbackRoute && !currentUser) {
+          const isLoginScreenOnly =
+            !currentUser && (pathname === '/' || pathname.startsWith('/login'));
+
+          if ((isOAuthCallbackRoute || isLoginScreenOnly) && !currentUser) {
             if (isMounted) {
               setIsLoading(false);
             }
@@ -1862,7 +1865,120 @@ export function AppProvider({ children }: { children: ReactNode }) {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [currentUser?.id]);
+
+  // Instant <100ms cross-device & cross-tab Realtime Broadcast subscription for Tasks, File Uploads, and Announcements
+  useEffect(() => {
+    const unsubscribe = supabaseService.subscribeLiveEvents((ev) => {
+      const { type, payload } = ev;
+      if (!type || !payload) return;
+
+      if (type === 'task_updated') {
+        if (Array.isArray(payload.monthlyDttrs) && payload.monthlyDttrs.length > 0) {
+          setMonthlyDttrs((prev) => {
+            const merged = supabaseService.mergeMonthlyDttrsList(payload.monthlyDttrs, prev);
+            saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, merged);
+            return merged;
+          });
+        }
+        if (Array.isArray(payload.timeRecords) && payload.timeRecords.length > 0) {
+          setTimeRecords((prev) => {
+            const merged = mergeTimeRecords(payload.timeRecords, prev);
+            saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+            return merged;
+          });
+        }
+        try {
+          window.dispatchEvent(new CustomEvent('ojt_live_dttr_updated', { detail: payload }));
+        } catch {}
+      } else if (type === 'announcement_created' && payload.id) {
+        setAnnouncements((prev) => {
+          const filtered = prev.filter(
+            (a) => a.id !== payload.id && !(a.id.startsWith('ann-') && a.title === payload.title && a.createdBy === payload.createdBy)
+          );
+          const updated = sortAnnouncements([payload as Announcement, ...filtered]);
+          saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+          return updated;
+        });
+      } else if (type === 'announcement_updated' && payload.id) {
+        setAnnouncements((prev) => {
+          const updated = sortAnnouncements(
+            prev.map((a) => (a.id === payload.id ? { ...a, ...payload.updates } : a))
+          );
+          saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+          return updated;
+        });
+      } else if (type === 'announcement_deleted' && payload.id) {
+        setAnnouncements((prev) => {
+          const updated = prev.filter((a) => a.id !== payload.id);
+          saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
+          return updated;
+        });
+      } else if (type === 'announcement_comment' && payload.comment) {
+        setAnnouncementComments((prev) => {
+          const next = deduplicateComments([...prev, payload.comment]);
+          saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, next);
+          return next;
+        });
+      } else if (type === 'announcement_submission' && payload.submission) {
+        setAnnouncementSubmissions((prev) => {
+          const next = [
+            payload.submission,
+            ...prev.filter(
+              (s) =>
+                !(
+                  s.announcementId === payload.submission.announcementId &&
+                  s.employeeId === payload.submission.employeeId
+                )
+            ),
+          ];
+          saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_SUBMISSIONS, next);
+          return next;
+        });
+      } else if (type === 'document_uploaded' && payload.employeeId) {
+        setEmployees((prev) => {
+          const next = prev.map((emp) => {
+            if (emp.id !== payload.employeeId && emp.employeeId !== payload.employeeId) return emp;
+            const mergedDocs = {
+              ...(emp.submittedDocuments || {}),
+              ...(payload.submittedDocuments || {}),
+              ...(payload.docKey && payload.documentItem ? { [payload.docKey]: payload.documentItem } : {}),
+            };
+            return {
+              ...emp,
+              submittedDocuments: mergedDocs,
+              documentsPassed: payload.documentsPassed ?? emp.documentsPassed,
+              documentsStatus: payload.documentsStatus ?? emp.documentsStatus,
+            };
+          });
+          saveToStorage(STORAGE_KEYS.EMPLOYEES, next);
+          return next;
+        });
+        try {
+          window.dispatchEvent(new CustomEvent('ojt_employee_documents_updated', { detail: payload }));
+        } catch {}
+      } else if (type === 'requirement_updated' && Array.isArray(payload.docs)) {
+        setRequiredDocuments((prev) => {
+          const merged = [...payload.docs];
+          for (const p of prev) {
+            if (!merged.some((m) => m.id === p.id || m.title.toLowerCase().trim() === p.title.toLowerCase().trim())) {
+              merged.push(p);
+            }
+          }
+          saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, merged);
+          return merged;
+        });
+      } else if (type === 'monitoring_updated' && Array.isArray(payload.reports)) {
+        setMonitoringReports((prev) => {
+          const merged = supabaseService.mergeMonitoringReportsList(payload.reports, prev);
+          saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
+          return merged;
+        });
+      }
+    });
+
+    return unsubscribe;
+  }, [setEmployees]);
 
   // Real-time Supabase Broadcast Subscription across all 3 roles (Instructor, Employee/Trainee, HTE)
   useEffect(() => {
@@ -2054,8 +2170,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser && !options?.force) return;
     if (isRefreshingRef.current) return;
     const now = Date.now();
-    // Protect database Disk IO & CPU: debounce refresh calls so open clients never flood Postgres
-    const cooldown = options?.force ? 10000 : 30000;
+    // Allow explicit forced refreshes immediately (1.5s guard against duplicate mount effects), 20s for background polls
+    const cooldown = options?.force ? 1500 : 20000;
     if (now - lastRefreshTimeRef.current < cooldown) {
       return;
     }
@@ -3027,100 +3143,137 @@ export function AppProvider({ children }: { children: ReactNode }) {
       );
     }
 
-    // Step 2: Fast server-side check with 2.5s timeout (bypasses client RLS cold start on new devices)
-    if (!matchedEmp && !matchedHost && authEmail && typeof window !== 'undefined') {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 2500);
-        const res = await fetch(`/api/employees?email=${encodeURIComponent(authEmail)}`, {
-          signal: controller.signal,
-          headers: { 'Accept': 'application/json' },
-        });
-        clearTimeout(timer);
-        if (res && res.ok) {
-          const apiData = await res.json();
-          if (Array.isArray(apiData) && apiData.length > 0) {
-            const rawItem = apiData[0];
-            if (rawItem.is_host_supervisor) {
-              matchedHost = {
-                id: rawItem.id,
-                employeeId: rawItem.employee_id || rawItem.id,
-                name: rawItem.name,
-                email: rawItem.email,
-                companyName: rawItem.company_name,
-                companyAddress: rawItem.company_address,
-                contactPerson: rawItem.contact_person,
-                phone: rawItem.phone,
-                academicYear: rawItem.academic_year,
-                isApproved: rawItem.is_approved ?? true,
-                active: rawItem.active ?? true,
-              };
-              setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
-              saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, [matchedHost!, ...cachedHosts.filter((h) => h.id !== matchedHost!.id)]);
-            } else {
-              matchedEmp = supabaseService.transformSupabaseEmployee(rawItem);
-              setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
-              saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
+    // Step 2: Parallel race between direct Supabase PostgREST (~100ms, zero cold start) and /api/employees
+    const cloudReady = useSupabase || isSupabaseConfigured();
+    if (!matchedEmp && !matchedHost && (authEmail || authId)) {
+      const lookupViaDirectSupabase = async (): Promise<{ emp?: Employee; host?: HostSupervisor } | null> => {
+        if (!cloudReady) return null;
+        try {
+          const empCols =
+            'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, application_status, created_at';
+          const hostCols =
+            'id, employee_id, email, name, company_name, contact_person, phone, academic_year, is_approved, active';
+          const [empEmailRes, empIdRes, hostEmailRes, hostIdRes] = await Promise.allSettled([
+            authEmail ? supabase.from('employees').select(empCols).ilike('email', authEmail).limit(1) : Promise.resolve({ data: null }),
+            authId ? supabase.from('employees').select(empCols).eq('id', authId).limit(1) : Promise.resolve({ data: null }),
+            authEmail ? supabase.from('host_supervisors').select(hostCols).ilike('email', authEmail).limit(1) : Promise.resolve({ data: null }),
+            authId ? supabase.from('host_supervisors').select(hostCols).eq('id', authId).limit(1) : Promise.resolve({ data: null }),
+          ]);
+
+          const dbEmp =
+            (empEmailRes.status === 'fulfilled' ? empEmailRes.value?.data?.[0] : null) ||
+            (empIdRes.status === 'fulfilled' ? empIdRes.value?.data?.[0] : null);
+          if (dbEmp) {
+            return { emp: supabaseService.transformSupabaseEmployee(dbEmp) };
+          }
+
+          const rawHost =
+            (hostEmailRes.status === 'fulfilled' ? hostEmailRes.value?.data?.[0] : null) ||
+            (hostIdRes.status === 'fulfilled' ? hostIdRes.value?.data?.[0] : null);
+          if (rawHost) {
+            return {
+              host: {
+                id: rawHost.id,
+                employeeId: rawHost.employee_id || rawHost.id,
+                name: rawHost.name,
+                email: rawHost.email,
+                companyName: rawHost.company_name,
+                companyAddress: rawHost.company_address,
+                contactPerson: rawHost.contact_person,
+                phone: rawHost.phone,
+                academicYear: rawHost.academic_year,
+                isApproved: rawHost.is_approved ?? true,
+                active: rawHost.active ?? true,
+              },
+            };
+          }
+        } catch (lookupErr) {
+          console.warn('OAuth direct Supabase lookup notice:', lookupErr);
+        }
+        return null;
+      };
+
+      const lookupViaServerApi = async (): Promise<{ emp?: Employee; host?: HostSupervisor } | null> => {
+        if (!authEmail || typeof window === 'undefined') return null;
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 1600);
+          const res = await fetch(`/api/employees?email=${encodeURIComponent(authEmail)}`, {
+            signal: controller.signal,
+            headers: { Accept: 'application/json' },
+          });
+          clearTimeout(timer);
+          if (res && res.ok) {
+            const apiData = await res.json();
+            if (Array.isArray(apiData) && apiData.length > 0) {
+              const rawItem = apiData[0];
+              if (rawItem.is_host_supervisor) {
+                return {
+                  host: {
+                    id: rawItem.id,
+                    employeeId: rawItem.employee_id || rawItem.id,
+                    name: rawItem.name,
+                    email: rawItem.email,
+                    companyName: rawItem.company_name,
+                    companyAddress: rawItem.company_address,
+                    contactPerson: rawItem.contact_person,
+                    phone: rawItem.phone,
+                    academicYear: rawItem.academic_year,
+                    isApproved: rawItem.is_approved ?? true,
+                    active: rawItem.active ?? true,
+                  },
+                };
+              }
+              return { emp: supabaseService.transformSupabaseEmployee(rawItem) };
             }
           }
-        }
-      } catch (fastApiErr) {
-        // Proceed to direct check if server API timed out
-      }
-    }
+        } catch {}
+        return null;
+      };
 
-    // Step 3: Supabase DB direct check if not found above (with fast timeout)
-    if (useSupabase && !matchedEmp && !matchedHost) {
-      try {
-        const promises: Promise<any>[] = [];
-        const empCols = 'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, application_status, created_at';
-        if (authEmail) {
-          promises.push(supabase.from('employees').select(empCols).ilike('email', authEmail).limit(1));
-        } else {
-          promises.push(Promise.resolve({ data: null, error: null }));
-        }
+      const directPromise = lookupViaDirectSupabase();
+      const apiPromise = lookupViaServerApi();
 
-        if (authId) {
-          promises.push(supabase.from('employees').select(empCols).eq('id', authId).limit(1));
-        } else {
-          promises.push(Promise.resolve({ data: null, error: null }));
-        }
+      // Return immediately on whichever finds a match first; if direct Supabase confirms not found, don't stall > 250ms on cold API
+      const winner = await new Promise<{ emp?: Employee; host?: HostSupervisor } | null>((resolve) => {
+        let resolved = false;
+        let pendingCount = 2;
+        const finish = (val: { emp?: Employee; host?: HostSupervisor } | null) => {
+          if (resolved) return;
+          resolved = true;
+          resolve(val);
+        };
 
-        if (authEmail) {
-          promises.push(supabase.from('host_supervisors').select('id, employee_id, email, name, company_name, contact_person, phone, academic_year, is_approved, active').ilike('email', authEmail).limit(1));
-        } else {
-          promises.push(Promise.resolve({ data: null, error: null }));
-        }
+        directPromise.then((res) => {
+          pendingCount -= 1;
+          if (res?.emp || res?.host) {
+            finish(res);
+          } else if (pendingCount === 0) {
+            finish(null);
+          } else {
+            // Give server API at most 250ms grace in case RLS hid a record, otherwise proceed immediately
+            setTimeout(() => finish(null), 250);
+          }
+        });
 
-        const [empEmailRes, empIdRes, hostEmailRes] = await Promise.allSettled(promises);
+        apiPromise.then((res) => {
+          pendingCount -= 1;
+          if (res?.emp || res?.host) {
+            finish(res);
+          } else if (pendingCount === 0) {
+            finish(null);
+          }
+        });
+      });
 
-        const rawEmpEmail = empEmailRes.status === 'fulfilled' ? empEmailRes.value?.data?.[0] : null;
-        const rawEmpId = empIdRes.status === 'fulfilled' ? empIdRes.value?.data?.[0] : null;
-        const rawHostEmail = hostEmailRes.status === 'fulfilled' ? hostEmailRes.value?.data?.[0] : null;
-
-        const dbEmp = rawEmpEmail || rawEmpId;
-        if (dbEmp) {
-          matchedEmp = supabaseService.transformSupabaseEmployee(dbEmp);
-          setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
-          saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
-        } else if (rawHostEmail) {
-          matchedHost = {
-            id: rawHostEmail.id,
-            employeeId: rawHostEmail.employee_id,
-            name: rawHostEmail.name,
-            email: rawHostEmail.email,
-            companyName: rawHostEmail.company_name,
-            companyAddress: rawHostEmail.company_address,
-            contactPerson: rawHostEmail.contact_person,
-            phone: rawHostEmail.phone,
-            academicYear: rawHostEmail.academic_year,
-            isApproved: rawHostEmail.is_approved ?? true,
-            active: rawHostEmail.active ?? true,
-          };
-          setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
-        }
-      } catch (lookupErr) {
-        console.warn('OAuth database lookup notice:', lookupErr);
+      if (winner?.emp) {
+        matchedEmp = winner.emp;
+        setEmployees((prev) => [matchedEmp!, ...prev.filter((e) => e.id !== matchedEmp!.id)]);
+        saveToStorage(STORAGE_KEYS.EMPLOYEES, [matchedEmp!, ...cachedEmployees.filter((e) => e.id !== matchedEmp!.id)]);
+      } else if (winner?.host) {
+        matchedHost = winner.host;
+        setHostSupervisors((prev) => [matchedHost!, ...prev.filter((h) => h.id !== matchedHost!.id)]);
+        saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, [matchedHost!, ...cachedHosts.filter((h) => h.id !== matchedHost!.id)]);
       }
     }
 
@@ -5260,7 +5413,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch {}
     }
 
-    // Optimistically show it right away and persist to localStorage so Trainees see it immediately
+    // Optimistically show it right away and broadcast live so Trainees, HTEs & Instructors see it immediately
     setAnnouncements((prev) => {
       const updated = sortAnnouncements([newAnn, ...prev.filter((a) => a.id !== newAnn.id)]);
       saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
@@ -5270,6 +5423,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return updated;
     });
 
+    supabaseService.broadcastLiveEvent('announcement_created', newAnn);
     supabaseService.saveAnnouncementsToStorage([newAnn]).catch(() => {});
 
     if (useSupabase) {
@@ -5368,6 +5522,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return updated;
     });
 
+    supabaseService.broadcastLiveEvent('announcement_updated', { id, updates: data });
+
     if (useSupabase) {
       supabaseService.updateAnnouncement(id, data);
     }
@@ -5379,6 +5535,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, updated);
       return updated;
     });
+
+    supabaseService.broadcastLiveEvent('announcement_deleted', { id });
 
     if (useSupabase) {
       supabaseService.deleteAnnouncement(id);
@@ -5484,6 +5642,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return updated;
     });
 
+    supabaseService.broadcastLiveEvent('announcement_submission', { submission: saved });
+
     if (useSupabase) {
       supabaseService.createAnnouncementSubmission({
         announcementId,
@@ -5558,12 +5718,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       createdAt: comment.createdAt || new Date().toISOString(),
     };
 
-    // 2. Immediately update local state & localStorage with deduplication
+    // 2. Immediately update local state, localStorage, and broadcast live across accounts
     setAnnouncementComments((prev) => {
       const next = deduplicateComments([...prev, newComm]);
       saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, next);
       return next;
     });
+    supabaseService.broadcastLiveEvent('announcement_comment', { comment: newComm });
 
     // 3. Sync to the announcement's comments column in Supabase:
     //    a) Persists in Supabase announcements table (which already exists and works)

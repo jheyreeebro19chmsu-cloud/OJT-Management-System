@@ -6,7 +6,7 @@ import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { getSchoolLogo } from '../utils/schoolLogos';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { supabase, isSupabaseConfigured, getDirectGoogleOAuthUrl, purgeStaleSupabaseAuth } from '../lib/supabase';
 import { sendOtpEmail } from '../lib/resend';
 import { resetPasswordDirect } from '../services/supabaseService';
 
@@ -127,6 +127,7 @@ export function Login() {
   const schoolLogo = matchedEmployee ? getSchoolLogo(matchedEmployee.schoolName) : null;
 
   const handleGoogleSignInWithRole = async (targetRole: 'trainee' | 'admin' | 'hte') => {
+    if (googleLoading) return;
     setError('');
     setGoogleLoading(true);
     setLoadingRole(targetRole);
@@ -140,6 +141,8 @@ export function Login() {
       localStorage.setItem('pending_oauth_role', targetRole);
       try {
         sessionStorage.setItem('pending_oauth_role', targetRole);
+        sessionStorage.setItem('ojt_oauth_redirecting', '1');
+        purgeStaleSupabaseAuth(true);
         // Clear any stale PKCE code-verifier keys before starting a fresh OAuth handshake
         for (let i = localStorage.length - 1; i >= 0; i--) {
           const key = localStorage.key(i);
@@ -153,12 +156,19 @@ export function Login() {
         typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
+      const redirectTo = `${redirectOrigin}/oauth-callback?role=${targetRole}`;
 
-      // Immediate redirect: no intermediate fetch pause, and no prompt='select_account' hang
+      // Zero-wait synchronous browser redirect to Supabase Google OAuth endpoint (bypasses GoTrue init/lock queues)
+      const directOAuthUrl = getDirectGoogleOAuthUrl(redirectTo);
+      if (directOAuthUrl && typeof window !== 'undefined') {
+        window.location.assign(directOAuthUrl);
+        return;
+      }
+
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${redirectOrigin}/oauth-callback`,
+          redirectTo,
         },
       });
 
@@ -242,10 +252,9 @@ export function Login() {
       }
     }
 
-    // Pre-warm Supabase connection so TLS handshake and GoTrue container are warm
-    if (isSupabaseConfigured()) {
-      supabase.auth.getSession().catch(() => { });
-    }
+    try {
+      sessionStorage.removeItem('ojt_oauth_redirecting');
+    } catch {}
   }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -1,7 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { AlertCircle, ArrowLeft, CheckCircle2, UserPlus, RefreshCw } from 'lucide-react';
-import { supabase, isSupabaseConfigured } from '../lib/supabase';
+import { AlertCircle, ArrowLeft, CheckCircle2, RefreshCw } from 'lucide-react';
+import {
+  supabase,
+  isSupabaseConfigured,
+  getDirectGoogleOAuthUrl,
+  decodeSupabaseJwtUser,
+  purgeStaleSupabaseAuth,
+} from '../lib/supabase';
+import { preloadRoute } from '../routes';
 import { useApp } from '../store/AppContext';
 import { User } from '../types';
 
@@ -37,13 +44,21 @@ export default function OAuthCallback() {
         typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
+      const redirectTo = `${redirectOrigin}/oauth-callback?role=${targetRole}`;
 
       window.history.replaceState({}, document.title, window.location.pathname);
+      purgeStaleSupabaseAuth(true);
+
+      const directUrl = getDirectGoogleOAuthUrl(redirectTo);
+      if (directUrl) {
+        window.location.assign(directUrl);
+        return;
+      }
 
       const { error: retryErr } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo: `${redirectOrigin}/oauth-callback`,
+          redirectTo,
         },
       });
 
@@ -115,71 +130,112 @@ export default function OAuthCallback() {
           return;
         }
 
-        let session: any = null;
-
-        // 2. Immediate check: supabase-js auto-detects code/hash on initialization
         try {
-          const { data: storedSession } = await supabase.auth.getSession();
-          if (storedSession?.session) {
-            session = storedSession.session;
+          sessionStorage.removeItem('ojt_oauth_redirecting');
+        } catch {}
+
+        const urlRole = (searchParams.get('role') || hashParams.get('role') || '').trim().toLowerCase();
+        const storedRole = (
+          localStorage.getItem('pending_oauth_role') ||
+          sessionStorage.getItem('pending_oauth_role') ||
+          ''
+        ).trim().toLowerCase();
+        const pendingRole = urlRole || storedRole;
+
+        // Preload destination route chunk in parallel right away so navigation is 0ms
+        preloadRoute(pendingRole === 'admin' ? '/admin' : pendingRole === 'hte' ? '/hte' : '/app');
+        preloadRoute('/register');
+
+        let session: any = null;
+        let fastJwtUser: any = null;
+
+        // 2. Zero-roundtrip JWT decode when implicit grant hash fragment (#access_token=...) is present
+        const accessToken = hashParams.get('access_token');
+        const refreshToken = hashParams.get('refresh_token');
+        if (accessToken) {
+          fastJwtUser = decodeSupabaseJwtUser(accessToken);
+          if (refreshToken) {
+            // Persist session in background without blocking sign-in UI
+            supabase.auth
+              .setSession({
+                access_token: accessToken,
+                refresh_token: refreshToken,
+              })
+              .catch((hashEx) => console.warn('Background setSession notice:', hashEx));
           }
-        } catch (getSessErr) {
-          console.warn('Initial getSession error:', getSessErr);
+          if (fastJwtUser) {
+            session = { access_token: accessToken, refresh_token: refreshToken, user: fastJwtUser };
+          }
         }
 
-        // 3. Fast PKCE Authorization Code grant (?code=...) with parallel auth state listener race
+        // 3. Immediate local session check if not already decoded from hash
+        if (!session) {
+          try {
+            const { data: storedSession } = await supabase.auth.getSession();
+            if (storedSession?.session) {
+              session = storedSession.session;
+            }
+          } catch (getSessErr) {
+            console.warn('Initial getSession error:', getSessErr);
+          }
+        }
+
+        // 4. Fast PKCE Authorization Code grant (?code=...) without wiping verifier via duplicate exchange
         const code = searchParams.get('code');
         if (!session && code) {
           setStatusMessage('Verifying authorization code...');
           try {
-            // Concurrently race explicit exchange with automatic SDK listener so whichever finishes first is used immediately
-            const exchangePromise = supabase.auth.exchangeCodeForSession(code)
-              .then((res) => res.data?.session || null)
-              .catch(() => null);
+            session = await new Promise<any>((resolve) => {
+              let settled = false;
+              const finish = (val: any) => {
+                if (settled) return;
+                settled = true;
+                authListener?.subscription?.unsubscribe();
+                resolve(val);
+              };
 
-            const listenerPromise = new Promise<any>((resolve) => {
               const { data: authListener } = supabase.auth.onAuthStateChange((_event, newSession) => {
-                if (newSession) {
-                  authListener?.subscription?.unsubscribe();
-                  resolve(newSession);
+                if (newSession?.user) {
+                  finish(newSession);
                 }
               });
-              setTimeout(() => {
-                authListener?.subscription?.unsubscribe();
-                resolve(null);
-              }, 2500);
+
+              supabase.auth
+                .getSession()
+                .then(({ data }) => {
+                  if (data?.session?.user) {
+                    finish(data.session);
+                  } else {
+                    return supabase.auth.exchangeCodeForSession(code).then((res) => {
+                      if (res.data?.session?.user) finish(res.data.session);
+                    });
+                  }
+                })
+                .catch(() => {});
+
+              setTimeout(() => finish(null), 1800);
             });
-
-            session = await Promise.race([
-              exchangePromise.then(async (s) => s || await listenerPromise),
-              listenerPromise.then(async (s) => s || await exchangePromise),
-            ]);
           } catch (codeEx) {
-            console.warn('Code exchange race notice:', codeEx);
+            console.warn('Code exchange notice:', codeEx);
           }
         }
 
-        // 4. Implicit grant hash fragment (#access_token=...&refresh_token=...)
-        if (!session) {
-          const accessToken = hashParams.get('access_token');
-          const refreshToken = hashParams.get('refresh_token');
-          if (accessToken && refreshToken) {
-            setStatusMessage('Restoring session from tokens...');
-            try {
-              const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
-                access_token: accessToken,
-                refresh_token: refreshToken,
-              });
-              if (!sessionErr && sessionData?.session) {
-                session = sessionData.session;
-              }
-            } catch (hashEx) {
-              console.warn('setSession from hash exception:', hashEx);
+        // 5. Fallback setSession if accessToken was present but decode failed
+        if (!session && accessToken && refreshToken) {
+          try {
+            const { data: sessionData, error: sessionErr } = await supabase.auth.setSession({
+              access_token: accessToken,
+              refresh_token: refreshToken,
+            });
+            if (!sessionErr && sessionData?.session) {
+              session = sessionData.session;
             }
+          } catch (hashEx) {
+            console.warn('setSession fallback exception:', hashEx);
           }
         }
 
-        // 5. Direct localStorage scan for Supabase auth token
+        // 6. Direct localStorage scan for Supabase auth token
         if (!session && typeof window !== 'undefined') {
           for (let i = 0; i < localStorage.length; i++) {
             const key = localStorage.key(i);
@@ -214,24 +270,19 @@ export default function OAuthCallback() {
           authUser.user_metadata?.avatar_url ||
           authUser.user_metadata?.picture ||
           '';
-        const urlRole = (searchParams.get('role') || hashParams.get('role') || '').trim().toLowerCase();
-        const storedRole = (
-          localStorage.getItem('pending_oauth_role') ||
-          sessionStorage.getItem('pending_oauth_role') ||
-          ''
-        ).trim().toLowerCase();
-        const pendingRole = urlRole || storedRole;
 
-        setStatusMessage('Checking system records for your account...');
+        setStatusMessage('Signing you in...');
 
-        // ── 7A. First priority: Check with AppContext loginWithOAuthUser ──
+        // ── 7A. Fast parallel lookup via AppContext loginWithOAuthUser ──
+        let hookCompletedCleanly = false;
         if (typeof loginWithOAuthUser === 'function') {
           try {
             const loggedInUser = await loginWithOAuthUser(authUser, (pendingRole as any) || null);
+            hookCompletedCleanly = true;
             if (loggedInUser) {
               clearTimeout(watchdogTimer);
               setIsSuccess(true);
-              setStatusMessage(`Welcome back, ${loggedInUser.name}! Signing you in...`);
+              setStatusMessage(`Welcome back, ${loggedInUser.name}!`);
               localStorage.removeItem('pending_oauth_role');
               try {
                 sessionStorage.removeItem('pending_oauth_role');
@@ -244,7 +295,7 @@ export default function OAuthCallback() {
               localStorage.removeItem('oauth_photo');
               localStorage.removeItem('oauth_user_id');
               const targetPath = loggedInUser.role === 'admin' ? '/admin' : loggedInUser.role === 'hte' ? '/hte' : '/app';
-              setTimeout(() => navigate(targetPath, { replace: true }), 50);
+              navigate(targetPath, { replace: true });
               return;
             }
           } catch (hookErr) {
@@ -252,33 +303,11 @@ export default function OAuthCallback() {
           }
         }
 
-        // ── 7B. Fast Server-Side API + Supabase lookup ──
+        // ── 7B. Fallback lookup ONLY if loginWithOAuthUser threw an error ──
         let dbEmp: any = null;
         let dbHost: any = null;
 
-        if (email && typeof window !== 'undefined') {
-          try {
-            const controller = new AbortController();
-            const timer = setTimeout(() => controller.abort(), 2000);
-            const apiRes = await fetch(`/api/employees?email=${encodeURIComponent(email.trim().toLowerCase())}`, {
-              signal: controller.signal,
-            });
-            clearTimeout(timer);
-            if (apiRes && apiRes.ok) {
-              const apiItems = await apiRes.json();
-              if (Array.isArray(apiItems) && apiItems.length > 0) {
-                const item = apiItems[0];
-                if (item.is_host_supervisor) {
-                  dbHost = item;
-                } else {
-                  dbEmp = item;
-                }
-              }
-            }
-          } catch {}
-        }
-
-        if (!dbEmp && !dbHost && isSupabaseConfigured() && email) {
+        if (!hookCompletedCleanly && isSupabaseConfigured() && email) {
           try {
             const cleanEmail = email.trim().toLowerCase();
             const empCols = 'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, face_registered, active, academic_year, application_status, created_at';
@@ -420,7 +449,7 @@ export default function OAuthCallback() {
             }
 
             const targetPath = role === 'admin' ? '/admin' : role === 'hte' ? '/hte' : '/app';
-            setTimeout(() => navigate(targetPath, { replace: true }), 300);
+            navigate(targetPath, { replace: true });
             return;
           }
 
@@ -448,7 +477,7 @@ export default function OAuthCallback() {
             localStorage.setItem('ojt_current_user', JSON.stringify(resolvedHost));
             localStorage.setItem('ojt_hte_company', hostCompany);
 
-            setTimeout(() => navigate('/hte', { replace: true }), 300);
+            navigate('/hte', { replace: true });
             return;
           }
         }
@@ -474,7 +503,7 @@ export default function OAuthCallback() {
           sessionStorage.setItem('oauth_pending', 'true');
           sessionStorage.setItem('oauth_is_google', 'true');
 
-          setTimeout(() => navigate('/register?role=admin', { replace: true }), 300);
+          navigate('/register?role=admin', { replace: true });
           return;
         }
 
@@ -496,7 +525,7 @@ export default function OAuthCallback() {
           sessionStorage.setItem('oauth_pending', 'true');
           sessionStorage.setItem('oauth_is_google', 'true');
 
-          setTimeout(() => navigate('/register?role=hte', { replace: true }), 300);
+          navigate('/register?role=hte', { replace: true });
           return;
         }
 
@@ -521,7 +550,7 @@ export default function OAuthCallback() {
         sessionStorage.setItem('oauth_pending', 'true');
         sessionStorage.setItem('oauth_is_google', 'true');
 
-        setTimeout(() => navigate('/register?role=trainee', { replace: true }), 300);
+        navigate('/register?role=trainee', { replace: true });
       } catch (err: any) {
         console.error('OAuth callback processing error:', err);
         clearTimeout(watchdogTimer);

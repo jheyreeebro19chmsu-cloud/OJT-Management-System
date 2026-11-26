@@ -33,6 +33,7 @@ import { Announcement } from '../types';
 import { AnnouncementAttachmentView } from '../components/AnnouncementAttachmentView';
 import { formatFileSize, parseAnnouncementAttachment } from '../utils/attachmentHelper';
 import { sortAnnouncements } from '../utils/announcementHelper';
+import { uploadDocumentToStorage as uploadDocFast } from '../utils/documentStorage';
 
 function toLocalDateStr(isoStr?: string): string {
   if (!isoStr) return '';
@@ -347,6 +348,8 @@ export function HTEAnnouncements() {
     setShowModal(true);
   };
 
+  const pendingHteUploadRef = useRef<Promise<{ fileUrl: string; dataUrl: string }> | null>(null);
+
   // File Picker Handler (Pictures, PDF, Documents)
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -370,43 +373,38 @@ export function HTEAnnouncements() {
       fileType = 'doc';
     }
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = reader.result as string;
+    const previewUrl = URL.createObjectURL(file);
+    const formattedSize = formatFileSize(file.size);
 
-      // Validate image files to ensure they are real, decodable pictures
-      if (fileType === 'image') {
-        const testImg = new Image();
-        testImg.onload = () => {
-          setAttachment({
-            url: dataUrl,
-            name: file.name,
-            type: 'image',
-            size: formatFileSize(file.size),
-          });
-          toast.success(`Attached ${file.name}`);
-        };
-        testImg.onerror = () => {
-          toast.error(`"${file.name}" is not a valid or readable image. Please select a valid photo (JPG/PNG).`);
-          setAttachment(null);
-          if (fileInputRef.current) fileInputRef.current.value = '';
-        };
-        testImg.src = dataUrl;
-        return;
-      }
+    // Attach immediately (< 5ms) with preview URL and upload in background
+    setAttachment({
+      url: previewUrl,
+      name: file.name,
+      type: fileType,
+      size: formattedSize,
+    });
+    toast.success(`Attached ${file.name}`);
 
-      setAttachment({
-        url: dataUrl,
-        name: file.name,
-        type: fileType,
-        size: formatFileSize(file.size),
+    const uploadPromise = uploadDocFast(
+      file,
+      currentUser?.id || 'hte',
+      `hte_ann_${Date.now()}`
+    )
+      .then((res) => {
+        setAttachment((prev) =>
+          prev && prev.name === file.name
+            ? { ...prev, url: res.fileUrl || res.dataUrl || prev.url }
+            : prev
+        );
+        return res;
+      })
+      .finally(() => {
+        if (pendingHteUploadRef.current === uploadPromise) {
+          pendingHteUploadRef.current = null;
+        }
       });
-      toast.success(`Attached ${file.name}`);
-    };
-    reader.onerror = () => {
-      toast.error('Failed to read file from your device.');
-    };
-    reader.readAsDataURL(file);
+
+    pendingHteUploadRef.current = uploadPromise;
   };
 
   // Save / Post Announcement
@@ -420,57 +418,70 @@ export function HTEAnnouncements() {
       return;
     }
 
-    setIsSubmitting(true);
+    const titleSnapshot = title.trim();
+    const contentSnapshot = content.trim();
+    const typeSnapshot = type;
+    const targetRoleSnapshot = targetRole;
+    const isPinnedSnapshot = isPinned;
+    const editIdSnapshot = editId;
+    const attachmentSnapshot = attachment ? { ...attachment } : null;
+    const pendingUpload = pendingHteUploadRef.current;
+
+    // Close modal & show instant confirmation right away
+    setShowModal(false);
+    setIsSubmitting(false);
+    toast.success(editIdSnapshot ? 'Announcement updated successfully!' : 'Announcement posted successfully!');
+
     try {
-      // Serialize attachment:
-      // If pure image, dataUrl can be stored directly for backward-compatibility;
-      // If PDF or Doc, store JSON metadata so name, type, and size are preserved.
+      let finalAttachment = attachmentSnapshot;
+      if (finalAttachment && pendingUpload) {
+        const res = await pendingUpload;
+        finalAttachment = {
+          ...finalAttachment,
+          url: res.fileUrl || res.dataUrl || finalAttachment.url,
+        };
+      }
+
       let photoPayload = '';
-      if (attachment) {
-        if (attachment.type === 'image') {
-          photoPayload = attachment.url;
+      if (finalAttachment) {
+        if (finalAttachment.type === 'image') {
+          photoPayload = finalAttachment.url;
         } else {
           photoPayload = JSON.stringify({
-            url: attachment.url,
-            name: attachment.name,
-            type: attachment.type,
-            size: attachment.size,
+            url: finalAttachment.url,
+            name: finalAttachment.name,
+            type: finalAttachment.type,
+            size: finalAttachment.size,
           });
         }
       }
 
-      if (editId) {
-        updateAnnouncement(editId, {
-          title: title.trim(),
-          content: content.trim(),
-          type,
-          targetRole,
-          isPinned,
+      if (editIdSnapshot) {
+        updateAnnouncement(editIdSnapshot, {
+          title: titleSnapshot,
+          content: contentSnapshot,
+          type: typeSnapshot,
+          targetRole: targetRoleSnapshot,
+          isPinned: isPinnedSnapshot,
           photo: photoPayload || undefined,
         });
-        toast.success('Announcement updated successfully!');
       } else {
         addAnnouncement({
-          title: title.trim(),
-          content: content.trim(),
-          type,
-          targetRole,
-          isPinned,
+          title: titleSnapshot,
+          content: contentSnapshot,
+          type: typeSnapshot,
+          targetRole: targetRoleSnapshot,
+          isPinned: isPinnedSnapshot,
           photo: photoPayload || undefined,
           createdAt: new Date().toISOString(),
           createdBy: `${authorName} (${companyName})`,
           createdByRole: 'host',
           academicYear: settings.activeAcademicYear,
         });
-        toast.success('Announcement posted successfully!');
       }
-
-      setShowModal(false);
     } catch (err) {
       console.error(err);
       toast.error('Failed to save announcement. Please try again.');
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
