@@ -2423,11 +2423,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       })
       .subscribe();
 
-    // Periodic live background sync every 15 seconds (when tab is active)
+    // Periodic fallback sync every 2 minutes (Realtime WebSockets handle instant live updates with zero DB load)
     const syncInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       refreshData();
-    }, 15000);
+    }, 120000);
 
     return () => {
       window.removeEventListener('focus', onFocus);
@@ -2469,7 +2469,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     document.addEventListener('visibilitychange', onVisible);
     window.addEventListener('focus', onVisible);
     window.addEventListener('pageshow', onVisible);
-    const interval = setInterval(onVisible, 30000);
+    const interval = setInterval(onVisible, 120000);
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', onVisible);

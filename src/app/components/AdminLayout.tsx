@@ -153,19 +153,17 @@ export function AdminLayout() {
 
     void fetchPendingCount();
 
-    // In Supabase mode, subscribe to real-time postgres changes (never fails with HTTP 200 on Vercel)
+    // In Supabase mode, subscribe to real-time postgres changes (zero polling load on Postgres)
     if (isSupabaseConfigured() && instrId) {
       const unsub = subscribeToPendingRequests(instrId, () => {
         void fetchPendingCount();
       });
-      const interval = setInterval(() => void fetchPendingCount(), 30000);
       return () => {
         unsub?.();
-        clearInterval(interval);
       };
     }
 
-    const pollId = setInterval(() => void fetchPendingCount(), 30000);
+    const pollId = setInterval(() => void fetchPendingCount(), 120000);
     return () => clearInterval(pollId);
   }, [fetchPendingCount, isInstructor, employee]);
 

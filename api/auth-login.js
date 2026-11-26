@@ -31,20 +31,73 @@ async function parseBody(req) {
   });
 }
 
-async function findAuthUserByEmail(cleanEmail) {
-  let page = 1;
-  const perPage = 1000;
-  while (true) {
-    const { data, error } = await supabaseAdmin.auth.admin.listUsers({ page, perPage });
-    if (error) {
-      console.warn('findAuthUserByEmail listUsers error:', error.message);
-      return null;
-    }
-    const users = data?.users || [];
-    const match = users.find((u) => (u.email || '').trim().toLowerCase() === cleanEmail);
-    if (match) return match;
-    if (users.length < perPage) return null;
-    page += 1;
+function parseQuery(req) {
+  if (req.query && typeof req.query === 'object') return req.query;
+  try {
+    const url = new URL(req.url, 'http://localhost');
+    return Object.fromEntries(url.searchParams.entries());
+  } catch {
+    return {};
+  }
+}
+
+/**
+ * Staggered hedged resolver for Supabase GoTrue /auth/v1/authorize.
+ * When Supabase Nano's GoTrue pool has a stuck Postgres socket (which hangs 10-62s -> 504),
+ * staggered parallel probes at 0ms, 1100ms, and 2400ms hit a healthy worker and return the
+ * direct `https://accounts.google.com/o/oauth2/v2/auth?...` redirect URL immediately.
+ */
+async function resolveGoogleAuthorizeUrlHedged(redirectTo) {
+  const targetAuthorize = `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
+  const controllers = [];
+
+  const singleAttempt = (delayMs, timeoutMs) =>
+    new Promise((resolve, reject) => {
+      const startTimer = setTimeout(async () => {
+        const controller = new AbortController();
+        controllers.push(controller);
+        const abortTimer = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+          const resp = await fetch(targetAuthorize, {
+            method: 'GET',
+            redirect: 'manual',
+            signal: controller.signal,
+            headers: {
+              Accept: 'text/html,application/xhtml+xml',
+              'Cache-Control': 'no-cache',
+            },
+          });
+          clearTimeout(abortTimer);
+          const loc = resp.headers.get('location') || '';
+          if ((resp.status === 302 || resp.status === 303 || resp.status === 307) && loc.includes('accounts.google.com')) {
+            resolve(loc);
+          } else {
+            reject(new Error(`Unexpected status ${resp.status}`));
+          }
+        } catch (err) {
+          clearTimeout(abortTimer);
+          reject(err);
+        }
+      }, delayMs);
+
+      controllers.push({ abort: () => clearTimeout(startTimer) });
+    });
+
+  try {
+    const winnerUrl = await Promise.any([
+      singleAttempt(0, 4800),
+      singleAttempt(1100, 4800),
+      singleAttempt(2400, 5200),
+    ]);
+    controllers.forEach((c) => {
+      try { c.abort(); } catch {}
+    });
+    return winnerUrl;
+  } catch {
+    controllers.forEach((c) => {
+      try { c.abort(); } catch {}
+    });
+    return null;
   }
 }
 
@@ -90,11 +143,31 @@ async function findHostByIdentifier(cleanId, lowerId) {
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  // Fast hedged pre-resolver for Google OAuth authorize URL (avoids 60s browser 504 hangs)
+  if (req.method === 'GET') {
+    const query = parseQuery(req);
+    if (query.action === 'google-url') {
+      const redirectTo = String(query.redirectTo || 'https://chmsuojtmis.site/oauth-callback').trim();
+      const googleUrl = await resolveGoogleAuthorizeUrlHedged(redirectTo);
+      if (googleUrl) {
+        res.setHeader('Cache-Control', 'no-store');
+        return res.status(200).json({ success: true, url: googleUrl });
+      }
+      return res.status(503).json({
+        success: false,
+        code: 'SUPABASE_AUTH_UNHEALTHY',
+        fallbackUrl: `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`,
+        error: 'Supabase Auth is temporarily congested. Retrying connection...',
+      });
+    }
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   if (req.method !== 'POST') {
@@ -103,6 +176,43 @@ export default async function handler(req, res) {
 
   try {
     const body = await parseBody(req);
+
+    // Zero-GoTrue Direct Google ID Token verification (when VITE_GOOGLE_CLIENT_ID is configured)
+    if (body.action === 'google-id-token' && body.idToken) {
+      const tokenRes = await fetch(
+        `https://oauth2.googleapis.com/tokeninfo?id_token=${encodeURIComponent(String(body.idToken))}`
+      );
+      if (!tokenRes.ok) {
+        return res.status(401).json({ success: false, error: 'Invalid Google credential token.' });
+      }
+      const tokenPayload = await tokenRes.json();
+      if (!tokenPayload?.email || tokenPayload.email_verified === 'false') {
+        return res.status(401).json({ success: false, error: 'Google email is not verified.' });
+      }
+      const expectedClientId = process.env.VITE_GOOGLE_CLIENT_ID || process.env.GOOGLE_CLIENT_ID || '';
+      if (expectedClientId && tokenPayload.aud !== expectedClientId) {
+        return res.status(401).json({ success: false, error: 'Google token audience mismatch.' });
+      }
+      const cleanEmail = String(tokenPayload.email).trim().toLowerCase();
+      const matchedEmp = await findEmployeeByIdentifier(cleanEmail, cleanEmail);
+      const matchedHost = matchedEmp ? null : await findHostByIdentifier(cleanEmail, cleanEmail);
+      return res.status(200).json({
+        success: true,
+        authUser: {
+          id: matchedEmp?.id || matchedHost?.id || tokenPayload.sub,
+          email: cleanEmail,
+          user_metadata: {
+            full_name: tokenPayload.name || cleanEmail.split('@')[0],
+            given_name: tokenPayload.given_name || '',
+            family_name: tokenPayload.family_name || '',
+            avatar_url: tokenPayload.picture || '',
+            picture: tokenPayload.picture || '',
+          },
+        },
+        employee: matchedEmp || null,
+        hostSupervisor: matchedHost || null,
+      });
+    }
     const rawIdentifier = String(body.identifier || body.email || '').trim();
     const lowerIdentifier = rawIdentifier.toLowerCase();
     const password = typeof body.password === 'string' ? body.password : '';
@@ -142,27 +252,10 @@ export default async function handler(req, res) {
     });
 
     if (authError || !authData?.user) {
-      const authUserRecord = await findAuthUserByEmail(targetEmail);
-      const providers = Array.isArray(authUserRecord?.app_metadata?.providers)
-        ? authUserRecord.app_metadata.providers.map((p) => String(p).toLowerCase())
-        : [];
-      const isGoogleOnly = Boolean(
-        authUserRecord && providers.includes('google') && !providers.includes('email')
-      );
-
-      if (isGoogleOnly) {
-        return res.status(401).json({
-          success: false,
-          code: 'GOOGLE_ONLY_ACCOUNT',
-          error:
-            "Wrong credentials. This Google account was signed up with Google and has no password set yet. Click 'Continue with Google' or use 'Forgot password?' to create a password.",
-        });
-      }
-
       return res.status(401).json({
         success: false,
         code: 'INVALID_CREDENTIALS',
-        error: 'Wrong credentials. Invalid email or password. Please try again.',
+        error: 'Wrong credentials. Invalid email or password. (If you signed up with Google, click Continue with Google or use Forgot password? to set a password.)',
       });
     }
 

@@ -4,7 +4,7 @@ import { AlertCircle, ArrowLeft, CheckCircle2, RefreshCw } from 'lucide-react';
 import {
   supabase,
   isSupabaseConfigured,
-  getDirectGoogleOAuthUrl,
+  resolveFastGoogleOAuthUrl,
   decodeSupabaseJwtUser,
   purgeStaleSupabaseAuth,
 } from '../lib/supabase';
@@ -44,21 +44,20 @@ export default function OAuthCallback() {
         typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
-      const redirectTo = `${redirectOrigin}/oauth-callback?role=${targetRole}`;
 
       window.history.replaceState({}, document.title, window.location.pathname);
       purgeStaleSupabaseAuth(true);
 
-      const directUrl = getDirectGoogleOAuthUrl(redirectTo);
-      if (directUrl) {
-        window.location.assign(directUrl);
+      const fastUrl = await resolveFastGoogleOAuthUrl(redirectOrigin);
+      if (fastUrl) {
+        window.location.assign(fastUrl);
         return;
       }
 
       const { error: retryErr } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo,
+          redirectTo: `${redirectOrigin}/oauth-callback`,
         },
       });
 

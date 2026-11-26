@@ -259,7 +259,7 @@ export default async function handler(req, res) {
         }
       }
 
-      const defaultLimit = empIds.length > 0 ? 5000 : 5000;
+      const defaultLimit = empIds.length > 0 ? 1500 : 1000;
       const limit = parseInt(queryParams.limit, 10) || defaultLimit;
 
       const executeQuery = async (fields) => {

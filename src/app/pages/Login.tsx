@@ -6,7 +6,14 @@ import { toast } from 'sonner';
 
 import { useApp } from '../store/AppContext';
 import { getSchoolLogo } from '../utils/schoolLogos';
-import { supabase, isSupabaseConfigured, getDirectGoogleOAuthUrl, purgeStaleSupabaseAuth } from '../lib/supabase';
+import {
+  supabase,
+  isSupabaseConfigured,
+  prefetchGoogleOAuthUrl,
+  resolveFastGoogleOAuthUrl,
+  purgeStaleSupabaseAuth,
+} from '../lib/supabase';
+import { preloadRoute } from '../routes';
 import { sendOtpEmail } from '../lib/resend';
 import { resetPasswordDirect } from '../services/supabaseService';
 
@@ -156,19 +163,20 @@ export function Login() {
         typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
-      const redirectTo = `${redirectOrigin}/oauth-callback?role=${targetRole}`;
 
-      // Zero-wait synchronous browser redirect to Supabase Google OAuth endpoint (bypasses GoTrue init/lock queues)
-      const directOAuthUrl = getDirectGoogleOAuthUrl(redirectTo);
-      if (directOAuthUrl && typeof window !== 'undefined') {
-        window.location.assign(directOAuthUrl);
+      preloadRoute(targetRole === 'admin' ? '/admin' : targetRole === 'hte' ? '/hte' : '/app');
+
+      // Jump directly to pre-resolved `https://accounts.google.com/o/oauth2/v2/auth?...` (0ms if prefetched, or fast hedged retry)
+      const targetGoogleUrl = await resolveFastGoogleOAuthUrl(redirectOrigin);
+      if (targetGoogleUrl && typeof window !== 'undefined') {
+        window.location.assign(targetGoogleUrl);
         return;
       }
 
       const { error: oauthError } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo,
+          redirectTo: `${redirectOrigin}/oauth-callback`,
         },
       });
 
@@ -255,6 +263,11 @@ export function Login() {
     try {
       sessionStorage.removeItem('ojt_oauth_redirecting');
     } catch {}
+
+    // Pre-resolve the direct Google Account Chooser URL in background so clicking Continue with Google redirects in 0ms!
+    if (isSupabaseConfigured()) {
+      void prefetchGoogleOAuthUrl();
+    }
   }, [navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {

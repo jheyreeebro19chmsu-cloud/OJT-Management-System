@@ -156,6 +156,97 @@ export function getDirectGoogleOAuthUrl(redirectTo: string): string {
   return `${base}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(redirectTo)}`;
 }
 
+// Pre-resolved `https://accounts.google.com/o/oauth2/v2/auth?...` cache (fresh for 3.5 mins so GoTrue state never expires)
+let _cachedGoogleAuthUrl: { url: string; redirectTo: string; expiresAt: number } | null = null;
+let _inflightGoogleAuthPromise: { redirectTo: string; promise: Promise<string | null> } | null = null;
+
+export function getCachedGoogleOAuthUrl(redirectTo: string): string | null {
+  if (
+    _cachedGoogleAuthUrl &&
+    _cachedGoogleAuthUrl.redirectTo === redirectTo &&
+    _cachedGoogleAuthUrl.expiresAt > Date.now()
+  ) {
+    const url = _cachedGoogleAuthUrl.url;
+    _cachedGoogleAuthUrl = null; // Single-use OAuth state nonce: consume once!
+    return url;
+  }
+  return null;
+}
+
+export function prefetchGoogleOAuthUrl(redirectOrigin?: string): Promise<string | null> {
+  if (typeof window === 'undefined' || !isSupabaseConfigured()) return Promise.resolve(null);
+  const origin = redirectOrigin || window.location?.origin || 'https://chmsuojtmis.site';
+  const canonicalRedirect = `${origin}/oauth-callback`;
+
+  if (
+    _cachedGoogleAuthUrl &&
+    _cachedGoogleAuthUrl.redirectTo === canonicalRedirect &&
+    _cachedGoogleAuthUrl.expiresAt > Date.now()
+  ) {
+    return Promise.resolve(_cachedGoogleAuthUrl.url);
+  }
+
+  if (_inflightGoogleAuthPromise && _inflightGoogleAuthPromise.redirectTo === canonicalRedirect) {
+    return _inflightGoogleAuthPromise.promise;
+  }
+
+  const p = (async (): Promise<string | null> => {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7500);
+      const res = await fetch(
+        `/api/auth-login?action=google-url&redirectTo=${encodeURIComponent(canonicalRedirect)}`,
+        { signal: controller.signal, headers: { Accept: 'application/json' } }
+      );
+      clearTimeout(timer);
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.url && typeof data.url === 'string' && data.url.includes('accounts.google.com')) {
+          _cachedGoogleAuthUrl = {
+            url: data.url,
+            redirectTo: canonicalRedirect,
+            expiresAt: Date.now() + 3.5 * 60 * 1000,
+          };
+          return data.url;
+        }
+      }
+    } catch {
+      // Local Vite dev or offline: fall back gracefully on click
+    } finally {
+      if (_inflightGoogleAuthPromise?.promise === p) {
+        _inflightGoogleAuthPromise = null;
+      }
+    }
+    return null;
+  })();
+
+  _inflightGoogleAuthPromise = { redirectTo: canonicalRedirect, promise: p };
+  return p;
+}
+
+export async function resolveFastGoogleOAuthUrl(redirectOrigin?: string): Promise<string> {
+  const origin =
+    redirectOrigin ||
+    (typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'https://chmsuojtmis.site');
+  const canonicalRedirect = `${origin}/oauth-callback`;
+
+  // 1. Instant 0ms hit if background prefetch on /login or /register already resolved!
+  const cached = getCachedGoogleOAuthUrl(canonicalRedirect);
+  if (cached) return cached;
+
+  // 2. Otherwise await hedged server resolver (races staggered GoTrue probes to avoid 60s 504 hangs)
+  const resolved = await prefetchGoogleOAuthUrl(origin);
+  if (resolved) {
+    _cachedGoogleAuthUrl = null; // Consume nonce
+    return resolved;
+  }
+
+  // 3. Final fallback to direct GoTrue authorize URL
+  return getDirectGoogleOAuthUrl(canonicalRedirect);
+}
+
 // Synchronously decode user identity from a Supabase OAuth access_token JWT without extra /auth/v1/user roundtrip
 export function decodeSupabaseJwtUser(rawToken?: string | null): any | null {
   if (!rawToken) return null;

@@ -55,7 +55,13 @@ import { Country, State, City } from 'country-state-city';
 
 
 import { authAPI } from '../services/authApi';
-import { supabase, isSupabaseConfigured, getDirectGoogleOAuthUrl, purgeStaleSupabaseAuth } from '../lib/supabase';
+import {
+  supabase,
+  isSupabaseConfigured,
+  prefetchGoogleOAuthUrl,
+  resolveFastGoogleOAuthUrl,
+  purgeStaleSupabaseAuth,
+} from '../lib/supabase';
 import { createEmployee as createEmployeeDb } from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
@@ -630,16 +636,15 @@ export function Register() {
         typeof window !== 'undefined' && window.location?.origin
           ? window.location.origin
           : 'https://chmsuojtmis.site';
-      const redirectTo = `${redirectOrigin}/oauth-callback?role=${effectiveRole}`;
-      const directUrl = getDirectGoogleOAuthUrl(redirectTo);
-      if (directUrl && typeof window !== 'undefined') {
-        window.location.assign(directUrl);
+      const fastGoogleUrl = await resolveFastGoogleOAuthUrl(redirectOrigin);
+      if (fastGoogleUrl && typeof window !== 'undefined') {
+        window.location.assign(fastGoogleUrl);
         return;
       }
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: {
-          redirectTo,
+          redirectTo: `${redirectOrigin}/oauth-callback`,
         },
       });
       if (error) {
@@ -661,6 +666,9 @@ export function Register() {
       navigate('/admin');
     } else if (registrationComplete && role === 'hte') {
       navigate('/hte');
+    }
+    if (!oauthPending && isSupabaseConfigured()) {
+      void prefetchGoogleOAuthUrl();
     }
   }, [registrationComplete, role]);
 

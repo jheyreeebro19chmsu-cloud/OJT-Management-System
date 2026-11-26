@@ -156,8 +156,8 @@ export function MonitoringReport() {
     window.addEventListener('focus', onFocus);
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      refreshData({ force: true }).catch(() => {});
-    }, 25000);
+      refreshData().catch(() => {});
+    }, 120000);
     return () => {
       window.removeEventListener('focus', onFocus);
       clearInterval(interval);

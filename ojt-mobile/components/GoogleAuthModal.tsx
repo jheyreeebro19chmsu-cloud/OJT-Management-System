@@ -91,7 +91,32 @@ export default function GoogleAuthModal({
           return;
         }
 
-        // Instant zero-wait URL generation for native WebView
+        // Resolve Google's direct OAuth chooser URL via hedged serverless endpoint to avoid 60s GoTrue /authorize 504 hangs
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 7000);
+          const resp = await fetch(
+            `https://chmsuojtmis.site/api/auth-login?action=google-url&redirectTo=${encodeURIComponent(REDIRECT_URI)}`,
+            { signal: controller.signal, headers: { Accept: 'application/json' } }
+          );
+          clearTimeout(timer);
+          if (resp.ok) {
+            const json = await resp.json();
+            if (json?.url && typeof json.url === 'string' && json.url.includes('accounts.google.com')) {
+              let resolvedUrl = json.url;
+              if (!resolvedUrl.includes('prompt=')) {
+                resolvedUrl += (resolvedUrl.includes('?') ? '&' : '?') + 'prompt=select_account';
+              }
+              if (isMounted) {
+                setAuthUrl(resolvedUrl);
+                setLoading(false);
+              }
+              return;
+            }
+          }
+        } catch {}
+
+        // Fallback direct URL generation for native WebView
         if (SUPABASE_URL) {
           const directAuthUrl = `${SUPABASE_URL.replace(/\/$/, '')}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(REDIRECT_URI)}&prompt=select_account`;
           if (isMounted) {

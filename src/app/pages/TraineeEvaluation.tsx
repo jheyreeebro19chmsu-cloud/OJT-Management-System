@@ -67,9 +67,9 @@ export function TraineeEvaluation() {
     refreshData({ force: true }).catch(() => {});
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible' && !isDirtyRef.current) {
-        refreshData({ force: true }).catch(() => {});
+        refreshData().catch(() => {});
       }
-    }, 25000);
+    }, 120000);
     return () => clearInterval(interval);
   }, [refreshData]);
 

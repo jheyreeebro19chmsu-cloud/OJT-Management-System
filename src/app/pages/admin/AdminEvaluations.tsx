@@ -73,9 +73,9 @@ export function AdminEvaluations() {
     refreshData({ force: true }).catch(() => {});
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        refreshData({ force: true }).catch(() => {});
+        refreshData().catch(() => {});
       }
-    }, 25000);
+    }, 120000);
     return () => clearInterval(interval);
   }, [refreshData]);
 

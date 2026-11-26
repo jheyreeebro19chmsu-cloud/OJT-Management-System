@@ -125,9 +125,9 @@ export function HTEAnnouncements() {
     window.addEventListener('storage', onStorage);
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
-        refreshData?.({ force: true }).catch(() => {});
+        refreshData?.().catch(() => {});
       }
-    }, 20000);
+    }, 120000);
     return () => {
       window.removeEventListener('storage', onStorage);
       clearInterval(interval);
