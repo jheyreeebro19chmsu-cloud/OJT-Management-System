@@ -32,7 +32,7 @@ import { toast } from 'sonner';
 
 import { GeofenceMap } from '../../components/GeofenceMap';
 import { useApp } from '../../store/AppContext';
-import { GeofenceZone, Employee, TraineeGeofenceOverride } from '../../types';
+import { GeofenceZone, Employee, HostSupervisor, TraineeGeofenceOverride } from '../../types';
 import { GEOFENCE_RADIUS_METERS, reverseGeocode, isWithinNegrosOccidental } from '../../utils/geo';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { resolveHteLocation, isInvalidHteCompany, getTraineeHteKey, getTraineeGeofenceOverride } from '../../utils/hteLocation';

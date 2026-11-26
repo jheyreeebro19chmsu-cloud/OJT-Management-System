@@ -56,6 +56,7 @@ import { REQUIRED_TRAINEE_DOC_KEYS, REQUIRED_TRAINEE_DOCUMENTS, getTraineeDocIte
 import { downloadDocument, getFileCategory, formatFileSize } from '../utils/attachmentHelper';
 import { computeTraineeOjtNotifications } from '../utils/traineeNotifications';
 import { getPaginationWindow } from '../utils/pagination';
+import type { Announcement, Employee, TraineeDocuments, TraineeDocumentItem } from '../types';
 
 
 const ANN_COLORS: Record<Announcement['type'], { bg: string; border: string; icon: string; iconBg: string }> = {
@@ -436,7 +437,7 @@ export function Dashboard() {
     return '';
   };
 
-  const handleDashboardDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
+  const handleDashboardDocUpload = (docKey: string, file: File | null) => {
     if (!file || !currentEmp) return;
 
     // Validate file type — Pictures (JPG, PNG, WEBP, HEIC, JFIF), PDF, Word (DOC, DOCX, DOCS)

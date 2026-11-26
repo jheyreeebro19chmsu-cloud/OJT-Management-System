@@ -629,7 +629,7 @@ export default function LeafletGeofenceMap({
         onRequestClose={() => setIsFullScreen(false)}
       >
         <SafeAreaView style={styles.fullscreenModalContainer}>
-          <StatusBar barStyle="light-content" backgroundColor="#090d16" />
+          <StatusBar barStyle="light-content" />
 
           {/* Fullscreen Header */}
           <View style={styles.fullscreenHeader}>

@@ -7,6 +7,36 @@ const supabase = createClient(SUPABASE_URL, SERVICE_ROLE_KEY, {
   auth: { autoRefreshToken: false, persistSession: false },
 });
 
+const isUuid = (val) =>
+  Boolean(val && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(val)));
+
+async function readStorageAnnouncements() {
+  try {
+    const { data: blob, error } = await supabase.storage
+      .from('face-photos')
+      .download('settings/announcements_store.json');
+    if (!error && blob) {
+      const text = await blob.text();
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed;
+    }
+  } catch {}
+  return [];
+}
+
+async function writeStorageAnnouncements(list) {
+  try {
+    const buffer = Buffer.from(JSON.stringify(list), 'utf8');
+    await supabase.storage.from('face-photos').upload('settings/announcements_store.json', buffer, {
+      contentType: 'application/json',
+      cacheControl: '0',
+      upsert: true,
+    });
+  } catch (err) {
+    console.warn('api/announcements storage write notice:', err?.message || err);
+  }
+}
+
 function formatAnnouncement(ann) {
   if (!ann) return null;
   let files = ann.files || undefined;
@@ -138,6 +168,7 @@ export default async function handler(req, res) {
       }
 
       let dbRecords = [];
+      let dbSucceeded = false;
       try {
         const { data, error } = await supabase
           .from('announcements')
@@ -147,27 +178,20 @@ export default async function handler(req, res) {
 
         if (!error && Array.isArray(data)) {
           dbRecords = data;
+          dbSucceeded = true;
         }
       } catch (dbErr) {
         console.warn('api/announcements GET DB note:', dbErr);
       }
 
-      // Storage fallback or merger
-      let storageRecords = [];
-      try {
-        const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/announcements_store.json', 60);
-        if (signed?.signedUrl) {
-          const freshRes = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
-          if (freshRes.ok) {
-            const parsed = await freshRes.json();
-            if (Array.isArray(parsed)) storageRecords = parsed;
-          }
-        }
-      } catch {}
+      const storageRecords = await readStorageAnnouncements();
 
       const formattedDb = (dbRecords || []).map(formatAnnouncement);
       const combined = [...formattedDb];
       for (const s of storageRecords) {
+        // When DB query succeeded, only merge local fallback non-UUID announcements from storage
+        // so announcements deleted from the SQL table never resurrect from stale storage snapshots
+        if (dbSucceeded && isUuid(s?.id)) continue;
         if (!combined.some((c) => c.id === s.id)) {
           combined.push(s);
         }
@@ -344,31 +368,9 @@ export default async function handler(req, res) {
 
       const formatted = formatAnnouncement(savedData);
 
-      // Save to cloud storage announcements_store.json
-      try {
-        let existingList = [];
-        try {
-          const { data: signed } = await supabase.storage.from('face-photos').createSignedUrl('settings/announcements_store.json', 60);
-          if (signed?.signedUrl) {
-            const r = await fetch(`${signed.signedUrl}&t=${Date.now()}`, { cache: 'no-store' });
-            if (r.ok) {
-              const parsed = await r.json();
-              if (Array.isArray(parsed)) existingList = parsed;
-            }
-          }
-        } catch {}
-
-        const merged = [formatted, ...existingList.filter((a) => a.id !== formatted.id)];
-        const jsonStr = JSON.stringify(merged);
-        const buffer = Buffer.from(jsonStr, 'utf8');
-        await supabase.storage.from('face-photos').upload('settings/announcements_store.json', buffer, {
-          contentType: 'application/json',
-          cacheControl: '0',
-          upsert: true,
-        });
-      } catch (storageErr) {
-        console.warn('api/announcements POST storage mirror error:', storageErr);
-      }
+      // Mirror to cloud storage announcements_store.json
+      const existingList = await readStorageAnnouncements();
+      await writeStorageAnnouncements([formatted, ...existingList.filter((a) => a.id !== formatted.id)]);
 
       return sendJson(res, 200, formatted);
     }
@@ -429,18 +431,30 @@ export default async function handler(req, res) {
         updates.created_at = body.createdAt ?? body.created_at;
       }
 
-      const { data, error } = await supabase
-        .from('announcements')
-        .update(updates)
-        .eq('id', id)
-        .select()
-        .maybeSingle();
+      let updatedFormatted = null;
+      if (isUuid(id)) {
+        const { data, error } = await supabase
+          .from('announcements')
+          .update(updates)
+          .eq('id', id)
+          .select()
+          .maybeSingle();
 
-      if (error) {
-        return sendJson(res, 500, { error: error.message });
+        if (error) {
+          return sendJson(res, 500, { error: error.message });
+        }
+        updatedFormatted = formatAnnouncement(data);
       }
 
-      return sendJson(res, 200, formatAnnouncement(data) || { success: true });
+      const existingList = await readStorageAnnouncements();
+      if (existingList.some((a) => a.id === id) || updatedFormatted) {
+        const nextList = existingList.map((a) =>
+          a.id === id ? (updatedFormatted || { ...a, ...body, id }) : a
+        );
+        await writeStorageAnnouncements(nextList);
+      }
+
+      return sendJson(res, 200, updatedFormatted || { success: true });
     }
 
     // DELETE: Delete announcement
@@ -451,9 +465,18 @@ export default async function handler(req, res) {
         return sendJson(res, 400, { error: 'Missing announcement id' });
       }
 
-      const { error } = await supabase.from('announcements').delete().eq('id', id);
-      if (error) {
-        return sendJson(res, 500, { error: error.message });
+      if (isUuid(id)) {
+        const { error } = await supabase.from('announcements').delete().eq('id', id);
+        if (error) {
+          return sendJson(res, 500, { error: error.message });
+        }
+      }
+
+      // Also purge from storage mirror so deleted announcements never reappear
+      const existingList = await readStorageAnnouncements();
+      const filtered = existingList.filter((a) => a.id !== id);
+      if (filtered.length !== existingList.length) {
+        await writeStorageAnnouncements(filtered);
       }
 
       return sendJson(res, 200, { success: true });

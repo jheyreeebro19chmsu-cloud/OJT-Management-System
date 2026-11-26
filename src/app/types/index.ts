@@ -16,7 +16,7 @@ export interface Employee {
   username?: string;
   email: string;
   phone?: string;
-  role?: 'employee' | 'admin' | 'hte' | 'host';
+  role?: 'employee' | 'trainee' | 'admin' | 'instructor' | 'hte' | 'host';
   department: string;
   position: string;
   companyName: string;
@@ -37,7 +37,7 @@ export interface Employee {
   instructorId?: string;
   hteId?: string;
   linkedAt?: string;
-  registrationLocation?: { lat: number; lng: number; radius?: number; renderedHours?: number };
+  registrationLocation?: { lat: number; lng: number; radius?: number; renderedHours?: number; address?: string };
   registrationRadius?: number;
   registrationAddress?: string;
   /**
@@ -64,7 +64,7 @@ export interface Employee {
   approvalStatus?: 'pending' | 'approved' | 'rejected';
   applicationStatus?: 'unregistered' | 'pending' | 'approved' | 'rejected';
   documentsPassed?: boolean;
-  documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial';
+  documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial' | 'rejected';
   submittedDocuments?: TraineeDocuments;
 }
 
@@ -134,14 +134,15 @@ export interface TimeRecord {
   amDepartureGeofenced?: boolean;
   pmArrivalGeofenced?: boolean;
   pmDepartureGeofenced?: boolean;
-  timeInLocation?: { lat: number; lng: number };
-  timeOutLocation?: { lat: number; lng: number };
+  timeInLocation?: { lat: number; lng: number; address?: string };
+  timeOutLocation?: { lat: number; lng: number; address?: string };
   timeInGeofenced: boolean;
   timeOutGeofenced: boolean;
   timeInFaceVerified: boolean;
   timeOutFaceVerified: boolean;
   timeInPhoto?: string;
   timeOutPhoto?: string;
+  hours?: number;
   totalHours?: number;
   status: 'present' | 'late' | 'absent' | 'half-day' | 'overtime' | 'offsite';
   notes?: string;
@@ -155,6 +156,8 @@ export interface TimeRecord {
 export interface GeofenceZone {
   id: string;
   name: string;
+  companyName?: string;
+  hteId?: string;
   address: string;
   lat: number;
   lng: number;
@@ -182,11 +185,17 @@ export interface User {
   id: string;
   name: string;
   role: 'employee' | 'admin' | 'host' | 'hte';
+  position?: string;
   employeeId?: string;
   email?: string;
   photo?: string;
   faceRegistered?: boolean;
   companyName?: string;
+  companyAddress?: string;
+  supervisorName?: string;
+  registrationLocation?: { lat: number; lng: number; radius?: number; address?: string };
+  registrationAddress?: string;
+  registrationRadius?: number;
 }
 
 export interface EvaluationCriterion {
@@ -498,6 +507,9 @@ export interface RequiredDocument {
   maxFileSize?: number;
   allowedFileTypes?: string[];
   targetCourse?: string;
+  assignedEmployeeIds?: string[];
+  submittedBy?: string;
+  submittedByRole?: string;
 }
 
 export interface RequiredDocumentSubmission {

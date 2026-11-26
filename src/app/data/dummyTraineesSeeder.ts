@@ -325,7 +325,7 @@ export function generate120DemoTrainees(): GeneratedDemoData {
         faceVerified: true,
         verifiedByFace: true,
         academicYear: '2026-2027',
-      });
+      } as any);
     }
 
     // 4. Generate Supervisor Evaluation if trainee has reached midterm/final stages

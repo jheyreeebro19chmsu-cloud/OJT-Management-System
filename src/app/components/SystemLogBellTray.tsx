@@ -32,7 +32,7 @@ export interface ExtraAlertItem {
   id: string;
   title: string;
   message: string;
-  urgency: 'normal' | 'high' | 'success';
+  urgency: 'normal' | 'medium' | 'low' | 'high' | 'success';
   timestamp?: string;
   timeLabel?: string;
   actionRoute?: string;

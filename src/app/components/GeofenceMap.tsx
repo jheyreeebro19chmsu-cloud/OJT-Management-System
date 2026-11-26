@@ -563,12 +563,13 @@ export function GeofenceMap({
 
       if (existing) {
         existing.zones.push(zone);
-        if (selectedZoneId === zone.id || (zone.employeeId && selectedZoneId?.includes(zone.employeeId))) {
+        const zoneTyped = zone as GeofenceZone;
+        if (selectedZoneId === zone.id || (zoneTyped.employeeId && selectedZoneId?.includes(zoneTyped.employeeId))) {
           existing.primaryZone = zone;
           existing.radius = Number(zone.radius) || existing.radius;
         } else if (
-          zone.userType === 'hte' ||
-          zone.userType === 'institutional' ||
+          zoneTyped.userType === 'hte' ||
+          zoneTyped.userType === 'institutional' ||
           (zone.name &&
             !zone.name.toLowerCase().includes('trainee') &&
             (zone.name.toLowerCase().includes('printing') ||

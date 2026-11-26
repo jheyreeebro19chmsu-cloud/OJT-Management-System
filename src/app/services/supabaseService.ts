@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from '../lib/supabase';
-import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, EvaluationQuestionnaire, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor, RequiredDocument, MonitoringReport, MonthlyDttrRecord } from '../types';
+import { Employee, TimeRecord, GeofenceZone, AppSettings, Evaluation, EvaluationQuestionnaire, Announcement, HostFeedback, AnnouncementSubmission, AnnouncementComment, HostSupervisor, RequiredDocument, MonitoringReport, MonthlyDttrRecord, TraineeDocuments, TraineeDocumentItem } from '../types';
 import { isWithinNegrosOccidental } from '../utils/geo';
+import { formatFileSize } from '../utils/attachmentHelper';
 import { TRAINEE_REQUIRED_HOURS } from '../data/ojtConstants';
 
 // ─── Database Types ──────────────────────────────────────────────────────────
@@ -1254,10 +1255,10 @@ export async function batchUpdateEmployees(
 
     const promises: Promise<any>[] = [];
     if (uuidIds.length > 0) {
-      promises.push(supabase.from('employees').update(supabaseUpdates).in('id', uuidIds));
+      promises.push(Promise.resolve(supabase.from('employees').update(supabaseUpdates).in('id', uuidIds)));
     }
     if (nonUuidIds.length > 0) {
-      promises.push(supabase.from('employees').update(supabaseUpdates).in('employee_id', nonUuidIds));
+      promises.push(Promise.resolve(supabase.from('employees').update(supabaseUpdates).in('employee_id', nonUuidIds)));
     }
     const results = await Promise.all(promises);
     const error = results.find((r) => r.error)?.error;
@@ -3587,7 +3588,7 @@ export function transformSupabaseEmployee(data: any): Employee {
       const isAllPassed = isAllCompleted && passedDocsCount === REQUIRED_KEYS.length;
 
       let finalDocsPassed = false;
-      let finalDocsStatus: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial' = 'pending';
+      let finalDocsStatus: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial' | 'rejected' = 'pending';
 
       // STRICT RULE: If trainee has NOT completed all 10 required documents, it MUST be pending and NOT passed!
       if (!isAllCompleted) {

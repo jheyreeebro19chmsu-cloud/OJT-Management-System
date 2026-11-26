@@ -42,12 +42,14 @@ function resolveBackendUrls(): string[] {
     '';
 
   const urls: string[] = [];
-  if (envUrl && envUrl.startsWith('http')) {
+  if (
+    envUrl &&
+    envUrl.startsWith('http') &&
+    !envUrl.includes('onrender.com') &&
+    !envUrl.includes('railway.app')
+  ) {
     urls.push(envUrl.replace(/\/+$/, ''));
   }
-
-  // Render cloud production URL
-  urls.push('https://ojt-management-system-capstone-f35i.onrender.com');
 
   // Only check localhost/emulator in development mode
   if (__DEV__) {

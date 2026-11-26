@@ -201,7 +201,7 @@ export function dataUrlToBlobUrl(url: string): string {
     } else {
       bytes = new TextEncoder().encode(decodeURIComponent(payload));
     }
-    return URL.createObjectURL(new Blob([bytes], { type: mime }));
+    return URL.createObjectURL(new Blob([bytes as BlobPart], { type: mime }));
   } catch (err) {
     console.warn('Failed to convert data URL to blob URL:', err);
     return url;

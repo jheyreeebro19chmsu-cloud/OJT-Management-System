@@ -14,8 +14,10 @@ import {
 } from 'lucide-react';
 import { TraineeDocuments } from '../types';
 
+export type TraineeDocKey = Extract<keyof TraineeDocuments, string>;
+
 export interface RequiredDocMetadata {
-  key: keyof TraineeDocuments;
+  key: TraineeDocKey;
   id: string;
   num: string;
   title: string;
@@ -139,7 +141,7 @@ export const REQUIRED_TRAINEE_DOCUMENTS: RequiredDocMetadata[] = [
   },
 ];
 
-export const REQUIRED_TRAINEE_DOC_KEYS: (keyof TraineeDocuments)[] = [
+export const REQUIRED_TRAINEE_DOC_KEYS: TraineeDocKey[] = [
   'internshipAgreement',
   'moa',
   'consent',

@@ -7,7 +7,7 @@
 
 import { Platform } from 'react-native';
 
-const DEFAULT_PROD_API_URL = 'https://ojt-management-system-capstone-f35i.onrender.com/api';
+const DEFAULT_PROD_API_URL = 'https://chmsuojtmis.site/api';
 
 function resolveApiBaseUrl(): string {
   const envUrl =
@@ -16,7 +16,11 @@ function resolveApiBaseUrl(): string {
     process.env.EXPO_PUBLIC_BACKEND_URL ||
     '';
 
-  if (envUrl.startsWith('http')) {
+  if (
+    envUrl.startsWith('http') &&
+    !envUrl.includes('onrender.com') &&
+    !envUrl.includes('railway.app')
+  ) {
     return envUrl.replace(/\/+$/, '');
   }
 

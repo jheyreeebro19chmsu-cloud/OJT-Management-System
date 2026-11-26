@@ -252,7 +252,7 @@ type RegisterEmployeeInput = Omit<Employee, 'id' | 'createdAt'> & {
 
 interface AppContextType {
   currentUser: User | null;
-  setCurrentUser: (user: User | null) => void;
+  setCurrentUser: (user: User | null | ((prev: User | null) => User | null)) => void;
   employees: Employee[];
   timeRecords: TimeRecord[];
   geofenceZones: GeofenceZone[];
@@ -335,6 +335,8 @@ interface AppContextType {
       maxFileSize?: number;
       allowedFileTypes?: string[];
       targetCourse?: string;
+      submittedBy?: string;
+      submittedByRole?: string;
     }
   ) => RequiredDocument;
   updateRequiredDocument: (id: string, data: Partial<RequiredDocument>) => void;
@@ -354,6 +356,8 @@ interface AppContextType {
       fileSize?: number | string;
       fileType?: string;
       files?: TraineeDocumentFile[];
+      status?: RequiredDocumentSubmission['status'];
+      verificationStatus?: RequiredDocumentSubmission['verificationStatus'];
     }
   ) => RequiredDocumentSubmission;
   getRequiredDocumentSubmission: (documentId: string, employeeId: string) => RequiredDocumentSubmission | null;
@@ -434,7 +438,7 @@ function sanitizeGeofenceZone(input: unknown): GeofenceZone | null {
     lng,
     radius,
     active: raw.active !== false,
-    academicYear: raw.academicYear || raw.academic_year,
+    academicYear: raw.academicYear || (raw as any).academic_year,
     employeeId: raw.employeeId || raw.employee_id,
     employee_id: raw.employee_id || raw.employeeId,
   };
@@ -2217,7 +2221,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             if (matchedEmp) {
               setCurrentUser((cUser) => {
                 if (!cUser) return cUser;
-                const nextUser = {
+                const nextUser: any = {
                   ...cUser,
                   ...matchedEmp,
                   name: matchedEmp.name || cUser.name,
@@ -3308,10 +3312,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         matchedEmp.role = 'admin';
         matchedEmp.position = 'OJT Instructor';
         if (useSupabase) {
-          supabase.from('employees').update({
-            position: 'OJT Instructor',
-            application_status: 'approved',
-          }).eq('id', matchedEmp.id).catch((syncErr) => console.warn('Failed syncing instructor role to DB:', syncErr));
+          Promise.resolve(
+            supabase.from('employees').update({
+              position: 'OJT Instructor',
+              application_status: 'approved',
+            }).eq('id', matchedEmp.id)
+          ).catch((syncErr) => console.warn('Failed syncing instructor role to DB:', syncErr));
         }
       }
 
@@ -3320,10 +3326,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
         matchedEmp.role = 'hte';
         matchedEmp.position = 'HTE Representative';
         if (useSupabase) {
-          supabase.from('employees').update({
-            position: 'HTE Representative',
-            application_status: 'approved',
-          }).eq('id', matchedEmp.id).catch((syncErr) => console.warn('Failed syncing HTE role to DB:', syncErr));
+          Promise.resolve(
+            supabase.from('employees').update({
+              position: 'HTE Representative',
+              application_status: 'approved',
+            }).eq('id', matchedEmp.id)
+          ).catch((syncErr) => console.warn('Failed syncing HTE role to DB:', syncErr));
         }
       }
 
@@ -4144,7 +4152,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     ) {
       setCurrentUser((prev) => {
         if (!prev) return prev;
-        const nextUser = {
+        const nextUser: any = {
           ...prev,
           ...updatedEmployee,
           name: updatedEmployee.name || prev.name,
@@ -4226,7 +4234,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         ) {
           supabaseService.saveDocumentPassStatus(id, {
             allPassed: updatedEmployee?.documentsPassed ?? data.documentsPassed,
-            documentsStatus: updatedEmployee?.documentsStatus ?? data.documentsStatus,
+            documentsStatus: (updatedEmployee?.documentsStatus ?? data.documentsStatus) as any,
             submittedDocuments: updatedEmployee?.submittedDocuments ?? data.submittedDocuments,
           }).catch((err) => console.warn('AppContext saveDocumentPassStatus notice:', err));
         }
@@ -4467,7 +4475,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           registrationLocation: (updatedHost as any).registrationLocation || (prev as any).registrationLocation,
         };
         saveToStorage(STORAGE_KEYS.CURRENT_USER, nextUser);
-        saveToStorage(STORAGE_KEYS.USER, nextUser);
+        try {
+          localStorage.setItem('ojt_user', JSON.stringify(nextUser));
+        } catch {}
         if (nextUser.companyName) {
           localStorage.setItem('ojt_hte_company', nextUser.companyName);
         }
@@ -5835,6 +5845,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       maxFileSize?: number;
       allowedFileTypes?: string[];
       targetCourse?: string;
+      submittedBy?: string;
+      submittedByRole?: string;
     }
   ): RequiredDocument => {
     const notes = (data.notes ?? data.description ?? '').trim();
@@ -6010,10 +6022,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fileSize?: number | string;
       fileType?: string;
       files?: TraineeDocumentFile[];
+      status?: RequiredDocumentSubmission['status'];
+      verificationStatus?: RequiredDocumentSubmission['verificationStatus'];
     }
   ): RequiredDocumentSubmission => {
     const notes = (payload.notes ?? payload.note ?? '').trim();
     const now = new Date().toISOString();
+    const nextStatus: RequiredDocumentSubmission['status'] = payload.status || 'submitted';
     let saved: RequiredDocumentSubmission = {
       id: `doc-sub-${Date.now()}`,
       documentId,
@@ -6027,7 +6042,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       fileSize: payload.fileSize,
       fileType: payload.fileType,
       files: payload.files,
-      status: 'submitted',
+      status: nextStatus,
+      ...(payload.verificationStatus ? { verificationStatus: payload.verificationStatus } : {}),
     };
 
     setRequiredDocumentSubmissions((prev) => {
@@ -6036,16 +6052,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       if (existing) {
         saved = {
           ...existing,
-          note: notes,
-          notes,
-          fileName: payload.fileName || '',
-          fileUrl: payload.fileUrl || '',
+          note: notes || existing.note,
+          notes: notes || existing.notes,
+          fileName: payload.fileName || existing.fileName || '',
+          fileUrl: payload.fileUrl || existing.fileUrl || '',
           fileDataUrl: payload.fileDataUrl || existing.fileDataUrl || '',
           fileSize: payload.fileSize ?? existing.fileSize,
           fileType: payload.fileType ?? existing.fileType,
           files: payload.files ?? existing.files,
           submittedAt: now,
-          status: 'submitted',
+          status: nextStatus,
+          verificationStatus: payload.verificationStatus ?? existing.verificationStatus,
         };
         updated = prev.map((s) => (s.id === existing.id ? saved : s));
       } else {
@@ -6073,7 +6090,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const currentEmp = employees.find((e) => e.id === employeeId || e.employeeId === employeeId) || getCurrentEmployee();
     if (currentEmp) {
       const prevDoc = currentEmp.submittedDocuments?.[finalKey];
-      const newStatus = prevDoc?.status === 'passed' ? 'passed' : 'submitted';
+      const newStatus: 'passed' | 'submitted' = prevDoc?.status === 'passed' ? 'passed' : 'submitted';
       const updatedDocs = {
         ...(currentEmp.submittedDocuments || {}),
         [finalKey]: {
@@ -6083,7 +6100,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
           size: payload.fileSize || prevDoc?.size || 0,
           fileType: payload.fileType || prevDoc?.fileType || 'application/pdf',
           uploadedAt: now,
-          status: newStatus as const,
+          status: newStatus,
           description: payload.notes || payload.note || prevDoc?.description || '',
           notes: notes || prevDoc?.notes || '',
           source: 'portal' as const,

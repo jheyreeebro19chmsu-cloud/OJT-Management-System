@@ -27,6 +27,8 @@ const BLANK_FORM = {
   department: '',
   position: 'OJT Trainee',
   companyName: '',
+  companyAddress: '',
+  hteId: '',
   supervisorName: '',
   schoolName: 'Carlos Hilado Memorial State University',
   campus: '',
@@ -1196,8 +1198,9 @@ export function AdminEmployees() {
         if (!res?.documents || Object.keys(res.documents).length === 0) return;
         const merged: TraineeDocuments = { ...(emp.submittedDocuments || {}) };
         let changed = false;
-        for (const [k, inc] of Object.entries(res.documents)) {
-          if (!inc || typeof inc !== 'object') continue;
+        for (const [k, rawInc] of Object.entries(res.documents)) {
+          if (!rawInc || typeof rawInc !== 'object') continue;
+          const inc = rawInc as TraineeDocumentItem;
           const prev = merged[k];
           const incFiles = Array.isArray(inc.files) ? inc.files : [];
           const prevFiles = Array.isArray(prev?.files) ? prev.files : [];
@@ -1205,8 +1208,10 @@ export function AdminEmployees() {
             merged[k] = {
               ...(prev || {}),
               ...inc,
+              name: inc.name || prev?.name || k,
+              uploadedAt: inc.uploadedAt || prev?.uploadedAt || new Date().toISOString(),
               files: incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
-              status: prev?.status === 'passed' || inc.status === 'passed' ? 'passed' : inc.status || prev?.status,
+              status: prev?.status === 'passed' || inc.status === 'passed' ? 'passed' : inc.status || prev?.status || 'submitted',
             };
             changed = true;
           }

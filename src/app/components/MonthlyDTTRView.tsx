@@ -759,6 +759,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           date: dateStr,
           status: 'present',
           notes: taskText,
+          timeInGeofenced: false,
+          timeOutGeofenced: false,
+          timeInFaceVerified: false,
+          timeOutFaceVerified: false,
         });
       }
 
@@ -766,7 +770,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
       const existingCustom: Record<number, MonthlyDttrDayEntry> = {
         ...(savedDttr?.customEntries || {}),
       };
-      const existingEntry = existingCustom[day] || {};
+      const existingEntry: Partial<MonthlyDttrDayEntry> = existingCustom[day] || {};
       const targetRow = dailyRows.find((r) => r.day === day);
       existingCustom[day] = {
         ...existingEntry,
@@ -868,10 +872,14 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
             date: dateStr,
             status: 'present',
             notes: taskText,
+            timeInGeofenced: false,
+            timeOutGeofenced: false,
+            timeInFaceVerified: false,
+            timeOutFaceVerified: false,
           });
         }
 
-        const existingEntry = existingCustom[day] || {};
+        const existingEntry: Partial<MonthlyDttrDayEntry> = existingCustom[day] || {};
         const targetRow = dailyRows.find((r) => r.day === day);
         existingCustom[day] = {
           ...existingEntry,
@@ -966,10 +974,14 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
             date: dateStr,
             status: 'present',
             notes: taskText,
+            timeInGeofenced: false,
+            timeOutGeofenced: false,
+            timeInFaceVerified: false,
+            timeOutFaceVerified: false,
           });
         }
 
-        const existingEntry = existingCustom[day] || {};
+        const existingEntry: Partial<MonthlyDttrDayEntry> = existingCustom[day] || {};
         const targetRow = dailyRows.find((r) => r.day === day);
         existingCustom[day] = {
           ...existingEntry,

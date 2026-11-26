@@ -177,7 +177,7 @@ export function Profile() {
     course: (currentUser as any)?.course || 'BS Information Technology',
     startDate: (currentUser as any)?.startDate || new Date().toISOString().split('T')[0],
     endDate: (currentUser as any)?.endDate || new Date().toISOString().split('T')[0],
-    requiredHours: (currentUser as any)?.requiredHours || (employee as any)?.requiredHours || 600,
+    requiredHours: (currentUser as any)?.requiredHours || (rawEmployee as any)?.requiredHours || 600,
     photo: currentUser?.photo || '',
     faceRegistered: currentUser?.faceRegistered ?? false,
     active: true,
@@ -287,7 +287,7 @@ export function Profile() {
     return Boolean(d?.dataUrl || d?.name);
   }).length;
 
-  const handleProfileDocUpload = (docKey: keyof TraineeDocuments, file: File | null) => {
+  const handleProfileDocUpload = (docKey: string, file: File | null) => {
     if (!file) return;
 
     // Validate file type — Pictures (JPG, PNG, WEBP, HEIC, JFIF), PDF, Word (DOC, DOCX, DOCS)

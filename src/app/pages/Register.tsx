@@ -466,14 +466,13 @@ export function Register() {
       setGoogleAvatar(photoUrl);
     }
 
-    const resolvedEmail = email || getVerifiedGoogleEmail() || prev.email || '';
     setForm((prev) => ({
       ...prev,
       name: fullName || prev.name || 'OJT Instructor',
       firstName: fName || prev.firstName || 'Instructor',
       lastName: lName || prev.lastName || 'Faculty',
       middleInitial: mInitial || prev.middleInitial || '',
-      email: resolvedEmail,
+      email: email || getVerifiedGoogleEmail() || prev.email || '',
       contactPhone: prev.contactPhone && prev.contactPhone.replace(/[^\d]/g, '').length >= 10 ? prev.contactPhone : '+639171234567',
       schoolName: 'Carlos Hilado Memorial State University',
       campus: prev.campus || 'Talisay Campus',
@@ -550,7 +549,6 @@ export function Register() {
       ? 'Domingo Lizares Street, Purok Manpower'
       : 'Helix Service Center, Santa Clara Avenue';
 
-    const resolvedEmail = email || getVerifiedGoogleEmail() || prev.email || '';
     setForm((prev) => ({
       ...prev,
       name: resolvedRepName,
@@ -558,7 +556,7 @@ export function Register() {
       lastName: lName || prev.lastName || 'Representative',
       middleInitial: mInitial || prev.middleInitial || '',
       contactPerson: resolvedRepName,
-      email: resolvedEmail,
+      email: email || getVerifiedGoogleEmail() || prev.email || '',
       contactPhone: prev.contactPhone && prev.contactPhone.replace(/[^\d]/g, '').length >= 10 ? prev.contactPhone : '+639171234567',
       companyName: prev.companyName || resolvedCompany,
       companyAddress: prev.companyAddress || resolvedAddress,

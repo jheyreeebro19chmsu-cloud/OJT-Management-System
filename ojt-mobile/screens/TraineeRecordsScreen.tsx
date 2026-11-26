@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { StyleSheet, View, Text, TouchableOpacity, ActivityIndicator, FlatList, Alert } from 'react-native';
 import { ArrowLeft } from 'lucide-react-native';
+import { supabase } from '../lib/supabase';
 import { instructorApi } from '../lib/api';
 
 interface Props {
@@ -15,11 +16,23 @@ export default function TraineeRecordsScreen({ applicationId, studentName, onBac
 
   useEffect(() => {
     fetchRecords();
-  }, []);
+  }, [applicationId]);
 
   async function fetchRecords() {
     setLoading(true);
     try {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(applicationId || ''));
+      if (isUuid) {
+        const { data, error } = await supabase
+          .from('time_records')
+          .select('*')
+          .eq('employee_id', applicationId)
+          .order('date', { ascending: false });
+        if (!error && Array.isArray(data)) {
+          setRecords(data);
+          return;
+        }
+      }
       const res = await instructorApi.getTimeRecords(applicationId);
       if (res && res.time_records) setRecords(res.time_records);
     } catch (err: any) {
@@ -50,7 +63,7 @@ export default function TraineeRecordsScreen({ applicationId, studentName, onBac
               <Text style={styles.recordDate}>{item.date}</Text>
               <Text style={styles.recordText}>In: {item.time_in || '—'}</Text>
               <Text style={styles.recordText}>Out: {item.time_out || '—'}</Text>
-              <Text style={styles.recordText}>Hours: {item.hours_rendered ?? '—'}</Text>
+              <Text style={styles.recordText}>Hours: {item.total_hours ?? item.hours_rendered ?? '—'}</Text>
             </View>
           )}
         />

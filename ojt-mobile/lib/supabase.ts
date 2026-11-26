@@ -15,12 +15,12 @@ const webStorage = {
   async setItem(key: string, value: string) {
     try {
       if (typeof window !== 'undefined') window.localStorage.setItem(key, value);
-    } catch {}
+    } catch { }
   },
   async removeItem(key: string) {
     try {
       if (typeof window !== 'undefined') window.localStorage.removeItem(key);
-    } catch {}
+    } catch { }
   },
 };
 

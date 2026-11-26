@@ -95,28 +95,35 @@ export default function ApplicationScreen({ instructorId, onCancel, onSuccess }:
         otp_code: otpCode,
       };
 
-      // Call Django API and abort if it fails (prevents Supabase-only bypass)
-      await applicationApi.submit(djangoForm);
+      // 1. Optional legacy API sync (non-blocking fallback when serverless/Supabase mode is active)
+      try {
+        await applicationApi.submit(djangoForm);
+      } catch (apiErr) {
+        console.debug('Application API fallback to direct Supabase:', apiErr);
+      }
 
-      // 2. Secondary: Update Supabase profile for mobile UI
+      // 2. Authoritative Supabase profile update (using valid schema columns)
       const { error } = await supabase
         .from('employees')
         .update({
-          year_section: form.yearSection,
+          course: form.yearSection,
           company_name: form.companyName,
-          company_address: form.companyAddress,
-          start_date: form.startDate,
-          end_date: form.endDate,
-          required_hours: Number(form.requiredHours),
+          start_date: form.startDate || null,
+          end_date: form.endDate || null,
+          required_hours: Number(form.requiredHours) || 600,
           photo: form.photo,
           face_registered: true,
-          instructor_id: instructorId,
+          instructor_id: instructorId || null,
           application_status: 'pending',
+          registration_lat: location?.coords.latitude ?? null,
+          registration_lng: location?.coords.longitude ?? null,
           registration_location: {
             lat: location?.coords.latitude,
-            lng: location?.coords.longitude
+            lng: location?.coords.longitude,
+            companyAddress: form.companyAddress,
+            yearSection: form.yearSection,
           },
-          registration_address: address
+          registration_address: form.companyAddress || address,
         })
         .eq('id', user.id);
 

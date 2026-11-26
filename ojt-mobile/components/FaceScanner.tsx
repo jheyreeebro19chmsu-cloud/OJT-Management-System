@@ -318,7 +318,7 @@ export default function FaceScanner({
         }
 
         // Fast silent snapshot for real-time 3D liveness & landmark analysis
-        const photo = await cameraRef.current.takePictureAsync({
+        const photo: any = await cameraRef.current.takePictureAsync({
           quality: 0.28,
           base64: true,
           shutterSound: false,
@@ -674,7 +674,7 @@ export default function FaceScanner({
           const candidateLiveUrl = bestLiveFrameRef.current || dataUrl;
 
           try {
-            const finalPhoto = await cameraRef.current.takePictureAsync({
+            const finalPhoto: any = await cameraRef.current.takePictureAsync({
               quality: 0.85,
               base64: true,
               shutterSound: false,
@@ -726,7 +726,7 @@ export default function FaceScanner({
           }
           if (localBio && localBio.matched) {
             try {
-              const finalPhoto = await cameraRef.current.takePictureAsync({
+              const finalPhoto: any = await cameraRef.current.takePictureAsync({
                 quality: 0.85,
                 base64: true,
                 shutterSound: false,
@@ -751,7 +751,7 @@ export default function FaceScanner({
 
           if (dfRes.matched) {
             try {
-              const finalPhoto = await cameraRef.current.takePictureAsync({
+              const finalPhoto: any = await cameraRef.current.takePictureAsync({
                 quality: 0.85,
                 base64: true,
                 shutterSound: false,
@@ -818,7 +818,7 @@ export default function FaceScanner({
         throw new Error('Camera is warming up. Please hold steady.');
       }
 
-      const photo = await cameraRef.current.takePictureAsync({
+      const photo: any = await cameraRef.current.takePictureAsync({
         quality: 0.88,
         base64: true,
         shutterSound: false,
