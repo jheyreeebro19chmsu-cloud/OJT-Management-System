@@ -6,6 +6,36 @@ import { EmployeeLayout } from './components/EmployeeLayout';
 import { HTELayout } from './components/HTELayout';
 import { Login } from './pages/Login';
 import OAuthCallback from './pages/OAuthCallback';
+function isDynamicChunkLoadError(err: any): boolean {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return (
+    msg.includes('failed to fetch dynamically imported module') ||
+    msg.includes('importing a module script failed') ||
+    msg.includes('error loading dynamically imported module') ||
+    msg.includes('unable to preload css') ||
+    msg.includes('mime type') ||
+    err?.name === 'ChunkLoadError'
+  );
+}
+
+function triggerFreshDeployReload(sessionKey: string): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    const lastReload = Number(window.sessionStorage.getItem(sessionKey) || '0');
+    if (Date.now() - lastReload > 10_000) {
+      window.sessionStorage.setItem(sessionKey, String(Date.now()));
+      fetch(window.location.href, { cache: 'reload' })
+        .catch(() => {})
+        .finally(() => window.location.reload());
+      return true;
+    }
+  } catch {
+    window.location.reload();
+    return true;
+  }
+  return false;
+}
+
 function lazyWithRetry<T extends React.ComponentType<any>>(
   factory: () => Promise<{ default: T } | any>,
   componentName: string
@@ -15,23 +45,15 @@ function lazyWithRetry<T extends React.ComponentType<any>>(
     try {
       const module = await factory();
       if (typeof window !== 'undefined') {
-        window.sessionStorage.removeItem(sessionKey);
+        try {
+          window.sessionStorage.removeItem(sessionKey);
+        } catch {}
       }
       return module.default ? module : { default: module };
     } catch (error: any) {
       console.warn(`Dynamic chunk loading failed for ${componentName}:`, error);
-      const isChunkError =
-        error?.message?.includes('Failed to fetch dynamically imported module') ||
-        error?.message?.includes('Importing a module script failed') ||
-        error?.name === 'ChunkLoadError';
-
-      if (isChunkError && typeof window !== 'undefined') {
-        const alreadyRetried = window.sessionStorage.getItem(sessionKey);
-        if (!alreadyRetried) {
-          window.sessionStorage.setItem(sessionKey, 'true');
-          window.location.reload();
-          return new Promise<{ default: T }>(() => {});
-        }
+      if (isDynamicChunkLoadError(error) && triggerFreshDeployReload(sessionKey)) {
+        return new Promise<{ default: T }>(() => {});
       }
       throw error;
     }
@@ -100,7 +122,7 @@ const routeLoaders: Record<string, () => Promise<any>> = {
 export function preloadRoute(path: string) {
   const loader = routeLoaders[path];
   if (loader) {
-    loader().catch(() => {});
+    loader().catch(() => { });
   }
 }
 
@@ -130,23 +152,12 @@ function RouteErrorFallback() {
     message = `${error.status} ${error.statusText}`;
   } else if (error instanceof Error) {
     message = error.message;
-    if (
-      message.includes('Failed to fetch dynamically imported module') ||
-      message.includes('Importing a module script failed') ||
-      message.includes('error loading dynamically imported module')
-    ) {
-      if (typeof window !== 'undefined') {
-        const reloaded = window.sessionStorage.getItem('route_error_reloaded');
-        if (!reloaded) {
-          window.sessionStorage.setItem('route_error_reloaded', 'true');
-          window.location.reload();
-          return React.createElement(
-            'div',
-            { className: 'min-h-screen flex items-center justify-center bg-slate-50' },
-            React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600' })
-          );
-        }
-      }
+    if (isDynamicChunkLoadError(error) && triggerFreshDeployReload('route_error_reloaded_ts')) {
+      return React.createElement(
+        'div',
+        { className: 'min-h-screen flex items-center justify-center bg-slate-50' },
+        React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600' })
+      );
     }
   }
   return React.createElement(
@@ -166,11 +177,13 @@ function RouteErrorFallback() {
             type: 'button',
             onClick: () => {
               if (typeof window !== 'undefined') {
-                window.location.href = '/app';
+                const p = window.location.pathname;
+                const dest = p.startsWith('/admin') ? '/admin' : p.startsWith('/hte') ? '/hte' : '/app';
+                window.location.href = dest;
               }
             },
             className:
-              'inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors',
+              'inline-flex items-center rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors cursor-pointer',
           },
           'Return to Dashboard'
         ),
@@ -180,12 +193,16 @@ function RouteErrorFallback() {
             type: 'button',
             onClick: () => {
               if (typeof window !== 'undefined') {
-                window.sessionStorage.clear();
-                window.location.reload();
+                try {
+                  window.sessionStorage.clear();
+                } catch {}
+                fetch(window.location.href, { cache: 'reload' })
+                  .catch(() => {})
+                  .finally(() => window.location.reload());
               }
             },
             className:
-              'inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 transition-colors',
+              'inline-flex items-center rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 transition-colors cursor-pointer',
           },
           'Reload App'
         )
