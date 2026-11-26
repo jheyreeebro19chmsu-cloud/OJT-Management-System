@@ -152,6 +152,10 @@ async function mapUpdatesToDbPayload(updates) {
   if (updates.faceRegistered !== undefined || updates.face_registered !== undefined) {
     dbPayload.face_registered = updates.faceRegistered ?? updates.face_registered;
   }
+  const rawDesc = updates.faceDescriptor ?? updates.face_descriptor;
+  if (Array.isArray(rawDesc) && rawDesc.length === 128) {
+    dbPayload.face_descriptor = rawDesc;
+  }
   if (updates.active !== undefined) dbPayload.active = updates.active;
   if (updates.academicYear !== undefined || updates.academic_year !== undefined) {
     dbPayload.academic_year = updates.academicYear ?? updates.academic_year;
@@ -339,7 +343,7 @@ function parseQuery(req) {
 }
 
 const EMP_LIGHT_COLS =
-  'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_lat, registration_lng, registration_address, registration_location, created_at';
+  'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, face_descriptor, active, academic_year, instructor_id, hte_id, application_status, registration_lat, registration_lng, registration_address, registration_location, created_at';
 const HOST_LIGHT_COLS =
   'id, name, email, company_name, position, active, is_approved, created_at';
 

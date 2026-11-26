@@ -1353,6 +1353,7 @@ export function TimeRecord() {
                 employeeName={employee?.name || currentUser?.name}
                 employeeId={employee?.id || currentUser?.id}
                 registeredImage={registeredImageDataUrl || registeredPhotoSource}
+                registeredDescriptor={employee?.faceDescriptor}
                 onSuccess={handleFaceSuccess}
                 onCancel={() => setPageState('check-geofence')}
                 autoStart

@@ -29,7 +29,7 @@ import {
   inspectFaceQuality,
   computeLandmarkLivenessMetrics,
   detectScreenSpoofArtifacts,
-  hasNeuralFaceInDataUrl,
+  extractNeuralDescriptorFromDataUrl,
   type FaceQualityReport,
   type LandmarkLivenessMetrics,
 } from '../services/faceClient';
@@ -55,8 +55,9 @@ export interface FaceCaptureProps {
   mode: 'register' | 'verify';
   employeeName?: string;
   registeredImage?: string;
+  registeredDescriptor?: number[] | null;
   employeeId?: string;
-  onSuccess: (imageData?: string) => void;
+  onSuccess: (imageData?: string, faceDescriptor?: number[]) => void;
   onCancel: () => void;
   autoStart?: boolean;
 }
@@ -94,6 +95,7 @@ export function FaceCapture({
   employeeName,
   employeeId,
   registeredImage,
+  registeredDescriptor,
   onSuccess,
   onCancel,
   autoStart = true,
@@ -127,7 +129,11 @@ export function FaceCapture({
   const livenessPhaseRef = useRef<LivenessPhase>('calibrating');
   const [livenessVerified, setLivenessVerified] = useState<boolean>(false);
   const livenessVerifiedRef = useRef<boolean>(false);
-  const [livenessPrompt, setLivenessPrompt] = useState<string>('Step 1/3: Look straight at the camera');
+  const [livenessPrompt, setLivenessPrompt] = useState<string>(
+    mode === 'register'
+      ? 'Look straight at the camera to scan & add face'
+      : 'Step 1/3: Look straight at the camera'
+  );
   const [blinkChecked, setBlinkChecked] = useState<boolean>(false);
   const [smileChecked, setSmileChecked] = useState<boolean>(false);
   const [spoofWarning, setSpoofWarning] = useState<string | null>(null);
@@ -220,7 +226,12 @@ export function FaceCapture({
       prevMetricsTs: 0,
       frameCounter: 0,
     };
-    setLivenessPrompt(promptMsg || 'Step 1/3: Look straight at the camera');
+    setLivenessPrompt(
+      promptMsg ||
+        (modeRef.current === 'register'
+          ? 'Look straight at the camera to scan & add face'
+          : 'Step 1/3: Look straight at the camera')
+    );
   }, []);
 
   const [state, setState] = useState<ScanState>('idle');
@@ -291,10 +302,10 @@ export function FaceCapture({
     onSuccessRef.current = onSuccess;
   }, [onSuccess]);
 
-  const fireSuccessOnce = useCallback((img?: string) => {
+  const fireSuccessOnce = useCallback((img?: string, descriptor?: number[]) => {
     if (hasFiredSuccessRef.current) return; // guard: only the first success wins
     hasFiredSuccessRef.current = true;
-    onSuccessRef.current?.(img);
+    onSuccessRef.current?.(img, descriptor);
   }, []);
 
   const onCancelRef = useRef(onCancel);
@@ -306,6 +317,11 @@ export function FaceCapture({
   useEffect(() => {
     registeredImageRef.current = registeredImage;
   }, [registeredImage]);
+
+  const registeredDescriptorRef = useRef(registeredDescriptor);
+  useEffect(() => {
+    registeredDescriptorRef.current = registeredDescriptor;
+  }, [registeredDescriptor]);
 
   const modeRef = useRef(mode);
   useEffect(() => {
@@ -953,7 +969,40 @@ export function FaceCapture({
 
                   const phase = livenessPhaseRef.current;
 
-                  if (phase === 'calibrating') {
+                  // Dedicated Account Face Registration Scan (`mode === 'register'`):
+                  // Scans & locks 6 clear frontal 68-landmark frames (~0.8s) from the live camera stream
+                  // to add a crisp neutral 128-D neural facial template specifically for this account.
+                  if (modeRef.current === 'register') {
+                    const isFrontal = metrics.yawRatio >= 0.32 && metrics.yawRatio <= 0.68;
+                    const eyesOpen = metrics.ear >= 0.155;
+                    if (isFrontal && eyesOpen) {
+                      tracker.calibSamples.push(metrics);
+                      const targetFrames = 6;
+                      const pct = Math.min(100, Math.round((tracker.calibSamples.length / targetFrames) * 100));
+                      setAutoScanProgress(pct);
+                      const acctLabel = employeeNameRef.current ? ` for ${employeeNameRef.current}` : '';
+                      if (tracker.calibSamples.length < targetFrames) {
+                        setLivenessPrompt(`Scanning new face${acctLabel}... Hold steady`);
+                        setScanMessage(`Scanning 68 facial landmarks${acctLabel} (${pct}%)...`);
+                      } else {
+                        livenessPhaseRef.current = 'verified';
+                        setLivenessPhase('verified');
+                        livenessVerifiedRef.current = true;
+                        setLivenessVerified(true);
+                        setLivenessPrompt('✓ Facial Biometrics Captured!');
+
+                        if (autoScanEnabledRef.current && !autoScanTriggeredRef.current) {
+                          autoScanTriggeredRef.current = true;
+                          handleManualSnapRef.current();
+                        } else {
+                          setScanMessage('✓ Face scanned! Click Enroll Verified Live Face below to save.');
+                        }
+                      }
+                    } else {
+                      setLivenessPrompt('Look straight at the camera to scan & add face');
+                      setScanMessage('Center your face with eyes open to scan and register your face...');
+                    }
+                  } else if (phase === 'calibrating') {
                     // Step 1: Look straight ahead to lock 3D facial geometry (fast 2-frame lock)
                     const isFrontal = metrics.yawRatio >= 0.33 && metrics.yawRatio <= 0.67;
                     const eyesOpen = metrics.ear >= 0.155;
@@ -1016,7 +1065,7 @@ export function FaceCapture({
                       metrics.faceWidth > tracker.calibSamples[0].faceWidth * 0.52 &&
                       metrics.faceWidth < tracker.calibSamples[0].faceWidth * 1.70;
 
-                    if ((yawDelta >= 0.072 || (yawDelta >= 0.052 && asymDelta >= 0.14)) && scaleSteady) {
+                    if ((yawDelta >= 0.042 || (yawDelta >= 0.028 && asymDelta >= 0.085)) && scaleSteady) {
                       tracker.turnConfirmFrames++;
                       setAutoScanProgress(55);
                       if (tracker.turnConfirmFrames >= 1) {
@@ -1350,7 +1399,11 @@ export function FaceCapture({
     bestLiveFrameRef.current = null;
 
     setScanState('scanning');
-    setScanMessage('Step 1/3: Look straight at the camera to begin facial scan...');
+    setScanMessage(
+      modeRef.current === 'register'
+        ? 'Position your face in view — Scanning to add new facial biometrics for this account...'
+        : 'Step 1/3: Look straight at the camera to begin facial scan...'
+    );
     setProgress(20);
 
     // Pre-load biometric recognition models and surface an explicit error if models cannot load
@@ -1407,11 +1460,14 @@ export function FaceCapture({
       return;
     }
 
-    // SECURITY: Strictly block capture unless real-time 3D liveness challenge has passed on the active live stream
-    if (!livenessVerifiedRef.current || Boolean(spoofWarningRef.current)) {
+    // SECURITY: In verify mode, strictly block capture unless real-time 3D liveness challenge passed;
+    // in register mode, allow immediate capture once a single live unobstructed face is locked on camera.
+    if (Boolean(spoofWarningRef.current) || (modeRef.current === 'verify' && !livenessVerifiedRef.current)) {
       autoScanTriggeredRef.current = false;
       setScanMessage(
-        '🛡️ Complete Live Scan Steps: Look straight → Move head left/right → Blink & Smile.'
+        spoofWarningRef.current
+          ? `🚨 ${spoofWarningRef.current}`
+          : '🛡️ Complete Live Scan Steps: Look straight → Move head left/right → Blink & Smile.'
       );
       return;
     }
@@ -1421,7 +1477,7 @@ export function FaceCapture({
       bestLiveFrameRef.current && Date.now() - bestLiveFrameRef.current.ts <= 12000
         ? bestLiveFrameRef.current.dataUrl
         : undefined;
-    let img = rawSnap || cachedLive;
+    let img = (modeRef.current === 'register' ? cachedLive || rawSnap : rawSnap || cachedLive);
 
     if (!img) {
       failScan(
@@ -1432,26 +1488,30 @@ export function FaceCapture({
     }
 
     setScanState('analyzing');
-    setScanMessage('Analyzing facial landmarks & recognizing face...');
+    setScanMessage(
+      modeRef.current === 'register'
+        ? 'Extracting 128-D facial biometrics for this account...'
+        : 'Analyzing facial landmarks & recognizing face...'
+    );
     setProgress(70);
 
-    // Final frame quality & neural 128-D face recognition check.
-    // If the user happened to blink or grin widely on the exact capture millisecond, seamlessly
-    // fall back to the clean frontal open-eye snapshot cached moments earlier from this same live stream!
-    let [quality, hasNeuralFace] = await Promise.all([
+    // Final frame quality & neural 128-D face descriptor extraction.
+    // If the user happened to blink on the exact capture millisecond, seamlessly fall back to the clean frontal frame.
+    let [quality, neuralDescriptor] = await Promise.all([
       inspectFaceQuality(img).catch(() => null),
-      hasNeuralFaceInDataUrl(img).catch(() => false),
+      extractNeuralDescriptorFromDataUrl(img).catch(() => null),
     ]);
 
-    if ((!quality?.faceDetected || !hasNeuralFace) && cachedLive && cachedLive !== img) {
-      const [cachedQuality, cachedNeural] = await Promise.all([
-        inspectFaceQuality(cachedLive).catch(() => null),
-        hasNeuralFaceInDataUrl(cachedLive).catch(() => false),
+    const alternateFrame = img === cachedLive ? rawSnap : cachedLive;
+    if ((!quality?.faceDetected || !neuralDescriptor) && alternateFrame && alternateFrame !== img) {
+      const [altQuality, altDescriptor] = await Promise.all([
+        inspectFaceQuality(alternateFrame).catch(() => null),
+        extractNeuralDescriptorFromDataUrl(alternateFrame).catch(() => null),
       ]);
-      if (cachedQuality?.faceDetected && cachedNeural) {
-        img = cachedLive;
-        quality = cachedQuality;
-        hasNeuralFace = cachedNeural;
+      if (altQuality?.faceDetected && altDescriptor) {
+        img = alternateFrame;
+        quality = altQuality;
+        neuralDescriptor = altDescriptor;
       }
     }
 
@@ -1459,7 +1519,7 @@ export function FaceCapture({
       setQualityReport(quality);
     }
 
-    if (!quality || !quality.faceDetected || !hasNeuralFace) {
+    if (!quality || !quality.faceDetected || !neuralDescriptor) {
       failScan(
         'No face has been recognized. Unable to detect clear facial landmarks during scan. Please ensure good lighting, face the camera directly, and try again.',
         '❌ Error: No face has been recognized.'
@@ -1467,24 +1527,27 @@ export function FaceCapture({
       return;
     }
 
-    // In registration mode: enroll only after live 3D face + neural descriptor recognition succeeded
+    // In registration mode: enroll clean frontal photo + 128-D neural descriptor bound to this specific account
     if (modeRef.current === 'register') {
       stopCamera();
       setCapturedImage(img);
       setProgress(100);
       setScanState('success');
-      setScanMessage('✓ Live 3D Face Biometrics Enrolled Successfully!');
-      fireSuccessOnce(img);
+      const acctSuffix = employeeNameRef.current ? ` for ${employeeNameRef.current}` : '';
+      setScanMessage(`✓ New Facial Biometrics Enrolled${acctSuffix}!`);
+      fireSuccessOnce(img, neuralDescriptor);
       return;
     }
 
-    // In verify mode: strict Biometric Match using neural 128-D descriptors
+    // In verify mode: strict Biometric Match using account's enrolled 128-D descriptor and/or photo
     setScanState('verifying');
     setScanMessage('Verifying live face biometrics with AI...');
     setProgress(85);
 
-    const enrolledImage = registeredImageRef.current;
-    if (!enrolledImage) {
+    const enrolledImage = registeredImageRef.current || '';
+    const enrolledDescriptor = registeredDescriptorRef.current;
+    const hasEnrolledDesc = Boolean(enrolledDescriptor && enrolledDescriptor.length === 128);
+    if (!enrolledImage && !hasEnrolledDesc) {
       failScan(
         `No registered face biometric template on file for ${employeeNameRef.current || 'this trainee'}. Please register your face first.`,
         '❌ Error: Missing registered face biometrics.'
@@ -1492,7 +1555,7 @@ export function FaceCapture({
       return;
     }
 
-    const bio = await strictBiometricVerify(enrolledImage, img, 0.56, false);
+    const bio = await strictBiometricVerify(enrolledImage, img, 0.56, false, enrolledDescriptor);
     if (!bio.matched) {
       resetLivenessChallenge();
       const noFaceDetected =
@@ -2115,10 +2178,14 @@ export function FaceCapture({
             <button
               type="button"
               onClick={() => handleManualSnap()}
-              disabled={state === 'verifying' || state === 'analyzing' || (isFaceLocked && !livenessVerified)}
+              disabled={
+                state === 'verifying' ||
+                state === 'analyzing' ||
+                (mode === 'verify' && isFaceLocked && !livenessVerified)
+              }
               className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-2xl font-bold text-xs shadow-md transition-all ${state === 'verifying' || state === 'analyzing'
                   ? 'bg-blue-600 text-white cursor-wait animate-pulse'
-                  : livenessVerified
+                  : livenessVerified || (mode === 'register' && isFaceLocked)
                     ? 'bg-emerald-600 hover:bg-emerald-700 active:scale-[0.98] text-white shadow-emerald-600/25 cursor-pointer'
                     : !isFaceLocked
                       ? 'bg-amber-600 hover:bg-amber-700 text-white cursor-pointer'
@@ -2128,28 +2195,32 @@ export function FaceCapture({
               {state === 'verifying' || state === 'analyzing' ? (
                 <>
                   <RefreshCw size={15} className="animate-spin" />
-                  <span>Verifying Live Biometrics...</span>
+                  <span>
+                    {mode === 'register' ? 'Adding Face to Account...' : 'Verifying Live Biometrics...'}
+                  </span>
                 </>
-              ) : livenessVerified ? (
+              ) : livenessVerified || (mode === 'register' && isFaceLocked) ? (
                 <>
                   <ShieldCheck size={15} />
                   <span>
-                    {mode === 'register' ? 'Enroll Verified Live Face' : 'Verify Live Face Now'}
+                    {mode === 'register' ? 'Capture & Add Face for Account' : 'Verify Live Face Now'}
                   </span>
                 </>
               ) : (
                 <>
                   <Eye size={15} />
                   <span>
-                    {livenessPhase === 'turn_head'
-                      ? 'Step 2/3: Move Head Left or Right...'
-                      : livenessPhase === 'blink_and_smile'
-                        ? blinkChecked
-                          ? 'Blink ✓ — Smile to Finish...'
-                          : smileChecked
-                            ? 'Smile ✓ — Blink to Finish...'
-                            : 'Step 3/3: Blink & Smile...'
-                        : 'Step 1/3: Look Straight at Camera...'}
+                    {mode === 'register'
+                      ? 'Align Face with Camera to Register...'
+                      : livenessPhase === 'turn_head'
+                        ? 'Step 2/3: Move Head Left or Right...'
+                        : livenessPhase === 'blink_and_smile'
+                          ? blinkChecked
+                            ? 'Blink ✓ — Smile to Finish...'
+                            : smileChecked
+                              ? 'Smile ✓ — Blink to Finish...'
+                              : 'Step 3/3: Blink & Smile...'
+                          : 'Step 1/3: Look Straight at Camera...'}
                   </span>
                 </>
               )}

@@ -31,6 +31,7 @@ export interface Employee {
   photo?: string;
   schoolLogo?: string;
   faceRegistered: boolean;
+  faceDescriptor?: number[] | null;
   createdAt: string;
   active: boolean;
   userId?: string;

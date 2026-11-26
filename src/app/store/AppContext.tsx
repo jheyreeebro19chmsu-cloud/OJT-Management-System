@@ -2951,7 +2951,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     let targetEmail = normalizedId;
 
     const EMP_AUTH_SELECT_COLS =
-      'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at';
+      'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, face_descriptor, active, academic_year, instructor_id, hte_id, application_status, created_at';
     const HOST_AUTH_SELECT_COLS =
       'id, name, email, company_name, position, active, is_approved, created_at';
 
@@ -3200,7 +3200,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         if (!cloudReady) return { authoritativeEmpty: false };
         try {
           const empCols =
-            'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at';
+            'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, face_descriptor, active, academic_year, instructor_id, hte_id, application_status, created_at';
           const hostCols = 'id, name, email, company_name, position, active, is_approved, created_at';
 
           const [empEmailRes, empIdRes, hostEmailRes, hostIdRes] = await Promise.allSettled([
@@ -3364,7 +3364,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
 
       const oauthPhoto = authUser.user_metadata?.avatar_url || authUser.user_metadata?.picture;
-      if (oauthPhoto && !matchedEmp.photo) {
+      if (oauthPhoto && !matchedEmp.photo && !matchedEmp.faceRegistered) {
         matchedEmp.photo = oauthPhoto;
         if (useSupabase) {
           supabaseService.updateEmployee(matchedEmp.id, { photo: oauthPhoto }).catch(console.warn);

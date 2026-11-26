@@ -626,6 +626,9 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     required_hours: isInst || isHte ? (employee.requiredHours ?? 0) : TRAINEE_REQUIRED_HOURS,
     photo: photoToStore,
     face_registered: Boolean(employee.faceRegistered),
+    ...(Array.isArray(employee.faceDescriptor) && employee.faceDescriptor.length === 128
+      ? { face_descriptor: employee.faceDescriptor }
+      : {}),
     active: employee.active !== false,
     registration_lat: employee.registrationLocation?.lat != null ? Number(employee.registrationLocation.lat) : null,
     registration_lng: employee.registrationLocation?.lng != null ? Number(employee.registrationLocation.lng) : null,
@@ -852,6 +855,9 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     supabaseUpdates.photo = photoVal;
   }
   if (updates.faceRegistered !== undefined) supabaseUpdates.face_registered = updates.faceRegistered;
+  if (Array.isArray(updates.faceDescriptor) && updates.faceDescriptor.length === 128) {
+    supabaseUpdates.face_descriptor = updates.faceDescriptor;
+  }
   if (updates.active !== undefined) supabaseUpdates.active = updates.active;
   if (updates.academicYear !== undefined) supabaseUpdates.academic_year = updates.academicYear;
   if (updates.applicationStatus !== undefined) supabaseUpdates.application_status = updates.applicationStatus;
@@ -1999,6 +2005,29 @@ export async function uploadFacePhoto(
         }
       } catch (bErr) {
         console.warn(`[Storage] Exception uploading to bucket "${bucketName}":`, bErr);
+      }
+    }
+
+    // Server-side service-role upload fallback (essential during unauthenticated new-account registration)
+    if (typeof window !== 'undefined' && base64Data.length < 4000000) {
+      try {
+        const srvRes = await fetch('/api/documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'upload',
+            path: fileName,
+            dataUrl: base64Data.startsWith('data:') ? base64Data : `data:image/jpeg;base64,${base64Content}`,
+            contentType: 'image/jpeg',
+            bucket: primaryBucket,
+          }),
+        });
+        if (srvRes.ok) {
+          const srvData = await srvRes.json();
+          if (srvData?.publicUrl) return srvData.publicUrl;
+        }
+      } catch (srvErr) {
+        console.warn('[Storage] Server face photo upload fallback notice:', srvErr);
       }
     }
   } catch (err) {
@@ -3504,6 +3533,17 @@ export function transformSupabaseEmployee(data: any): Employee {
     renderedHours: Number(data.rendered_hours ?? regLoc?.renderedHours ?? 0),
     photo: data.photo,
     faceRegistered: data.face_registered,
+    faceDescriptor: (() => {
+      const raw = data.face_descriptor ?? regLoc?.faceDescriptor;
+      if (Array.isArray(raw) && raw.length === 128) return raw.map(Number);
+      if (typeof raw === 'string' && raw.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length === 128) return parsed.map(Number);
+        } catch {}
+      }
+      return undefined;
+    })(),
     createdAt: data.created_at,
     active: data.active,
     academicYear: data.academic_year,

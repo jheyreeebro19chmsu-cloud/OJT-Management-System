@@ -69,7 +69,9 @@ export default function FaceScanner({
   // Strict 3D Live-Face Challenge Anti-Spoof State
   const [livenessVerified, setLivenessVerified] = useState(false);
   const livenessVerifiedRef = useRef(false);
-  const [livenessStepText, setLivenessStepText] = useState('🛡️ Step 1/3: Look straight ahead');
+  const [livenessStepText, setLivenessStepText] = useState(
+    mode === 'enroll' ? '🛡️ Look straight to scan & add face' : '🛡️ Step 1/3: Look straight ahead'
+  );
   const blinkStateRef = useRef<'calibrating' | 'turn_head' | 'blink_and_smile' | 'verified'>('calibrating');
   const blinkFrameRef = useRef<string | null>(null);
   const bestLiveFrameRef = useRef<string | null>(null);
@@ -501,7 +503,36 @@ export default function FaceScanner({
             return;
           }
 
-          if (blinkStateRef.current === 'calibrating') {
+          if (mode === 'enroll') {
+            if (quality.faceCentered === false) {
+              setStatusMessage('Center face inside the oval to add to account');
+              return;
+            }
+            if (yaw >= 0.32 && yaw <= 0.68 && ear >= 0.155) {
+              stats.calibFrames++;
+              const targetFrames = 3;
+              const prog = Math.min(0.92, 0.35 + (stats.calibFrames / targetFrames) * 0.57);
+              setLivenessStepText(`🛡️ Scanning New Face (${Math.min(100, Math.round((stats.calibFrames / targetFrames) * 100))}%)`);
+              setStatusMessage(
+                employeeName
+                  ? `Scanning facial biometrics for ${employeeName}...`
+                  : 'Scanning facial biometrics for this account...'
+              );
+              Animated.timing(progressAnim, { toValue: prog, duration: 140, useNativeDriver: false }).start();
+
+              if (stats.calibFrames >= targetFrames) {
+                blinkStateRef.current = 'verified';
+                livenessVerifiedRef.current = true;
+                setLivenessVerified(true);
+                setLivenessStepText('✓ Facial Biometrics Captured');
+              } else {
+                return;
+              }
+            } else {
+              setStatusMessage('Look straight at the camera with eyes open');
+              return;
+            }
+          } else if (blinkStateRef.current === 'calibrating') {
             if (quality.faceCentered === false) {
               setStatusMessage('Step 1/3: Center face inside the oval guide');
               return;
@@ -562,7 +593,7 @@ export default function FaceScanner({
             const yawDelta = Math.abs(yaw - stats.baselineYaw);
             const asymDelta = Math.abs(asym - stats.baselineAsym);
             const scaleOk = fw > stats.baselineWidth * 0.52 && fw < stats.baselineWidth * 1.70;
-            if ((yawDelta >= 0.072 || (yawDelta >= 0.052 && asymDelta >= 0.14)) && scaleOk) {
+            if ((yawDelta >= 0.042 || (yawDelta >= 0.028 && asymDelta >= 0.085)) && scaleOk) {
               phaseStartedAtRef.current = now;
               blinkStateRef.current = 'blink_and_smile';
               setLivenessStepText('🛡️ Step 3/3: Blink & Smile');

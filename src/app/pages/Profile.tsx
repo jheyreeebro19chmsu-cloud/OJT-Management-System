@@ -43,7 +43,7 @@ import AvatarEditor from '../components/AvatarEditor';
 import { FaceCapture } from '../components/FaceCapture';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRequirements';
-import { uploadDocumentToStorage, saveDocumentPassStatus } from '../services/supabaseService';
+import { uploadDocumentToStorage, saveDocumentPassStatus, uploadFacePhoto } from '../services/supabaseService';
 import { downloadDocument, getFileCategory } from '../utils/attachmentHelper';
 import { GeofenceMap } from '../components/GeofenceMap';
 import { resolveHteLocation, getTraineeGeofenceOverride } from '../utils/hteLocation';
@@ -129,7 +129,7 @@ export function Profile() {
             accuracy: pos.coords.accuracy,
           });
         },
-        () => {},
+        () => { },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 10000 }
       );
     }
@@ -197,7 +197,7 @@ export function Profile() {
 
   let initialRegLoc = (employee as any)?.registrationLocation;
   if (typeof initialRegLoc === 'string') {
-    try { initialRegLoc = JSON.parse(initialRegLoc); } catch {}
+    try { initialRegLoc = JSON.parse(initialRegLoc); } catch { }
   }
   const isCoordStr = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
   const initialPhone =
@@ -238,7 +238,7 @@ export function Profile() {
     if (!editing && employee) {
       let regAny = (employee as any)?.registrationLocation;
       if (typeof regAny === 'string') {
-        try { regAny = JSON.parse(regAny); } catch {}
+        try { regAny = JSON.parse(regAny); } catch { }
       }
       const isC = (val?: string) => Boolean(val && /^-?\d+(\.\d+)?\s*,\s*-?\d+(\.\d+)?$/.test(String(val).trim()));
       const ph =
@@ -355,7 +355,7 @@ export function Profile() {
         if (remoteUrl) {
           try {
             localStorage.setItem(`ojt_doc_url_${empId}_${docKey}`, remoteUrl);
-          } catch {}
+          } catch { }
         }
         const finalUrl = remoteUrl || previewUrl;
         const finalItem: TraineeDocumentItem = {
@@ -384,30 +384,45 @@ export function Profile() {
               },
             })
           );
-        } catch {}
+        } catch { }
       })
       .catch((err) => console.warn('Profile background upload notice:', err));
   };
 
-  const handleProfileFaceSuccess = async (img?: string) => {
+  const handleProfileFaceSuccess = async (img?: string, descriptor?: number[]) => {
     if (!img || !employee) return;
     setFaceCaptureOpen(false);
     setAvatarPreview(img);
     try {
+      let storedPhotoUrl = img;
+      try {
+        const uploaded = await uploadFacePhoto(employee.employeeId || employee.id, img, 'profile');
+        if (uploaded && uploaded.startsWith('http')) {
+          storedPhotoUrl = uploaded;
+        }
+      } catch {}
+
       if (isSecurityApiConfigured()) {
         const resp = await registerFace({ employee_id: String(employee.id), image: img });
         if (resp.success && resp.image_url) {
-          updateEmployee(employee.id, { photo: resp.image_url, faceRegistered: true });
-          toast.success('Face registered and profile picture updated!');
-          return;
+          storedPhotoUrl = resp.image_url;
         }
       }
-      updateEmployee(employee.id, { photo: img, faceRegistered: true });
-      toast.success('Face registered and profile picture updated!');
+
+      updateEmployee(employee.id, {
+        photo: storedPhotoUrl,
+        faceRegistered: true,
+        ...(descriptor && descriptor.length === 128 ? { faceDescriptor: descriptor } : {}),
+      });
+      toast.success(`New facial biometrics registered for ${employee.name}!`);
     } catch (err: any) {
       console.error('Face registration error:', err);
-      updateEmployee(employee.id, { photo: img, faceRegistered: true });
-      toast.success('Profile photo updated with face scan!');
+      updateEmployee(employee.id, {
+        photo: img,
+        faceRegistered: true,
+        ...(descriptor && descriptor.length === 128 ? { faceDescriptor: descriptor } : {}),
+      });
+      toast.success('Profile photo & facial biometrics updated!');
     }
   };
 
@@ -443,9 +458,9 @@ export function Profile() {
 
   const showEvaluationCard = Boolean(
     evaluation &&
-      (evaluation.status === 'final' ||
-        evaluation.status === 'submitted_to_instructor' ||
-        evaluation.status === 'reviewed_by_instructor')
+    (evaluation.status === 'final' ||
+      evaluation.status === 'submitted_to_instructor' ||
+      evaluation.status === 'reviewed_by_instructor')
   );
 
   return (
@@ -752,11 +767,10 @@ export function Profile() {
                   <p className="text-[10px] text-gray-500 mt-0.5">{uploadedDocCount}/{totalRequired} submitted</p>
                 </div>
               </div>
-              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${
-                uploadedDocCount === totalRequired
-                  ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
-                  : 'bg-amber-50 text-amber-700 border-amber-300'
-              }`}>
+              <span className={`text-[11px] font-bold px-2.5 py-1 rounded-full border ${uploadedDocCount === totalRequired
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                : 'bg-amber-50 text-amber-700 border-amber-300'
+                }`}>
                 {uploadedDocCount === totalRequired ? '✓ All Submitted' : `${totalRequired - uploadedDocCount} Missing`}
               </span>
             </div>
@@ -780,18 +794,16 @@ export function Profile() {
                 return (
                   <div
                     key={item.key}
-                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${
-                      isPassed
-                        ? 'bg-emerald-50 border-emerald-200'
-                        : isPending
-                          ? 'bg-blue-50 border-blue-200'
-                          : 'bg-gray-50 border-gray-100'
-                    }`}
+                    className={`flex items-center gap-3 p-3 rounded-xl border transition-all ${isPassed
+                      ? 'bg-emerald-50 border-emerald-200'
+                      : isPending
+                        ? 'bg-blue-50 border-blue-200'
+                        : 'bg-gray-50 border-gray-100'
+                      }`}
                   >
                     {/* Status icon */}
-                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
-                      isPassed ? 'bg-emerald-100' : isPending ? 'bg-blue-100' : 'bg-gray-200'
-                    }`}>
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${isPassed ? 'bg-emerald-100' : isPending ? 'bg-blue-100' : 'bg-gray-200'
+                      }`}>
                       {isPassed ? (
                         <Check size={13} className="text-emerald-700 stroke-[3]" />
                       ) : isPending ? (
@@ -846,13 +858,12 @@ export function Profile() {
                       )}
                       <label
                         htmlFor={`profile-doc-${item.key}`}
-                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${
-                          isUploading
-                            ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
-                            : hasFile
-                              ? 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'
-                              : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
-                        }`}
+                        className={`p-1.5 rounded-lg border transition-all cursor-pointer ${isUploading
+                          ? 'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed'
+                          : hasFile
+                            ? 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'
+                            : 'bg-blue-600 border-blue-600 text-white hover:bg-blue-700'
+                          }`}
                         title={hasFile ? 'Replace document' : 'Upload document'}
                       >
                         <Upload size={13} className={isUploading ? 'animate-spin' : ''} />

@@ -62,7 +62,7 @@ import {
   resolveFastGoogleOAuthUrl,
   purgeStaleSupabaseAuth,
 } from '../lib/supabase';
-import { createEmployee as createEmployeeDb } from '../services/supabaseService';
+import { createEmployee as createEmployeeDb, uploadFacePhoto } from '../services/supabaseService';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError, reverseGeocode, isWithinNegrosOccidental } from '../utils/geo';
@@ -332,6 +332,8 @@ export function Register() {
   const [registeredInstructorId, setRegisteredInstructorId] = useState('');
 
   const [faceRegistered, setFaceRegistered] = useState(false);
+  const [faceDescriptor, setFaceDescriptor] = useState<number[] | undefined>(undefined);
+  const [uploadedFaceUrl, setUploadedFaceUrl] = useState<string | undefined>(undefined);
   const [photo, setPhoto] = useState<string | undefined>();
   const [documents] = useState<TraineeDocuments>({});
   const [otpRequested, setOtpRequested] = useState(false);
@@ -791,7 +793,6 @@ export function Register() {
 
         if (oauthPhoto) {
           setGoogleAvatar(oauthPhoto);
-          setPhoto(oauthPhoto);
         }
 
       }
@@ -806,7 +807,6 @@ export function Register() {
             const userPhoto = sessUser.user_metadata?.avatar_url || sessUser.user_metadata?.picture;
             if (userPhoto) {
               setGoogleAvatar(userPhoto);
-              setPhoto((p) => p || userPhoto);
             }
           }
         }).catch(() => {});
@@ -1148,11 +1148,30 @@ export function Register() {
     }
   };
 
-  const handleFaceSuccess = useCallback((img?: string) => {
-    setFaceRegistered(true);
-    setPhoto(img);
-    setFaceCapturing(false);
-  }, []);
+  const handleFaceSuccess = useCallback(
+    (img?: string, descriptor?: number[]) => {
+      setFaceRegistered(true);
+      setPhoto(img);
+      if (descriptor && descriptor.length === 128) {
+        setFaceDescriptor(descriptor);
+      }
+      setFaceCapturing(false);
+
+      // Immediately pre-upload the newly scanned face photo to Supabase Storage for this specific account
+      if (img && img.startsWith('data:')) {
+        const acctKey = form.employeeId || form.email || 'trainee_face';
+        uploadFacePhoto(acctKey, img, 'profile')
+          .then((url) => {
+            if (url && url.startsWith('http')) {
+              setUploadedFaceUrl(url);
+              setPhoto(url);
+            }
+          })
+          .catch(() => {});
+      }
+    },
+    [form.employeeId, form.email]
+  );
 
   const handleSubmit = async () => {
     if (isSubmitting) return; // debounce: block re-entry while a submit is in flight
@@ -1305,7 +1324,8 @@ export function Register() {
         position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
         requiredHours: role === 'admin' ? 0 : (role === 'trainee' ? 600 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600)),
         faceRegistered,
-        photo,
+        ...(faceDescriptor && faceDescriptor.length === 128 ? { faceDescriptor } : {}),
+        photo: role === 'trainee' ? uploadedFaceUrl || photo : photo || googleAvatar || undefined,
         active: role !== 'trainee',
         approvalStatus: role === 'trainee' ? 'pending' : 'approved',
         applicationStatus: role === 'trainee' ? 'pending' : 'approved',
@@ -1376,8 +1396,16 @@ export function Register() {
             province: form.province || undefined,
             registrationLocation: registrationLocation || undefined,
             registrationAddress: computedRegistrationAddress,
-            photo: photo || (existing ? existing.photo : undefined),
+            photo:
+              role === 'trainee'
+                ? uploadedFaceUrl || photo || (existing?.faceRegistered ? existing.photo : undefined)
+                : photo || googleAvatar || (existing ? existing.photo : undefined),
             faceRegistered: faceRegistered || (existing ? existing.faceRegistered : false),
+            ...(faceDescriptor && faceDescriptor.length === 128
+              ? { faceDescriptor }
+              : existing?.faceDescriptor
+              ? { faceDescriptor: existing.faceDescriptor }
+              : {}),
             active: role !== 'trainee',
             approvalStatus: role === 'trainee' ? 'pending' : 'approved',
             applicationStatus: role === 'trainee' ? 'pending' : 'approved',
@@ -4123,7 +4151,12 @@ export function Register() {
                   <FaceCapture
                     key={`face-reg-${retryCount}`}
                     mode="register"
-                    employeeName={form.name}
+                    employeeName={
+                      form.name ||
+                      [form.firstName, form.middleInitial, form.lastName].filter(Boolean).join(' ') ||
+                      form.email
+                    }
+                    employeeId={form.employeeId || form.email}
                     onSuccess={handleFaceSuccess}
                     onCancel={() => setFaceCapturing(false)}
                     autoStart
@@ -4141,21 +4174,29 @@ export function Register() {
                         <Check size={36} className="text-green-600" />
                       )}
                     </div>
-                    <div className="text-center">
-                      <p className="font-semibold text-green-700">Face Registered!</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        Your biometric image has been captured and will be stored
+                    <div className="text-center space-y-1">
+                      <p className="font-semibold text-green-700">New Facial Biometrics Added!</p>
+                      <p className="text-xs text-gray-600 font-medium">
+                        Bound to account:{' '}
+                        <span className="font-bold text-gray-800">
+                          {form.email || form.name || form.employeeId || 'This Trainee Account'}
+                        </span>
+                      </p>
+                      <p className="text-[11px] text-gray-500">
+                        128-D neural face template captured and ready for attendance verification
                       </p>
                     </div>
                     <button
                       type="button"
                       onClick={() => {
                         setFaceRegistered(false);
+                        setFaceDescriptor(undefined);
+                        setUploadedFaceUrl(undefined);
                         setShowCameraPermissionPrompt(true);
                       }}
                       className="text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer"
                     >
-                      Re-register face
+                      Scan a different face
                     </button>
                   </div>
                 ) : (

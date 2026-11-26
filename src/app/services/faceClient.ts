@@ -240,12 +240,20 @@ export async function computeDescriptorFromDataUrl(dataUrl: string): Promise<Flo
   return typed ? typed.descriptor : null;
 }
 
-export async function hasNeuralFaceInDataUrl(dataUrl: string): Promise<boolean> {
-  if (!dataUrl) return false;
+export async function extractNeuralDescriptorFromDataUrl(dataUrl: string): Promise<number[] | null> {
+  if (!dataUrl) return null;
   const modelsAvailable = _modelsLoaded || (await loadFaceModels().catch(() => false));
-  if (!modelsAvailable) return false;
+  if (!modelsAvailable) return null;
   const typed = await computeTypedDescriptorFromDataUrl(dataUrl);
-  return Boolean(typed && typed.type === 'neural' && typed.descriptor && typed.descriptor.length === 128);
+  if (typed && typed.type === 'neural' && typed.descriptor && typed.descriptor.length === 128) {
+    return Array.from(typed.descriptor).map((n) => Number(n.toFixed(6)));
+  }
+  return null;
+}
+
+export async function hasNeuralFaceInDataUrl(dataUrl: string): Promise<boolean> {
+  const desc = await extractNeuralDescriptorFromDataUrl(dataUrl);
+  return Boolean(desc && desc.length === 128);
 }
 
 /**
@@ -923,14 +931,19 @@ export async function strictBiometricVerify(
   registeredDataUrl: string,
   liveDataUrl: string,
   threshold = 0.58,
-  _skipQualityCheck = false
+  _skipQualityCheck = false,
+  registeredDescriptor?: number[] | Float32Array | null
 ): Promise<{ matched: boolean; distance: number; confidence: number; error?: string }> {
-  if (!registeredDataUrl || !liveDataUrl) {
+  const hasStoredDescriptor = Boolean(
+    registeredDescriptor && registeredDescriptor.length === 128
+  );
+
+  if ((!registeredDataUrl && !hasStoredDescriptor) || !liveDataUrl) {
     return {
       matched: false,
       distance: Infinity,
       confidence: 0,
-      error: !registeredDataUrl
+      error: !registeredDataUrl && !hasStoredDescriptor
         ? 'No registered face template found for this student. Face registration required.'
         : 'Missing live camera image for biometric verification.',
     };
@@ -947,7 +960,15 @@ export async function strictBiometricVerify(
   }
 
   const [t1, t2] = await Promise.all([
-    computeTypedDescriptorFromDataUrl(registeredDataUrl),
+    hasStoredDescriptor
+      ? Promise.resolve({
+          descriptor:
+            registeredDescriptor instanceof Float32Array
+              ? registeredDescriptor
+              : new Float32Array(registeredDescriptor!),
+          type: 'neural' as const,
+        })
+      : computeTypedDescriptorFromDataUrl(registeredDataUrl),
     computeTypedDescriptorFromDataUrl(liveDataUrl),
   ]);
 

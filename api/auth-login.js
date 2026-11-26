@@ -42,7 +42,7 @@ function parseQuery(req) {
 }
 
 const EMP_AUTH_COLS =
-  'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at';
+  'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, face_descriptor, active, academic_year, instructor_id, hte_id, application_status, created_at';
 const HOST_AUTH_COLS =
   'id, name, email, company_name, position, active, is_approved, created_at';
 

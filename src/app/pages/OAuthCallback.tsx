@@ -464,7 +464,7 @@ export default function OAuthCallback() {
               faceRegistered: dbEmp.face_registered ?? dbEmp.faceRegistered ?? false,
             };
 
-            if (photoUrl && !dbEmp.photo && isSupabaseConfigured()) {
+            if (photoUrl && !dbEmp.photo && !dbEmp.face_registered && !dbEmp.faceRegistered && isSupabaseConfigured()) {
               Promise.resolve(supabase.from('employees').update({ photo: photoUrl }).eq('id', dbEmp.id)).catch(console.warn);
             }
 
