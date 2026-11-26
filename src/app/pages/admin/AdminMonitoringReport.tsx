@@ -155,9 +155,9 @@ export function AdminMonitoringReport() {
 
   // Live auto-sync when Instructor opens or focuses Monitoring Report page
   useEffect(() => {
-    refreshData({ force: true }).catch(() => {});
+    refreshData().catch(() => {});
     const onFocus = () => {
-      refreshData({ force: true }).catch(() => {});
+      refreshData().catch(() => {});
     };
     window.addEventListener('focus', onFocus);
     const interval = setInterval(() => {

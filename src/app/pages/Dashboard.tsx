@@ -139,13 +139,9 @@ export function Dashboard() {
     return false;
   }, [currentUser, employee]);
 
-  // Automatically pull live attendance from Supabase so trainee timestamps on laptop/cellphone are always permanent and visible
+  // Sync dashboard data cleanly via AppContext cooldown-guarded refresh (avoids duplicate parallel time_records storms)
   useEffect(() => {
-    if (empLookupId) {
-      const altIds = [employee?.id, employee?.employeeId, currentUser?.employeeId, currentUser?.id, currentUser?.email].filter(Boolean) as string[];
-      fetchTimeRecordsForEmployee(empLookupId, altIds).catch(() => {});
-    }
-    refreshData({ force: true }).catch(() => {});
+    refreshData().catch(() => {});
   }, [empLookupId, refreshData]);
   
   // HTE/Instructor Dashboard Metrics

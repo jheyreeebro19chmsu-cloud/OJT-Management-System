@@ -73,8 +73,32 @@ const resilientSupabaseFetch: typeof fetch = async (input, init) => {
     headers.set('apikey', supabaseAnonKey);
   }
 
-  const nextInit: RequestInit = { ...init, headers };
-  const response = await fetch(input, nextInit);
+  const method = (init?.method || 'GET').toUpperCase();
+  const shouldAutoBound = !init?.signal && method === 'GET' && urlStr.includes('/rest/v1/');
+  const autoController = shouldAutoBound ? new AbortController() : null;
+  const autoTimer = autoController ? setTimeout(() => autoController.abort(), 7500) : null;
+
+  const nextInit: RequestInit = {
+    ...init,
+    headers,
+    ...(autoController ? { signal: autoController.signal } : {}),
+  };
+
+  let response: Response;
+  try {
+    response = await fetch(input, nextInit);
+    if (autoTimer) clearTimeout(autoTimer);
+  } catch (fetchErr) {
+    if (autoTimer) clearTimeout(autoTimer);
+    // Prevent Cloudflare 522/524 network drops on PostgREST GETs from surfacing as uncaught CORS exceptions
+    if (method === 'GET' && urlStr.includes('/rest/v1/')) {
+      return new Response('[]', {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+    throw fetchErr;
+  }
 
   // If GoTrue token refresh fails with 400, purge stale auth token so it stops looping
   if (response.status === 400 && urlStr.includes('/auth/v1/token')) {

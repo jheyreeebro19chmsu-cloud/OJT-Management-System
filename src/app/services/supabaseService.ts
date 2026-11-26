@@ -1362,88 +1362,131 @@ export async function deleteEmployee(id: string): Promise<boolean> {
 
 // ─── Time Records ────────────────────────────────────────────────────────────
 
-export async function fetchTimeRecords(): Promise<TimeRecord[]> {
-  const storagePromise = fetchDttrStoreFromStorage()
-    .then((s) => (Array.isArray(s.timeRecords) ? s.timeRecords : []))
-    .catch(() => [] as TimeRecord[]);
+let _allTimeRecordsCache: {
+  data: TimeRecord[] | null;
+  expiresAt: number;
+  inflight: Promise<TimeRecord[]> | null;
+} = { data: null, expiresAt: 0, inflight: null };
 
-  const dbPromise = (async (): Promise<TimeRecord[]> => {
-    // 1. Primary path: Service role endpoint /api/time-records
-    if (typeof window !== 'undefined') {
+const _empTimeRecordsCache = new Map<
+  string,
+  { data?: TimeRecord[]; expiresAt: number; inflight?: Promise<TimeRecord[]> }
+>();
+
+function safeMergeRecordHours(a?: number, b?: number): number {
+  const ha = Number(a) > 16 ? 0 : Number(a) || 0;
+  const hb = Number(b) > 16 ? 0 : Number(b) || 0;
+  return Math.max(ha, hb);
+}
+
+export async function fetchTimeRecords(): Promise<TimeRecord[]> {
+  if (_allTimeRecordsCache.data && _allTimeRecordsCache.expiresAt > Date.now()) {
+    return _allTimeRecordsCache.data;
+  }
+  if (_allTimeRecordsCache.inflight) {
+    return _allTimeRecordsCache.inflight;
+  }
+
+  const run = (async (): Promise<TimeRecord[]> => {
+    const storagePromise = fetchDttrStoreFromStorage()
+      .then((s) => (Array.isArray(s.timeRecords) ? s.timeRecords : []))
+      .catch(() => [] as TimeRecord[]);
+
+    const dbPromise = (async (): Promise<TimeRecord[]> => {
+      let apiNotMounted = false;
+      // 1. Primary path: Service role endpoint /api/time-records
+      if (typeof window !== 'undefined') {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 5500);
+          const res = await fetch('/api/time-records', { signal: controller.signal });
+          clearTimeout(timer);
+          if (res.status === 404) {
+            apiNotMounted = true;
+          } else if (res.ok) {
+            const apiData = await res.json();
+            return Array.isArray(apiData) ? apiData.map(transformSupabaseTimeRecord) : [];
+          } else {
+            return [];
+          }
+        } catch {
+          return [];
+        }
+      }
+
+      // 2. Standalone local Vite dev fallback only (when /api/time-records is 404)
+      if (!isSupabaseConfigured() || (typeof window !== 'undefined' && !apiNotMounted)) return [];
+
       try {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
-        const res = await fetch('/api/time-records', { signal: controller.signal });
+        const timer = setTimeout(() => controller.abort(), 4500);
+        const { data, error } = await supabase
+          .from('time_records')
+          .select('id,employee_id,date,time_in,time_out,time_in_lat,time_in_lng,time_out_lat,time_out_lng,time_in_geofenced,time_out_geofenced,time_in_face_verified,time_out_face_verified,total_hours,status,notes')
+          .order('date', { ascending: false })
+          .limit(300)
+          .abortSignal(controller.signal);
         clearTimeout(timer);
-        if (res && res.ok) {
-          const apiData = await res.json();
-          if (Array.isArray(apiData) && apiData.length > 0) {
-            return apiData.map(transformSupabaseTimeRecord);
-          }
+        if (!error && data && data.length > 0) {
+          return data.map(transformSupabaseTimeRecord);
         }
       } catch {}
-    }
 
-    // 2. Secondary path: Direct Supabase client with 5s timeout
-    if (!isSupabaseConfigured()) return [];
+      return [];
+    })();
 
-    try {
-      const queryPromise = supabase
-        .from('time_records')
-        .select('id,employee_id,date,time_in,time_out,time_in_lat,time_in_lng,time_out_lat,time_out_lng,time_in_geofenced,time_out_geofenced,time_in_face_verified,time_out_face_verified,total_hours,status,notes')
-        .order('date', { ascending: false })
-        .limit(500);
-
-      const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 5000)
-      );
-
-      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
-      if (!error && data && data.length > 0) {
-        return data.map(transformSupabaseTimeRecord);
-      }
-    } catch {}
-
-    return [];
-  })();
-
-  const [storageRecords, dbRecords] = await Promise.all([storagePromise, dbPromise]);
-  if (storageRecords.length === 0) return dbRecords;
-  if (dbRecords.length === 0) return storageRecords;
-
-  const map = new Map<string, TimeRecord>();
-  for (const s of storageRecords) {
-    if (!s) continue;
-    const dateKey = (s.date || '').split('T')[0].trim();
-    const key = `${(s.employeeId || '').toLowerCase()}_${dateKey}`;
-    map.set(key, s);
-  }
-  for (const r of dbRecords) {
-    if (!r) continue;
-    const dateKey = (r.date || '').split('T')[0].trim();
-    const key = `${(r.employeeId || '').toLowerCase()}_${dateKey}`;
-    const existing = map.get(key);
-    if (!existing) {
-      map.set(key, r);
+    const [storageRecords, dbRecords] = await Promise.all([storagePromise, dbPromise]);
+    let merged: TimeRecord[];
+    if (storageRecords.length === 0) {
+      merged = dbRecords;
+    } else if (dbRecords.length === 0) {
+      merged = storageRecords;
     } else {
-      map.set(key, {
-        ...existing,
-        ...r,
-        id: r.id && !r.id.startsWith('rec-') ? r.id : existing.id,
-        timeIn: r.timeIn || existing.timeIn,
-        timeOut: r.timeOut || existing.timeOut,
-        amArrival: r.amArrival || existing.amArrival,
-        amDeparture: r.amDeparture || existing.amDeparture,
-        pmArrival: r.pmArrival || existing.pmArrival,
-        pmDeparture: r.pmDeparture || existing.pmDeparture,
-        totalHours: Math.max(Number(r.totalHours) || 0, Number(existing.totalHours) || 0),
-        notes: (r.notes && r.notes.trim()) ? r.notes : existing.notes,
-        timeInPhoto: r.timeInPhoto || existing.timeInPhoto,
-        timeOutPhoto: r.timeOutPhoto || existing.timeOutPhoto,
-      });
+      const map = new Map<string, TimeRecord>();
+      for (const s of storageRecords) {
+        if (!s) continue;
+        const dateKey = (s.date || '').split('T')[0].trim();
+        const key = `${(s.employeeId || '').toLowerCase()}_${dateKey}`;
+        map.set(key, s);
+      }
+      for (const r of dbRecords) {
+        if (!r) continue;
+        const dateKey = (r.date || '').split('T')[0].trim();
+        const key = `${(r.employeeId || '').toLowerCase()}_${dateKey}`;
+        const existing = map.get(key);
+        if (!existing) {
+          map.set(key, r);
+        } else {
+          map.set(key, {
+            ...existing,
+            ...r,
+            id: r.id && !r.id.startsWith('rec-') ? r.id : existing.id,
+            timeIn: r.timeIn || existing.timeIn,
+            timeOut: r.timeOut || existing.timeOut,
+            amArrival: r.amArrival || existing.amArrival,
+            amDeparture: r.amDeparture || existing.amDeparture,
+            pmArrival: r.pmArrival || existing.pmArrival,
+            pmDeparture: r.pmDeparture || existing.pmDeparture,
+            totalHours: safeMergeRecordHours(r.totalHours, existing.totalHours),
+            notes: r.notes && r.notes.trim() ? r.notes : existing.notes,
+            timeInPhoto: r.timeInPhoto || existing.timeInPhoto,
+            timeOutPhoto: r.timeOutPhoto || existing.timeOutPhoto,
+          });
+        }
+      }
+      merged = Array.from(map.values());
     }
-  }
-  return Array.from(map.values());
+
+    if (merged.length > 0) {
+      _allTimeRecordsCache = { data: merged, expiresAt: Date.now() + 5000, inflight: null };
+    }
+    return merged;
+  })().finally(() => {
+    _allTimeRecordsCache.inflight = null;
+  });
+
+  _allTimeRecordsCache.inflight = run;
+  return run;
 }
 
 export async function fetchTimeRecordsForEmployee(
@@ -1455,95 +1498,125 @@ export async function fetchTimeRecordsForEmployee(
   );
   if (allIds.length === 0) return [];
 
+  const cacheKey = allIds
+    .map((s) => s.toLowerCase())
+    .sort()
+    .join('|');
+  const cachedEntry = _empTimeRecordsCache.get(cacheKey);
+  if (cachedEntry?.data && cachedEntry.expiresAt > Date.now()) {
+    return cachedEntry.data;
+  }
+  if (cachedEntry?.inflight) {
+    return cachedEntry.inflight;
+  }
+
   const lowerSet = new Set(allIds.map((id) => id.toLowerCase()));
 
-  // 1. Fetch from DTTR store in Supabase Storage
-  const storagePromise = fetchDttrStoreFromStorage()
-    .then((s) => {
-      const records = Array.isArray(s.timeRecords) ? s.timeRecords : [];
-      return records.filter((r) => r?.employeeId && lowerSet.has(r.employeeId.toLowerCase()));
-    })
-    .catch(() => [] as TimeRecord[]);
+  const run = (async (): Promise<TimeRecord[]> => {
+    // 1. Fetch from DTTR store in Supabase Storage CDN
+    const storagePromise = fetchDttrStoreFromStorage()
+      .then((s) => {
+        const records = Array.isArray(s.timeRecords) ? s.timeRecords : [];
+        return records.filter((r) => r?.employeeId && lowerSet.has(r.employeeId.toLowerCase()));
+      })
+      .catch(() => [] as TimeRecord[]);
 
-  // 2. Fetch from /api/time-records or Supabase directly
-  const dbPromise = (async (): Promise<TimeRecord[]> => {
-    if (typeof window !== 'undefined') {
-      try {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 6000);
-        const url = `/api/time-records?employeeIds=${encodeURIComponent(allIds.join(','))}&limit=2000`;
-        const res = await fetch(url, { signal: controller.signal });
-        clearTimeout(timer);
-        if (res && res.ok) {
-          const apiData = await res.json();
-          if (Array.isArray(apiData) && apiData.length > 0) {
-            return apiData.map(transformSupabaseTimeRecord);
+    // 2. Fetch from /api/time-records (never falls through to uncancelled 90s browser PostgREST 522 calls)
+    const dbPromise = (async (): Promise<TimeRecord[]> => {
+      let apiNotMounted = false;
+      if (typeof window !== 'undefined') {
+        try {
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), 5500);
+          const url = `/api/time-records?employeeIds=${encodeURIComponent(allIds.join(','))}&limit=500`;
+          const res = await fetch(url, { signal: controller.signal });
+          clearTimeout(timer);
+          if (res.status === 404) {
+            apiNotMounted = true;
+          } else if (res.ok) {
+            const apiData = await res.json();
+            return Array.isArray(apiData) ? apiData.map(transformSupabaseTimeRecord) : [];
+          } else {
+            return [];
           }
+        } catch {
+          return [];
+        }
+      }
+
+      if (!isSupabaseConfigured() || (typeof window !== 'undefined' && !apiNotMounted)) return [];
+
+      try {
+        const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
+        const uuidIds = allIds.filter(isUUID);
+        if (uuidIds.length === 0) return [];
+
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 4500);
+        const { data, error } = await supabase
+          .from('time_records')
+          .select('id,employee_id,date,time_in,time_out,time_in_lat,time_in_lng,time_out_lat,time_out_lng,time_in_geofenced,time_out_geofenced,time_in_face_verified,time_out_face_verified,total_hours,status,notes')
+          .in('employee_id', uuidIds)
+          .order('date', { ascending: false })
+          .limit(300)
+          .abortSignal(controller.signal);
+        clearTimeout(timer);
+        if (!error && data && data.length > 0) {
+          return data.map(transformSupabaseTimeRecord);
         }
       } catch {}
+
+      return [];
+    })();
+
+    const [storageRecords, dbRecords] = await Promise.all([storagePromise, dbPromise]);
+    let merged: TimeRecord[];
+    if (storageRecords.length === 0) {
+      merged = dbRecords;
+    } else if (dbRecords.length === 0) {
+      merged = storageRecords;
+    } else {
+      const map = new Map<string, TimeRecord>();
+      for (const s of storageRecords) {
+        if (!s) continue;
+        const dateKey = (s.date || '').split('T')[0].trim();
+        map.set(dateKey, s);
+      }
+      for (const r of dbRecords) {
+        if (!r) continue;
+        const dateKey = (r.date || '').split('T')[0].trim();
+        const existing = map.get(dateKey);
+        if (!existing) {
+          map.set(dateKey, r);
+        } else {
+          map.set(dateKey, {
+            ...existing,
+            ...r,
+            id: r.id && !r.id.startsWith('rec-') ? r.id : existing.id,
+            timeIn: r.timeIn || existing.timeIn,
+            timeOut: r.timeOut || existing.timeOut,
+            amArrival: r.amArrival || existing.amArrival,
+            amDeparture: r.amDeparture || existing.amDeparture,
+            pmArrival: r.pmArrival || existing.pmArrival,
+            pmDeparture: r.pmDeparture || existing.pmDeparture,
+            totalHours: safeMergeRecordHours(r.totalHours, existing.totalHours),
+            notes: r.notes && r.notes.trim() ? r.notes : existing.notes,
+          });
+        }
+      }
+      merged = Array.from(map.values());
     }
 
-    if (!isSupabaseConfigured()) return [];
-
-    try {
-      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(str);
-      const uuidIds = allIds.filter(isUUID);
-      if (uuidIds.length === 0) return [];
-
-      const queryPromise = supabase
-        .from('time_records')
-        .select('id,employee_id,date,time_in,time_out,time_in_lat,time_in_lng,time_out_lat,time_out_lng,time_in_geofenced,time_out_geofenced,time_in_face_verified,time_out_face_verified,total_hours,status,notes')
-        .in('employee_id', uuidIds)
-        .order('date', { ascending: false })
-        .limit(2000);
-
-      const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: { message: 'timeout' } }), 6000)
-      );
-
-      const { data, error } = await Promise.race([queryPromise, timeoutPromise]);
-      if (!error && data && data.length > 0) {
-        return data.map(transformSupabaseTimeRecord);
-      }
-    } catch {}
-
-    return [];
+    if (merged.length > 0) {
+      _empTimeRecordsCache.set(cacheKey, { data: merged, expiresAt: Date.now() + 5000 });
+    } else {
+      _empTimeRecordsCache.delete(cacheKey);
+    }
+    return merged;
   })();
 
-  const [storageRecords, dbRecords] = await Promise.all([storagePromise, dbPromise]);
-  if (storageRecords.length === 0) return dbRecords;
-  if (dbRecords.length === 0) return storageRecords;
-
-  const map = new Map<string, TimeRecord>();
-  for (const s of storageRecords) {
-    if (!s) continue;
-    const dateKey = (s.date || '').split('T')[0].trim();
-    map.set(dateKey, s);
-  }
-  for (const r of dbRecords) {
-    if (!r) continue;
-    const dateKey = (r.date || '').split('T')[0].trim();
-    const existing = map.get(dateKey);
-    if (!existing) {
-      map.set(dateKey, r);
-    } else {
-      map.set(dateKey, {
-        ...existing,
-        ...r,
-        id: r.id && !r.id.startsWith('rec-') ? r.id : existing.id,
-        timeIn: r.timeIn || existing.timeIn,
-        timeOut: r.timeOut || existing.timeOut,
-        amArrival: r.amArrival || existing.amArrival,
-        amDeparture: r.amDeparture || existing.amDeparture,
-        pmArrival: r.pmArrival || existing.pmArrival,
-        pmDeparture: r.pmDeparture || existing.pmDeparture,
-        totalHours: Math.max(Number(r.totalHours) || 0, Number(existing.totalHours) || 0),
-        notes: r.notes && r.notes.trim() ? r.notes : existing.notes,
-      });
-    }
-  }
-
-  return Array.from(map.values());
+  _empTimeRecordsCache.set(cacheKey, { expiresAt: Date.now() + 5000, inflight: run });
+  return run;
 }
 
 export function encodeSlotNotes(existingNotes: string | null | undefined, record: Partial<TimeRecord>): string | null {
@@ -3771,7 +3844,26 @@ export function transformSupabaseTimeRecord(data: any): TimeRecord {
     timeOutFaceVerified: data.time_out_face_verified,
     timeInPhoto: data.time_in_photo,
     timeOutPhoto: data.time_out_photo,
-    totalHours: data.total_hours != null ? Math.round(Number(data.total_hours) * 100) / 100 : undefined,
+    totalHours: (() => {
+      const rawHrs =
+        data.total_hours != null
+          ? Number(data.total_hours)
+          : data.totalHours != null
+            ? Number(data.totalHours)
+            : undefined;
+      if (rawHrs !== undefined && rawHrs <= 16) {
+        return Math.round(rawHrs * 100) / 100;
+      }
+      let mins = 0;
+      const aIn = amArrival ? parseTimeToMinutes(amArrival) : null;
+      const aOut = amDeparture ? parseTimeToMinutes(amDeparture) : null;
+      const pIn = pmArrival ? parseTimeToMinutes(pmArrival) : null;
+      const pOut = pmDeparture ? parseTimeToMinutes(pmDeparture) : null;
+      if (aIn !== null && aOut !== null && aOut > aIn) mins += aOut - aIn;
+      if (pIn !== null && pOut !== null && pOut > pIn) mins += pOut - pIn;
+      if (mins > 0) return Math.round((mins / 60) * 100) / 100;
+      return rawHrs !== undefined ? Math.min(8, Math.max(0, Math.round(rawHrs * 100) / 100)) : undefined;
+    })(),
     status: data.status,
     notes: cleanNotes,
     academicYear: data.academic_year,
@@ -4876,6 +4968,8 @@ export async function saveDttrStoreToStorage(payload: {
 }): Promise<boolean> {
   // Immediately broadcast delta to all open Instructor, HTE, and Trainee browsers (<80ms latency!)
   _dttrFetchCache = { data: null, expiresAt: 0, inflight: null };
+  _allTimeRecordsCache = { data: null, expiresAt: 0, inflight: null };
+  _empTimeRecordsCache.clear();
   broadcastLiveEvent('task_updated', {
     monthlyDttrs: payload.monthlyDttrs,
     timeRecords: payload.timeRecords,
@@ -4883,7 +4977,10 @@ export async function saveDttrStoreToStorage(payload: {
 
   // Serialize server delta writes so concurrent task + timeRecord updates never race or pre-fetch full store
   const runSave = async (): Promise<boolean> => {
+    let apiNotMounted = false;
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 7500);
       const apiRes = await fetch('/api/documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -4892,14 +4989,21 @@ export async function saveDttrStoreToStorage(payload: {
           monthlyDttrs: payload.monthlyDttrs,
           timeRecords: payload.timeRecords,
         }),
+        signal: controller.signal,
       });
-      if (apiRes.ok) return true;
-    } catch (err) {
-      console.warn('saveDttrStoreToStorage fast delta notice, using direct fallback:', err);
+      clearTimeout(timer);
+      if (apiRes.status === 404) {
+        apiNotMounted = true;
+      } else {
+        return apiRes.ok;
+      }
+    } catch {
+      // Do not hammer browser Storage upload with a second 544 when production /api/documents timed out
+      return false;
     }
 
-    // Fallback when running standalone Vite dev without /api serverless routes
-    if (!isSupabaseConfigured()) return false;
+    // Fallback ONLY when running standalone local Vite dev without /api serverless routes (404)
+    if (!apiNotMounted || !isSupabaseConfigured()) return false;
     try {
       const existing = await fetchDttrStoreFromStorage();
       const mergedMonthly = payload.monthlyDttrs

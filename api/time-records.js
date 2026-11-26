@@ -117,12 +117,29 @@ function enrichRecordWithSlots(row) {
     if (!pmArrival) pmArrival = '13:00:00';
   }
 
+  // Recompute realistic hours from slots when stored total_hours is missing or corrupted (> 16h from negative overnight wrap)
+  const rawStoredHours = row.total_hours != null ? Number(row.total_hours) : (row.totalHours != null ? Number(row.totalHours) : 0);
+  let computedMinutes = 0;
+  const amOutM = parseTimeToMinutes(amDeparture);
+  const pmInM = parseTimeToMinutes(pmArrival);
+  if (amInMins !== null && amOutM !== null && amOutM > amInMins) {
+    computedMinutes += amOutM - amInMins;
+  }
+  if (pmInM !== null && pmOutMins !== null && pmOutMins > pmInM) {
+    computedMinutes += pmOutMins - pmInM;
+  }
+  const slotHours = Math.round((computedMinutes / 60) * 100) / 100;
+  const resolvedTotalHours =
+    rawStoredHours > 16 || (slotHours > 0 && rawStoredHours === 0)
+      ? slotHours
+      : rawStoredHours;
+
   return {
     ...row,
     employeeId: row.employee_id || row.employeeId,
     timeIn: row.time_in || row.timeIn,
     timeOut: row.time_out || row.timeOut,
-    totalHours: row.total_hours != null ? Number(row.total_hours) : (row.totalHours != null ? Number(row.totalHours) : 0),
+    totalHours: resolvedTotalHours,
     amArrival,
     amDeparture,
     pmArrival,
@@ -217,6 +234,26 @@ function transformToDbPayload(r) {
 }
 
 let _unfilteredTimeRecordsCache = { data: null, expiresAt: 0 };
+
+async function readPublicCdnDttrRecords(uniqueEmpIds = []) {
+  try {
+    const base = SUPABASE_URL.replace(/\/$/, '');
+    const res = await fetch(`${base}/storage/v1/object/public/face-photos/settings/dttr_store.json`, {
+      headers: { Accept: 'application/json' },
+    });
+    if (!res.ok) return [];
+    const parsed = await res.json();
+    const list = Array.isArray(parsed?.timeRecords) ? parsed.timeRecords : [];
+    if (uniqueEmpIds.length === 0) return list.slice(0, 400);
+    const idSet = new Set(uniqueEmpIds.map((id) => String(id).toLowerCase()));
+    return list.filter((r) => {
+      const eid = String(r?.employeeId || r?.employee_id || '').toLowerCase();
+      return eid && idSet.has(eid);
+    });
+  } catch {
+    return [];
+  }
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -313,12 +350,14 @@ export default async function handler(req, res) {
         }
         if (error) {
           console.warn('api/time-records query note:', error.message);
-          return sendJson(res, 200, []);
+          const cdnFallback = await readPublicCdnDttrRecords(uniqueEmpIds);
+          return sendJson(res, 200, cdnFallback.map(enrichRecordWithSlots));
         }
         data = queryRes?.data || [];
       } catch (tErr) {
         console.warn('api/time-records timeout/failure:', tErr.message);
-        return sendJson(res, 200, []);
+        const cdnFallback = await readPublicCdnDttrRecords(uniqueEmpIds);
+        return sendJson(res, 200, cdnFallback.map(enrichRecordWithSlots));
       }
 
       const enrichedList = (data || []).map(enrichRecordWithSlots);
@@ -338,9 +377,9 @@ export default async function handler(req, res) {
         ? body
         : [body];
 
-      const validRecords = incomingRecords.filter(
-        (r) => r && (r.employee_id || r.employeeId || r.employeeID) && r.date
-      );
+      const validRecords = incomingRecords
+        .filter((r) => r && (r.employee_id || r.employeeId || r.employeeID) && r.date)
+        .slice(0, 25); // Guard against accidental bulk dumps choking Nano Postgres connections
 
       if (validRecords.length === 0) {
         return sendJson(res, 400, { error: 'No valid time records provided' });
@@ -400,11 +439,13 @@ export default async function handler(req, res) {
             const effectiveTimeIn = payload.time_in || mergedSlots.amArrival || mergedSlots.pmArrival || existing.time_in || null;
             const effectiveTimeOut = payload.time_out || mergedSlots.pmDeparture || mergedSlots.amDeparture || existing.time_out || null;
 
+            const prevSafeHours = Number(existing.total_hours) > 16 ? 0 : (Number(existing.total_hours) || 0);
+            const nextSafeHours = Number(payload.total_hours) > 16 ? 0 : (Number(payload.total_hours) || 0);
             const mergedPayload = {
               ...payload,
               time_in: effectiveTimeIn,
               time_out: effectiveTimeOut,
-              total_hours: Math.max(Number(payload.total_hours) || 0, Number(existing.total_hours) || 0),
+              total_hours: nextSafeHours > 0 ? nextSafeHours : prevSafeHours,
               notes: mergedNotes,
             };
             delete mergedPayload.id;

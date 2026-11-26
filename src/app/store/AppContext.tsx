@@ -1665,6 +1665,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
 
           const shouldFetchFullDashboardData = !isAuthRoute || Boolean(currentUser);
+          if (shouldFetchFullDashboardData) {
+            lastRefreshTimeRef.current = Date.now();
+          }
 
           // Fetch data from Supabase in parallel without saturating sockets on the unauthenticated login page
           Promise.allSettled([
@@ -2165,15 +2168,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   const lastRefreshTimeRef = useRef<number>(0);
   const isRefreshingRef = useRef<boolean>(false);
+  const syncedOfflineTimeRecordsRef = useRef<string | null>(null);
+  const currentUserRef = useRef<User | null>(currentUser);
+  useEffect(() => {
+    currentUserRef.current = currentUser;
+  }, [currentUser]);
 
   // Periodic polling & window focus auto-sync across all open tabs/devices
   const refreshData = useCallback(async (options?: { force?: boolean }) => {
     if (!useSupabase && !isSupabaseConfigured()) return;
-    if (!currentUser && !options?.force) return;
+    const activeUser = currentUserRef.current;
+    if (!activeUser && !options?.force) return;
     if (isRefreshingRef.current) return;
     const now = Date.now();
-    // Allow explicit forced refreshes immediately (1.5s guard against duplicate mount effects), 20s for background polls
-    const cooldown = options?.force ? 1500 : 20000;
+    // Allow explicit forced refreshes with an 8s guard against duplicate mount/focus storms, 60s for background polls
+    const cooldown = options?.force ? 8000 : 60000;
     if (now - lastRefreshTimeRef.current < cooldown) {
       return;
     }
@@ -2193,10 +2202,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
         supabaseService.fetchHostSupervisors(),
         supabaseService.fetchGeofenceZones(),
         supabaseService.fetchSettings(),
-        currentUser?.role === 'employee' && currentUser.id
+        activeUser?.role === 'employee' && activeUser.id
           ? supabaseService.fetchTimeRecordsForEmployee(
-              currentUser.id,
-              currentUser.employeeId ? [currentUser.employeeId] : []
+              activeUser.id,
+              activeUser.employeeId ? [activeUser.employeeId] : []
             )
           : supabaseService.fetchTimeRecords(),
       ]);
@@ -2213,28 +2222,52 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const merged = mergeEmployees(supabaseEmployees, prev);
           saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
 
-          // Real-time synchronization: Keep currentUser in sync with cloud updates (e.g. HTE deployment / geofence changes)
-          if (currentUser) {
+          // Real-time synchronization: Keep currentUser in sync ONLY when meaningful fields actually changed
+          // (avoids creating a new currentUser reference on every poll, which previously caused an infinite re-sync loop!)
+          const curU = currentUserRef.current;
+          if (curU) {
             const matchedEmp = merged.find(
               (e) =>
-                e.id === currentUser.id ||
-                (e.employeeId && (e.employeeId === currentUser.employeeId || e.employeeId === currentUser.id)) ||
-                (currentUser.email && e.email && normalizeEmail(e.email) === normalizeEmail(currentUser.email))
+                e.id === curU.id ||
+                (e.employeeId && (e.employeeId === curU.employeeId || e.employeeId === curU.id)) ||
+                (curU.email && e.email && normalizeEmail(e.email) === normalizeEmail(curU.email))
             );
             if (matchedEmp) {
               setCurrentUser((cUser) => {
                 if (!cUser) return cUser;
+                const nextName = matchedEmp.name || cUser.name;
+                const nextEmail = matchedEmp.email || cUser.email;
+                const nextPhoto = matchedEmp.photo || cUser.photo;
+                const nextComp = matchedEmp.companyName ?? cUser.companyName;
+                const nextSup = matchedEmp.supervisorName ?? cUser.supervisorName;
+                const nextCompAddr = matchedEmp.companyAddress ?? (cUser as any).companyAddress;
+                const nextRegAddr = matchedEmp.registrationAddress ?? (cUser as any).registrationAddress;
+                const nextFaceReg = matchedEmp.faceRegistered ?? cUser.faceRegistered;
+
+                const unchanged =
+                  cUser.name === nextName &&
+                  cUser.email === nextEmail &&
+                  cUser.photo === nextPhoto &&
+                  cUser.companyName === nextComp &&
+                  cUser.supervisorName === nextSup &&
+                  (cUser as any).companyAddress === nextCompAddr &&
+                  (cUser as any).registrationAddress === nextRegAddr &&
+                  cUser.faceRegistered === nextFaceReg;
+
+                if (unchanged) return cUser;
+
                 const nextUser: any = {
                   ...cUser,
                   ...matchedEmp,
-                  name: matchedEmp.name || cUser.name,
-                  email: matchedEmp.email || cUser.email,
-                  photo: matchedEmp.photo || cUser.photo,
-                  companyName: matchedEmp.companyName ?? cUser.companyName,
-                  supervisorName: matchedEmp.supervisorName ?? cUser.supervisorName,
-                  companyAddress: matchedEmp.companyAddress ?? (cUser as any).companyAddress,
+                  name: nextName,
+                  email: nextEmail,
+                  photo: nextPhoto,
+                  companyName: nextComp,
+                  supervisorName: nextSup,
+                  companyAddress: nextCompAddr,
                   registrationLocation: matchedEmp.registrationLocation ?? (cUser as any).registrationLocation,
-                  registrationAddress: matchedEmp.registrationAddress ?? (cUser as any).registrationAddress,
+                  registrationAddress: nextRegAddr,
+                  faceRegistered: nextFaceReg,
                 };
                 saveToStorage(STORAGE_KEYS.CURRENT_USER, nextUser);
                 return nextUser;
@@ -2387,21 +2420,41 @@ export function AppProvider({ children }: { children: ReactNode }) {
     } finally {
       isRefreshingRef.current = false;
     }
-  }, [useSupabase, currentUser]);
+  }, [useSupabase, currentUser?.id, currentUser?.role]);
 
   useEffect(() => {
     if (!useSupabase && !isSupabaseConfigured()) return;
-    if (!currentUser) return;
+    if (!currentUser?.id) return;
 
     // Fetch full dashboard data immediately upon sign-in or session restoration
     refreshData({ force: true });
 
-    // Automated background push of any local trainee records to the cloud (trainees only)
-    if (typeof window !== 'undefined' && currentUser && isTraineeRole(currentUser)) {
+    // Only sync genuinely unsaved offline local punches (`rec-*` IDs belonging to this trainee) once per login
+    if (
+      typeof window !== 'undefined' &&
+      currentUser &&
+      isTraineeRole(currentUser) &&
+      syncedOfflineTimeRecordsRef.current !== currentUser.id
+    ) {
+      syncedOfflineTimeRecordsRef.current = currentUser.id;
       try {
+        const validIds = new Set(
+          [currentUser.id, currentUser.employeeId]
+            .filter(Boolean)
+            .map((v) => String(v).toLowerCase())
+        );
         const storedRecs = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
-        if (storedRecs.length > 0) {
-          supabaseService.upsertTimeRecords(storedRecs).catch(() => {});
+        const unsyncedOwnRecs = storedRecs
+          .filter(
+            (r) =>
+              r &&
+              String(r.id || '').startsWith('rec-') &&
+              r.employeeId &&
+              validIds.has(String(r.employeeId).toLowerCase())
+          )
+          .slice(0, 5);
+        if (unsyncedOwnRecs.length > 0) {
+          supabaseService.upsertTimeRecords(unsyncedOwnRecs).catch(() => {});
         }
       } catch {}
     }
@@ -2413,7 +2466,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
     // Immediately re-fetch data when Supabase Auth session establishes or changes
     const { data: authListener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (session?.user && currentUser) {
+      if (session?.user && currentUserRef.current && event === 'SIGNED_IN') {
         refreshData();
       }
     });
@@ -2438,7 +2491,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       annChannel.unsubscribe();
       authListener?.subscription?.unsubscribe();
     };
-  }, [refreshData, useSupabase, currentUser]);
+  }, [refreshData, useSupabase, currentUser?.id]);
 
   // Cross-Device Permanent Attendance Synchronization:
   // When a trainee or supervisor logs in or loads on any device (phone, laptop, tablet),

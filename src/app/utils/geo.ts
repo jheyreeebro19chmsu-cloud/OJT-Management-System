@@ -290,12 +290,12 @@ export function calculate4SlotHours(
 }
 
 export function calculateTotalHours(timeIn: string, timeOut: string): number {
-  const [inH, inM] = timeIn.split(':').map(Number);
-  const [outH, outM] = timeOut.split(':').map(Number);
-  const inTotal = inH * 60 + inM;
-  let diff = outH * 60 + outM - inTotal;
-  if (diff < 0) diff += 24 * 60; // handle overnight shifts gracefully
-  return parseFloat(Math.max(0, diff / 60).toFixed(2));
+  const inTotal = parseTimeToMinutes(timeIn);
+  const outTotal = parseTimeToMinutes(timeOut);
+  if (inTotal === null || outTotal === null) return 0;
+  const diff = outTotal - inTotal;
+  if (diff <= 0) return 0;
+  return parseFloat(Math.min(16, diff / 60).toFixed(2));
 }
 
 /**
