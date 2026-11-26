@@ -286,20 +286,22 @@ const BRIDGE_HTML = `
         let ear = 0.30;
         let eyesClosed = false;
         let yawRatio = 0.50;
+        let eyeWidthAsymmetry = 1.0;
         let pitchRatio = 0.52;
         let mouthToJaw = 0.42;
+        let mouthCornerLift = 0.0;
         let mar = 0.04;
         let faceWidth = 0;
         let faceCx = 0.50;
         let faceCy = 0.48;
 
         if (modelsReady) {
-          const detectorOpts = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.25, inputSize: 224 });
+          const detectorOpts = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.18, inputSize: 224 });
           let detections = [];
           try {
             detections = await faceapi.detectAllFaces(canvas, detectorOpts).withFaceLandmarks();
             if (!detections || detections.length === 0) {
-              const opts320 = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.22, inputSize: 320 });
+              const opts320 = new faceapi.TinyFaceDetectorOptions({ scoreThreshold: 0.16, inputSize: 320 });
               detections = await faceapi.detectAllFaces(canvas, opts320).withFaceLandmarks();
             }
           } catch (e) {
@@ -317,8 +319,8 @@ const BRIDGE_HTML = `
 
             faceCx = (box.x + box.width / 2) / canvas.width;
             faceCy = (box.y + box.height / 2) / canvas.height;
-            // Face should be roughly centered within oval guide
-            if (Math.abs(faceCx - 0.50) > 0.26 || Math.abs(faceCy - 0.48) > 0.28) {
+            // Generous centering tolerance so natural head turns, blinks, and smiles never interrupt
+            if (Math.abs(faceCx - 0.50) > 0.34 || Math.abs(faceCy - 0.48) > 0.35) {
               faceCentered = false;
             }
 
@@ -587,9 +589,14 @@ const BRIDGE_HTML = `
 
               const jawSpanX = Math.max(1, landmarks[16].x - landmarks[0].x);
               yawRatio = (landmarks[30].x - landmarks[0].x) / jawSpanX;
+              eyeWidthAsymmetry = dist(landmarks[36], landmarks[39]) / Math.max(1, dist(landmarks[42], landmarks[45]));
               const outerEyeSpan = Math.max(1, dist(landmarks[36], landmarks[45]));
               pitchRatio = dist(landmarks[27], landmarks[33]) / outerEyeSpan;
               mouthToJaw = dist(landmarks[48], landmarks[54]) / Math.max(1, dist(landmarks[3], landmarks[13]));
+              const faceHeightPx = Math.max(1, dist(landmarks[27], landmarks[8]));
+              const mouthCenterY = (landmarks[51].y + landmarks[57].y) / 2.0;
+              const mouthCornerY = (landmarks[48].y + landmarks[54].y) / 2.0;
+              mouthCornerLift = (mouthCenterY - mouthCornerY) / faceHeightPx;
               const innerMouthW = Math.max(1, dist(landmarks[60], landmarks[64]));
               const innerMouthH = (dist(landmarks[61], landmarks[67]) + dist(landmarks[62], landmarks[66]) + dist(landmarks[63], landmarks[65])) / 3.0;
               mar = innerMouthH / innerMouthW;
@@ -597,49 +604,17 @@ const BRIDGE_HTML = `
               faceCx = landmarks[30].x / canvas.width;
               faceCy = landmarks[30].y / canvas.height;
 
-              // Passive LCD/OLED blue-cast & rectangular phone bezel border anti-spoofing
-              if (cheek1.b > cheek1.r + 26 && cheek2.b > cheek2.r + 26 && cheek1.lum > 60 && cheek2.lum > 60) {
+              // Only flag extreme uncalibrated OLED backlight saturation (avoid false resets on dark hair + light wall)
+              if (
+                cheek1.b > cheek1.r + 48 &&
+                cheek2.b > cheek2.r + 48 &&
+                cheek1.b > cheek1.g + 28 &&
+                cheek2.b > cheek2.g + 28 &&
+                cheek1.lum > 75 &&
+                cheek2.lum > 75
+              ) {
                 screenSpoofSuspected = true;
                 spoofReason = 'Digital screen backlight detected — Only live faces are allowed.';
-              } else {
-                let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-                for (let k = 0; k < landmarks.length; k++) {
-                  if (landmarks[k].x < minX) minX = landmarks[k].x;
-                  if (landmarks[k].x > maxX) maxX = landmarks[k].x;
-                  if (landmarks[k].y < minY) minY = landmarks[k].y;
-                  if (landmarks[k].y > maxY) maxY = landmarks[k].y;
-                }
-                const fw = maxX - minX;
-                const fh = maxY - minY;
-                if (minX > 18 && maxX < canvas.width - 18 && fw < canvas.width * 0.68) {
-                  const hasBezelRay = (startX, dirX, y) => {
-                    let prevLum = getPixel(imgData, canvas.width, canvas.height, startX, y).lum;
-                    let sawScreen = prevLum > 75;
-                    for (let step = 3; step <= 60; step += 3) {
-                      const x = startX + dirX * step;
-                      if (x <= 3 || x >= canvas.width - 4) break;
-                      const curLum = getPixel(imgData, canvas.width, canvas.height, x, y).lum;
-                      if (curLum > 85) sawScreen = true;
-                      if (sawScreen && prevLum - curLum > 48 && curLum < 22) {
-                        const outerLum = getPixel(imgData, canvas.width, canvas.height, x + dirX * 12, y).lum;
-                        if (outerLum > curLum + 24) return true;
-                      }
-                      prevLum = curLum;
-                    }
-                    return false;
-                  };
-                  const y1 = minY + fh * 0.35;
-                  const y2 = minY + fh * 0.65;
-                  if (
-                    hasBezelRay(minX, -1, y1) &&
-                    hasBezelRay(minX, -1, y2) &&
-                    hasBezelRay(maxX, 1, y1) &&
-                    hasBezelRay(maxX, 1, y2)
-                  ) {
-                    screenSpoofSuspected = true;
-                    spoofReason = 'Phone bezel / photo screen detected — Present your live face.';
-                  }
-                }
               }
             }
           }
@@ -662,8 +637,10 @@ const BRIDGE_HTML = `
           ear: parseFloat(ear.toFixed(4)),
           eyesClosed: Boolean(eyesClosed),
           yawRatio: parseFloat(yawRatio.toFixed(4)),
+          eyeWidthAsymmetry: parseFloat(eyeWidthAsymmetry.toFixed(4)),
           pitchRatio: parseFloat(pitchRatio.toFixed(4)),
           mouthToJaw: parseFloat(mouthToJaw.toFixed(4)),
+          mouthCornerLift: parseFloat(mouthCornerLift.toFixed(4)),
           mar: parseFloat(mar.toFixed(4)),
           faceWidth: parseFloat(faceWidth.toFixed(4)),
           faceCx: parseFloat(faceCx.toFixed(4)),

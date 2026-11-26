@@ -752,6 +752,7 @@ export interface LandmarkLivenessMetrics {
   eyeWidthAsymmetry: number;
   pitchRatio: number;
   mouthToJaw: number;
+  mouthCornerLift: number;
   mar: number;
   faceWidth: number;
   faceHeight: number;
@@ -812,12 +813,18 @@ export function computeLandmarkLivenessMetrics(
   const faceWidth = Math.max(1, dist(pts[0], pts[16]));
   const faceHeight = Math.max(1, dist(pts[27], pts[8]));
 
+  // Upward lift of mouth corners (48, 54) relative to lip center (51, 57) — catches gentle closed-lip smiles
+  const mouthCenterY = (pts[51].y + pts[57].y) / 2.0;
+  const mouthCornerY = (pts[48].y + pts[54].y) / 2.0;
+  const mouthCornerLift = (mouthCenterY - mouthCornerY) / faceHeight;
+
   return {
     ear: Number(ear.toFixed(4)),
     yawRatio: Number(yawRatio.toFixed(4)),
     eyeWidthAsymmetry: Number(eyeWidthAsymmetry.toFixed(4)),
     pitchRatio: Number(pitchRatio.toFixed(4)),
     mouthToJaw: Number(mouthToJaw.toFixed(4)),
+    mouthCornerLift: Number(mouthCornerLift.toFixed(4)),
     mar: Number(mar.toFixed(4)),
     faceWidth,
     faceHeight,
@@ -882,74 +889,22 @@ export function detectScreenSpoofArtifacts(
     const fore = getPx(pts[27].x * sx, foreY);
 
     // Biological human skin always has hemoglobin red >= blue under normal illumination.
-    // Uncalibrated LCD/OLED screens held to a camera frequently exhibit strong blue backlight excess.
+    // Only flag extreme uncalibrated OLED/LCD backlight blue saturation so indoor lighting or
+    // dark hair against a light wall never interrupts blinking or smiling.
     const strongScreenBlueCast =
-      cheek1.b > cheek1.r + 26 &&
-      cheek2.b > cheek2.r + 26 &&
-      fore.b > fore.r + 22 &&
-      cheek1.lum > 60 &&
-      cheek2.lum > 60;
+      cheek1.b > cheek1.r + 48 &&
+      cheek2.b > cheek2.r + 48 &&
+      fore.b > fore.r + 42 &&
+      cheek1.b > cheek1.g + 28 &&
+      cheek2.b > cheek2.g + 28 &&
+      cheek1.lum > 75 &&
+      cheek2.lum > 75;
 
     if (strongScreenBlueCast) {
       return {
         suspected: true,
         reason: 'Digital screen backlight detected — Only live faces are allowed.',
       };
-    }
-
-    // Check for dark rectangular phone bezel framing the face inside the viewport
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const p of pts) {
-      const px = p.x * sx;
-      const py = p.y * sy;
-      if (px < minX) minX = px;
-      if (px > maxX) maxX = px;
-      if (py < minY) minY = py;
-      if (py > maxY) maxY = py;
-    }
-
-    const faceW = maxX - minX;
-    const faceH = maxY - minY;
-    // Only check bezel if there is margin around the face where a held-up phone border would appear
-    if (minX > 14 && maxX < W - 14 && faceW < W * 0.68) {
-      const midY1 = minY + faceH * 0.35;
-      const midY2 = minY + faceH * 0.65;
-
-      const hasSharpDarkBezelRay = (startX: number, dirX: -1 | 1, y: number): boolean => {
-        let prevLum = getPx(startX, y).lum;
-        let sawBrightScreenEdge = prevLum > 75;
-        let hitDarkBezelBand = false;
-        for (let step = 2; step <= 42; step += 2) {
-          const x = startX + dirX * step;
-          if (x <= 2 || x >= W - 3) break;
-          const curLum = getPx(x, y).lum;
-          if (curLum > 85) sawBrightScreenEdge = true;
-          // Sharp drop from backlit screen (>80) into black glass phone bezel (<22)
-          if (sawBrightScreenEdge && prevLum - curLum > 48 && curLum < 22) {
-            // Confirm bezel band has finite thickness and transitions to outer background
-            const outerLum = getPx(x + dirX * 8, y).lum;
-            if (outerLum > curLum + 24) {
-              hitDarkBezelBand = true;
-              break;
-            }
-          }
-          prevLum = curLum;
-        }
-        return hitDarkBezelBand;
-      };
-
-      const leftBezelTop = hasSharpDarkBezelRay(minX, -1, midY1);
-      const leftBezelBot = hasSharpDarkBezelRay(minX, -1, midY2);
-      const rightBezelTop = hasSharpDarkBezelRay(maxX, 1, midY1);
-      const rightBezelBot = hasSharpDarkBezelRay(maxX, 1, midY2);
-
-      // Vertical alignment check: phone bezels form straight vertical lines on both left & right sides
-      if (leftBezelTop && leftBezelBot && rightBezelTop && rightBezelBot) {
-        return {
-          suspected: true,
-          reason: 'Device screen border detected — Do not scan a photo from another phone.',
-        };
-      }
     }
   } catch {
     // non-fatal

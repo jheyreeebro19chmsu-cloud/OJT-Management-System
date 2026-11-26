@@ -26,8 +26,10 @@ export interface BiometricQualityResult {
   ear?: number;
   eyesClosed?: boolean;
   yawRatio?: number;
+  eyeWidthAsymmetry?: number;
   pitchRatio?: number;
   mouthToJaw?: number;
+  mouthCornerLift?: number;
   mar?: number;
   faceWidth?: number;
   faceCx?: number;

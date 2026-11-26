@@ -69,27 +69,41 @@ export default function FaceScanner({
   // Strict 3D Live-Face Challenge Anti-Spoof State
   const [livenessVerified, setLivenessVerified] = useState(false);
   const livenessVerifiedRef = useRef(false);
-  const [livenessStepText, setLivenessStepText] = useState('🛡️ Step 1/4: Look straight ahead');
-  const blinkStateRef = useRef<'calibrating' | 'turn_head' | 'blink' | 'smile' | 'verified'>('calibrating');
+  const [livenessStepText, setLivenessStepText] = useState('🛡️ Step 1/3: Look straight ahead');
+  const blinkStateRef = useRef<'calibrating' | 'turn_head' | 'blink_and_smile' | 'verified'>('calibrating');
   const blinkFrameRef = useRef<string | null>(null);
+  const bestLiveFrameRef = useRef<string | null>(null);
   const scanStatusRef = useRef<ScanStatus>('initializing');
   const scanStartedAtRef = useRef<number>(Date.now());
   const noFaceSinceRef = useRef<number>(0);
   const phaseStartedAtRef = useRef<number>(Date.now());
+  const spoofStreakRef = useRef<number>(0);
   const livenessStatsRef = useRef({
     calibFrames: 0,
     sumYaw: 0,
+    sumAsym: 0,
     sumEAR: 0,
     sumPitch: 0,
     sumMouthToJaw: 0,
+    sumMouthLift: 0,
     sumMAR: 0,
     baselineYaw: 0.5,
+    baselineAsym: 1.0,
     baselineEAR: 0.28,
+    peakOpenEAR: 0.28,
+    minClosedEAR: 0.28,
+    prevEAR: -1,
     baselinePitch: 0.52,
     baselineMouthToJaw: 0.42,
+    minMouthToJaw: 0.42,
+    baselineMouthLift: 0.0,
+    minMouthLift: 0.0,
     baselineMAR: 0.04,
+    minMAR: 0.04,
     baselineWidth: 0.35,
     sawBlinkDrop: false,
+    blinkDone: false,
+    smileDone: false,
     prevCx: -1,
     prevCy: -1,
     prevWidth: 0,
@@ -101,7 +115,7 @@ export default function FaceScanner({
     setScanStatus(next);
   }, []);
 
-  const resetMobileLiveness = useCallback((badgeMsg = '🛡️ Step 1/4: Look straight ahead') => {
+  const resetMobileLiveness = useCallback((badgeMsg = '🛡️ Step 1/3: Look straight ahead') => {
     livenessVerifiedRef.current = false;
     setLivenessVerified(false);
     blinkStateRef.current = 'calibrating';
@@ -111,17 +125,29 @@ export default function FaceScanner({
     livenessStatsRef.current = {
       calibFrames: 0,
       sumYaw: 0,
+      sumAsym: 0,
       sumEAR: 0,
       sumPitch: 0,
       sumMouthToJaw: 0,
+      sumMouthLift: 0,
       sumMAR: 0,
       baselineYaw: 0.5,
+      baselineAsym: 1.0,
       baselineEAR: 0.28,
+      peakOpenEAR: 0.28,
+      minClosedEAR: 0.28,
+      prevEAR: -1,
       baselinePitch: 0.52,
       baselineMouthToJaw: 0.42,
+      minMouthToJaw: 0.42,
+      baselineMouthLift: 0.0,
+      minMouthLift: 0.0,
       baselineMAR: 0.04,
+      minMAR: 0.04,
       baselineWidth: 0.35,
       sawBlinkDrop: false,
+      blinkDone: false,
+      smileDone: false,
       prevCx: -1,
       prevCy: -1,
       prevWidth: 0,
@@ -293,7 +319,7 @@ export default function FaceScanner({
 
         // Fast silent snapshot for real-time 3D liveness & landmark analysis
         const photo = await cameraRef.current.takePictureAsync({
-          quality: 0.35,
+          quality: 0.28,
           base64: true,
           shutterSound: false,
           skipProcessing: true,
@@ -311,15 +337,19 @@ export default function FaceScanner({
         if (!isMountedRef.current || hasFinishedRef.current) return;
 
         if (quality.screenSpoofSuspected) {
-          consecutiveStable = 0;
-          setStableCount(0);
-          resetMobileLiveness('🚨 Spoof Blocked: Show Live Face');
-          failMobileScan(
-            '🚨 No Live Face Recognized (Photo/Screen Blocked)',
-            quality.spoofReason || 'No valid live face has been recognized — A phone screen or static photo was detected.'
-          );
+          spoofStreakRef.current += 1;
+          if (spoofStreakRef.current >= 3) {
+            consecutiveStable = 0;
+            setStableCount(0);
+            resetMobileLiveness('🚨 Spoof Blocked: Show Live Face');
+            failMobileScan(
+              '🚨 No Live Face Recognized (Photo/Screen Blocked)',
+              quality.spoofReason || 'No valid live face has been recognized — A phone screen or static photo was detected.'
+            );
+          }
           return;
         }
+        spoofStreakRef.current = 0;
 
         if (quality.multipleFaces) {
           consecutiveStable = 0;
@@ -395,12 +425,13 @@ export default function FaceScanner({
             noFaceSinceRef.current = nowMiss;
           }
           livenessStatsRef.current.missedFrames++;
-          if (livenessStatsRef.current.missedFrames >= 2) {
+          // Generous dropout tolerance (7 missed frames / ~2.3s) so blinking or smiling squints never reset progress
+          if (livenessStatsRef.current.missedFrames >= 7 && nowMiss - noFaceSinceRef.current >= 2300) {
             resetMobileLiveness('⚠️ No face detected — Align face');
           }
 
           const noFaceElapsed = nowMiss - noFaceSinceRef.current;
-          if (noFaceElapsed >= 6000 || livenessStatsRef.current.missedFrames >= 16) {
+          if (noFaceElapsed >= 6500 || livenessStatsRef.current.missedFrames >= 22) {
             failMobileScan(
               '❌ Error: No face has been recognized',
               'No face has been recognized in the camera frame. Please position your face clearly inside the oval in good lighting and tap Retry.'
@@ -408,36 +439,41 @@ export default function FaceScanner({
             return;
           }
 
-          updateScanStatus('aligning');
-          setStatusMessage(
-            noFaceElapsed >= 2200
-              ? '⚠️ No face detected — Position face inside oval'
-              : 'Position your live face inside the oval'
-          );
-          Animated.timing(progressAnim, { toValue: 0.15, duration: 150, useNativeDriver: false }).start();
+          if (noFaceElapsed >= 2400) {
+            updateScanStatus('aligning');
+            setStatusMessage('⚠️ No face detected — Position face inside oval');
+            Animated.timing(progressAnim, { toValue: 0.15, duration: 150, useNativeDriver: false }).start();
+          }
           return;
         }
 
         noFaceSinceRef.current = 0;
         livenessStatsRef.current.missedFrames = 0;
 
-        // 2. Mandatory 3D Live-Face Challenge (Look -> Move Head Left/Right -> Blink -> Smile)
+        // 2. Mandatory 3D Live-Face Challenge (Look -> Move Head Left/Right -> Latched Blink & Smile)
         const now = Date.now();
         const stats = livenessStatsRef.current;
         const yaw = quality.yawRatio ?? 0.5;
+        const asym = quality.eyeWidthAsymmetry ?? 1.0;
         const ear = quality.ear ?? 0.28;
         const pitch = quality.pitchRatio ?? 0.52;
         const mouthToJaw = quality.mouthToJaw ?? 0.42;
+        const mouthLift = quality.mouthCornerLift ?? 0.0;
         const mar = quality.mar ?? 0.04;
         const fw = quality.faceWidth ?? 0.35;
         const cx = quality.faceCx ?? 0.5;
         const cy = quality.faceCy ?? 0.5;
 
-        // Continuity check: reset if photo was swapped or jumped abruptly
+        // Cache clean frontal open-eye frame from this live session so mid-blink snapshots never fail enrollment/verify
+        if (yaw >= 0.37 && yaw <= 0.63 && ear >= 0.19) {
+          bestLiveFrameRef.current = dataUrl;
+        }
+
+        // Continuity check: only reset on extreme photo-swap teleports, never on natural head turns/smiles
         if (stats.prevCx >= 0 && stats.prevWidth > 0) {
           const jump = Math.hypot(cx - stats.prevCx, cy - stats.prevCy);
           const scaleRatio = fw / Math.max(0.05, stats.prevWidth);
-          if (jump > 0.38 || scaleRatio > 1.65 || scaleRatio < 0.55) {
+          if (jump > 0.65 || scaleRatio > 2.15 || scaleRatio < 0.42) {
             resetMobileLiveness('🛡️ Hold steady — Restarting live check');
           }
         }
@@ -448,137 +484,177 @@ export default function FaceScanner({
         if (!livenessVerifiedRef.current) {
           updateScanStatus('analyzing');
 
-          // Detect stalled / unrecognizable live scan as an explicit error
+          // Detect stalled / unrecognizable live scan as an explicit error (generous 15s per step)
           const phaseElapsed = now - phaseStartedAtRef.current;
           const totalElapsed = now - scanStartedAtRef.current;
-          if (phaseElapsed >= 11000 || totalElapsed >= 26000) {
+          if (phaseElapsed >= 15000 || totalElapsed >= 35000) {
             const curStep = blinkStateRef.current;
             const detail =
               curStep === 'calibrating'
                 ? 'No clear face has been recognized. Please look straight at the camera without obstructions and tap Retry.'
                 : curStep === 'turn_head'
                   ? 'Face could not be recognized — Could not detect live 3D head movement (left or right). Static photos cannot be scanned.'
-                  : curStep === 'blink'
-                    ? 'Face could not be recognized — Could not detect live eye blink. Ensure clear lighting on your eyes and tap Retry.'
-                    : 'Face could not be recognized — Live facial scan could not be completed. Please center your face clearly and tap Retry.';
+                  : !stats.blinkDone
+                    ? 'Face could not be recognized — Could not detect live eye blink. Ensure clear lighting on your face and tap Retry.'
+                    : 'Face could not be recognized — Could not complete live smile check. Please center your face clearly and tap Retry.';
             failMobileScan('❌ Error: No valid live face recognized', detail);
             return;
           }
 
           if (blinkStateRef.current === 'calibrating') {
             if (quality.faceCentered === false) {
-              setStatusMessage('Step 1/4: Center face inside the oval guide');
+              setStatusMessage('Step 1/3: Center face inside the oval guide');
               return;
             }
-            if (yaw >= 0.35 && yaw <= 0.65 && ear >= 0.165) {
+            if (yaw >= 0.33 && yaw <= 0.67 && ear >= 0.155) {
               stats.calibFrames++;
               stats.sumYaw += yaw;
+              stats.sumAsym += asym;
               stats.sumEAR += ear;
               stats.sumPitch += pitch;
               stats.sumMouthToJaw += mouthToJaw;
+              stats.sumMouthLift += mouthLift;
               stats.sumMAR += mar;
               stats.baselineWidth = fw;
 
-              setLivenessStepText('🛡️ Step 1/4: Looking Straight...');
-              setStatusMessage('Step 1/4: Look straight ahead with eyes open...');
-              Animated.timing(progressAnim, { toValue: 0.28, duration: 150, useNativeDriver: false }).start();
+              setLivenessStepText('🛡️ Step 1/3: Locking Face...');
+              setStatusMessage('Step 1/3: Look straight ahead...');
+              Animated.timing(progressAnim, { toValue: 0.30, duration: 150, useNativeDriver: false }).start();
 
               if (stats.calibFrames >= 2) {
                 const n = stats.calibFrames;
                 stats.baselineYaw = stats.sumYaw / n;
+                stats.baselineAsym = stats.sumAsym / n;
                 stats.baselineEAR = stats.sumEAR / n;
+                stats.peakOpenEAR = Math.max(stats.baselineEAR, ear);
+                stats.minClosedEAR = stats.baselineEAR;
+                stats.prevEAR = ear;
                 stats.baselinePitch = stats.sumPitch / n;
                 stats.baselineMouthToJaw = stats.sumMouthToJaw / n;
+                stats.minMouthToJaw = stats.baselineMouthToJaw;
+                stats.baselineMouthLift = stats.sumMouthLift / n;
+                stats.minMouthLift = stats.baselineMouthLift;
                 stats.baselineMAR = stats.sumMAR / n;
+                stats.minMAR = stats.baselineMAR;
                 phaseStartedAtRef.current = now;
                 blinkStateRef.current = 'turn_head';
-                setLivenessStepText('🛡️ Step 2/4: Move Head Left or Right');
-                setStatusMessage('Step 2/4: Slowly move your head left or right');
-                Animated.timing(progressAnim, { toValue: 0.48, duration: 150, useNativeDriver: false }).start();
+                setLivenessStepText('🛡️ Step 2/3: Move Head Left or Right');
+                setStatusMessage('Step 2/3: Move your head slightly left or right');
+                Animated.timing(progressAnim, { toValue: 0.50, duration: 150, useNativeDriver: false }).start();
               }
             } else {
-              setStatusMessage('Step 1/4: Look straight at the camera with eyes open');
+              setStatusMessage('Step 1/3: Look straight at the camera');
             }
             return;
           }
 
           if (blinkStateRef.current === 'turn_head') {
-            // Flat 2D photos on another phone preserve nose-to-jaw collinear ratio (~0.50) when tilted!
+            if (yaw >= 0.36 && yaw <= 0.64) {
+              if (ear > stats.peakOpenEAR && ear < 0.42) {
+                stats.peakOpenEAR = stats.peakOpenEAR * 0.6 + ear * 0.4;
+              }
+              stats.minMouthToJaw = Math.min(stats.minMouthToJaw, mouthToJaw);
+              stats.minMouthLift = Math.min(stats.minMouthLift, mouthLift);
+              stats.minMAR = Math.min(stats.minMAR, mar);
+            }
+            stats.prevEAR = ear;
+
             const yawDelta = Math.abs(yaw - stats.baselineYaw);
-            const scaleOk = fw > stats.baselineWidth * 0.58 && fw < stats.baselineWidth * 1.55;
-            if (yawDelta >= 0.09 && scaleOk) {
+            const asymDelta = Math.abs(asym - stats.baselineAsym);
+            const scaleOk = fw > stats.baselineWidth * 0.52 && fw < stats.baselineWidth * 1.70;
+            if ((yawDelta >= 0.072 || (yawDelta >= 0.052 && asymDelta >= 0.14)) && scaleOk) {
               phaseStartedAtRef.current = now;
-              blinkStateRef.current = 'blink';
-              setLivenessStepText('🛡️ Step 3/4: Face Forward & Blink');
-              setStatusMessage('Step 3/4: Look straight ahead and blink slowly');
+              blinkStateRef.current = 'blink_and_smile';
+              setLivenessStepText('🛡️ Step 3/3: Blink & Smile');
+              setStatusMessage('Step 3/3: Face forward, then blink and smile!');
               Animated.timing(progressAnim, { toValue: 0.68, duration: 150, useNativeDriver: false }).start();
             } else {
-              setStatusMessage('Step 2/4: Move your head slightly left or right');
+              setStatusMessage('Step 2/3: Move your head slightly left or right');
             }
             return;
           }
 
-          if (blinkStateRef.current === 'blink') {
+          if (blinkStateRef.current === 'blink_and_smile') {
             const backToCenter =
-              (yaw >= 0.35 && yaw <= 0.65) || Math.abs(yaw - stats.baselineYaw) <= 0.14;
+              (yaw >= 0.30 && yaw <= 0.70) || Math.abs(yaw - stats.baselineYaw) <= 0.19;
             const pitchSteady =
-              Math.abs(pitch - stats.baselinePitch) / Math.max(0.15, stats.baselinePitch) <= 0.22;
+              Math.abs(pitch - stats.baselinePitch) / Math.max(0.15, stats.baselinePitch) <= 0.30;
 
             if (!backToCenter) {
-              setStatusMessage('Step 3/4: Return face to center, then blink');
+              stats.prevEAR = ear;
+              setStatusMessage('Step 3/3: Face forward to blink and smile');
               return;
             }
 
-            if (pitchSteady) {
-              const blinkThresh = Math.min(stats.baselineEAR * 0.85, stats.baselineEAR - 0.030);
-              if (ear <= blinkThresh) {
+            if (!stats.smileDone && mouthToJaw < stats.minMouthToJaw) stats.minMouthToJaw = mouthToJaw;
+            if (!stats.smileDone && mouthLift < stats.minMouthLift) stats.minMouthLift = mouthLift;
+            if (!stats.smileDone && mar < stats.minMAR) stats.minMAR = mar;
+            if (ear > stats.peakOpenEAR && ear < 0.42) {
+              stats.peakOpenEAR = stats.peakOpenEAR * 0.7 + ear * 0.3;
+            }
+
+            // A. Latched Multi-Signal Blink Detector (dip OR rapid inter-frame velocity)
+            if (!stats.blinkDone && pitchSteady) {
+              const refEAR = Math.max(stats.baselineEAR, stats.peakOpenEAR);
+              const blinkThresh = Math.min(refEAR * 0.89, refEAR - 0.022);
+              const prevDrop = stats.prevEAR > 0 ? stats.prevEAR - ear : 0;
+              const prevRise = stats.prevEAR > 0 ? ear - stats.prevEAR : 0;
+
+              if (ear <= blinkThresh || prevDrop >= 0.026) {
                 stats.sawBlinkDrop = true;
+                stats.minClosedEAR = Math.min(stats.minClosedEAR, ear);
                 blinkFrameRef.current = dataUrl;
-                setStatusMessage('Good! Now open your eyes...');
-                Animated.timing(progressAnim, { toValue: 0.78, duration: 120, useNativeDriver: false }).start();
-                return;
-              }
-
-              if (stats.sawBlinkDrop && ear >= stats.baselineEAR * 0.85) {
+              } else if (
+                stats.sawBlinkDrop &&
+                (ear >= stats.minClosedEAR + 0.018 || ear >= refEAR * 0.85)
+              ) {
+                stats.blinkDone = true;
                 phaseStartedAtRef.current = now;
-                blinkStateRef.current = 'smile';
-                setLivenessStepText('🛡️ Step 4/4: Smile at Camera');
-                setStatusMessage('Step 4/4: Now smile at the camera!');
-                Animated.timing(progressAnim, { toValue: 0.86, duration: 150, useNativeDriver: false }).start();
-                return;
+              } else if (prevRise >= 0.028 && stats.prevEAR > 0 && stats.prevEAR < refEAR * 0.92) {
+                stats.blinkDone = true;
+                phaseStartedAtRef.current = now;
               }
-
-              setStatusMessage('Step 3/4: Blink slowly at the camera');
-              return;
-            } else {
-              setStatusMessage('Keep phone level and blink');
-              return;
             }
-          }
+            stats.prevEAR = ear;
 
-          if (blinkStateRef.current === 'smile') {
-            const backToCenter =
-              (yaw >= 0.35 && yaw <= 0.65) || Math.abs(yaw - stats.baselineYaw) <= 0.14;
-            if (!backToCenter) {
-              setStatusMessage('Step 4/4: Face forward and smile');
-              return;
+            // B. Latched Duchenne-Safe Smile Detector (never blocked by squinting eyes!)
+            if (!stats.smileDone) {
+              const refMouthW = Math.min(stats.baselineMouthToJaw, stats.minMouthToJaw);
+              const refLift = Math.min(stats.baselineMouthLift, stats.minMouthLift);
+              const refMAR = Math.min(stats.baselineMAR, stats.minMAR);
+
+              const isSmiling =
+                mouthToJaw >= refMouthW * 1.052 ||
+                mar >= refMAR + 0.050 ||
+                mouthLift >= refLift + 0.018 ||
+                (mouthToJaw >= 0.465 && mouthToJaw >= refMouthW * 1.025);
+
+              if (isSmiling) {
+                stats.smileDone = true;
+                phaseStartedAtRef.current = now;
+              }
             }
 
-            const smileCompleted =
-              ear >= 0.16 &&
-              (mouthToJaw >= stats.baselineMouthToJaw * 1.072 ||
-                mar >= stats.baselineMAR + 0.075 ||
-                (mouthToJaw >= 0.48 && mouthToJaw >= stats.baselineMouthToJaw * 1.045));
-
-            if (smileCompleted) {
+            if (stats.blinkDone && stats.smileDone) {
               phaseStartedAtRef.current = now;
               blinkStateRef.current = 'verified';
               livenessVerifiedRef.current = true;
               setLivenessVerified(true);
               setLivenessStepText('✓ Live 3D Face Verified');
               Animated.timing(progressAnim, { toValue: 0.94, duration: 150, useNativeDriver: false }).start();
+            } else if (stats.blinkDone) {
+              setLivenessStepText('✓ Blink • ○ Smile');
+              setStatusMessage('✓ Blink detected! Now smile at the camera');
+              Animated.timing(progressAnim, { toValue: 0.84, duration: 120, useNativeDriver: false }).start();
+              return;
+            } else if (stats.smileDone) {
+              setLivenessStepText('○ Blink • ✓ Smile');
+              setStatusMessage('✓ Smile detected! Now blink your eyes');
+              Animated.timing(progressAnim, { toValue: 0.84, duration: 120, useNativeDriver: false }).start();
+              return;
             } else {
-              setStatusMessage('Step 4/4: Smile at the camera to complete scan');
+              setLivenessStepText(stats.sawBlinkDrop ? '🛡️ Opening eyes... & Smile' : '🛡️ Step 3/3: Blink & Smile');
+              setStatusMessage('Step 3/3: Blink your eyes and smile naturally');
               return;
             }
           }
@@ -595,14 +671,23 @@ export default function FaceScanner({
           setStableCount(consecutiveStable);
           updateScanStatus('analyzing');
 
+          const candidateLiveUrl = bestLiveFrameRef.current || dataUrl;
+
           try {
             const finalPhoto = await cameraRef.current.takePictureAsync({
               quality: 0.85,
               base64: true,
               shutterSound: false,
             } as any);
-            const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : dataUrl;
-            const finalCheck = await biometricService.inspectQuality(finalDataUrl);
+            let finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : candidateLiveUrl;
+            let finalCheck = await biometricService.inspectQuality(finalDataUrl);
+            if (!finalCheck.hasFace && candidateLiveUrl !== finalDataUrl) {
+              const backupCheck = await biometricService.inspectQuality(candidateLiveUrl);
+              if (backupCheck.hasFace && !backupCheck.screenSpoofSuspected) {
+                finalDataUrl = candidateLiveUrl;
+                finalCheck = backupCheck;
+              }
+            }
             if (!finalCheck.hasFace || finalCheck.screenSpoofSuspected) {
               failMobileScan(
                 '❌ Error: No face has been recognized',
@@ -612,7 +697,7 @@ export default function FaceScanner({
             }
             handleSuccess(finalDataUrl);
           } catch {
-            handleSuccess(dataUrl);
+            handleSuccess(candidateLiveUrl);
           }
         } else if (mode === 'clock_in' || mode === 'clock_out' || mode === 'verify_test') {
           if (!enrolledPhoto) {
@@ -629,8 +714,16 @@ export default function FaceScanner({
           setStatusMessage('Live face verified! Matching identity...');
           Animated.timing(progressAnim, { toValue: 0.95, duration: 150, useNativeDriver: false }).start();
 
+          const primaryLive = bestLiveFrameRef.current || dataUrl;
+
           // Step A: On-Device Neural 128-D Biometric Verification (strict 0.56 threshold)
-          const localBio = await biometricService.verifyBiometrics(enrolledPhoto, dataUrl, 0.56).catch(() => null);
+          let localBio = await biometricService.verifyBiometrics(enrolledPhoto, dataUrl, 0.56).catch(() => null);
+          if ((!localBio || !localBio.matched) && primaryLive !== dataUrl) {
+            const backupBio = await biometricService.verifyBiometrics(enrolledPhoto, primaryLive, 0.56).catch(() => null);
+            if (backupBio && backupBio.matched) {
+              localBio = backupBio;
+            }
+          }
           if (localBio && localBio.matched) {
             try {
               const finalPhoto = await cameraRef.current.takePictureAsync({
@@ -638,10 +731,10 @@ export default function FaceScanner({
                 base64: true,
                 shutterSound: false,
               } as any);
-              const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : dataUrl;
+              const finalDataUrl = finalPhoto?.base64 ? `data:image/jpeg;base64,${finalPhoto.base64}` : primaryLive;
               handleSuccess(finalDataUrl, localBio.confidence, localBio.distance);
             } catch {
-              handleSuccess(dataUrl, localBio.confidence, localBio.distance);
+              handleSuccess(primaryLive, localBio.confidence, localBio.distance);
             }
             return;
           }
@@ -649,7 +742,7 @@ export default function FaceScanner({
           // Step B: Server DeepFace AI Verification (fallback)
           const dfRes: DeepFaceVerifyResult = await deepfaceService.verifyFace(
             enrolledPhoto,
-            dataUrl,
+            primaryLive,
             { modelName: deepFaceModel, blinkImage: blinkFrameRef.current || undefined, timeoutMs: 2500 }
           );
 
@@ -687,8 +780,8 @@ export default function FaceScanner({
       }
     };
 
-    // Run auto-scan cycle every 340ms for responsive 3D head-turn & blink/smile detection
-    scanTimer = setInterval(runAutoScan, 340);
+    // Run auto-scan cycle every 220ms for high-responsiveness blink & smile capture
+    scanTimer = setInterval(runAutoScan, 220);
 
     return () => {
       if (scanTimer) clearInterval(scanTimer);
@@ -819,6 +912,8 @@ export default function FaceScanner({
     scanStartedAtRef.current = Date.now();
     noFaceSinceRef.current = Date.now();
     phaseStartedAtRef.current = Date.now();
+    spoofStreakRef.current = 0;
+    bestLiveFrameRef.current = null;
     resetMobileLiveness();
     updateScanStatus('aligning');
     setErrorMessage(null);
@@ -831,9 +926,11 @@ export default function FaceScanner({
     scanStartedAtRef.current = nowReset;
     noFaceSinceRef.current = nowReset;
     phaseStartedAtRef.current = nowReset;
+    spoofStreakRef.current = 0;
+    bestLiveFrameRef.current = null;
     resetMobileLiveness();
     updateScanStatus('aligning');
-    setStatusMessage('Step 1/4: Position your live face inside the oval');
+    setStatusMessage('Step 1/3: Position your live face inside the oval');
     setErrorMessage(null);
     setCapturedPhoto(null);
     setStableCount(0);
@@ -916,7 +1013,7 @@ export default function FaceScanner({
           phaseStartedAtRef.current = nowReady;
           setCameraReady(true);
           updateScanStatus('aligning');
-          setStatusMessage('Step 1/4: Position face inside the oval');
+          setStatusMessage('Step 1/3: Position face inside the oval');
         }}
       />
 
