@@ -134,7 +134,18 @@ function setSettingsCache(fileName, data, ttlMs = 45000) {
   _settingsStoreCache.set(fileName, { data, expiresAt: Date.now() + ttlMs });
 }
 
-async function readSettingsJsonFast(fileName, fallbackValue) {
+async function readSettingsJsonFast(fileName, fallbackValue, forceFresh = false) {
+  if (forceFresh) {
+    try {
+      const { data, error } = await supabase.storage.from('face-photos').download(`settings/${fileName}`);
+      if (!error && data) {
+        const parsed = JSON.parse(await data.text());
+        setSettingsCache(fileName, parsed, 45000);
+        return parsed;
+      }
+    } catch { }
+  }
+
   const cached = _settingsStoreCache.get(fileName);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.data;
@@ -174,6 +185,88 @@ async function readSettingsJsonFast(fileName, fallbackValue) {
   } catch { }
 
   return fallbackValue;
+}
+
+/**
+ * Purges deleted or replaced Storage blobs (`face-photos/documents/<folder>/<docKey>_*`)
+ * and orphaned `documents` SQL table rows so removed/edited files never reappear.
+ */
+async function cleanupDocKeyArtifacts(emp, docKeyToClean, keepUrls = []) {
+  if (!emp || !docKeyToClean) return;
+  const keepSet = new Set(
+    (Array.isArray(keepUrls) ? keepUrls : [])
+      .filter((u) => typeof u === 'string' && u.startsWith('http'))
+      .map((u) => u.split('?')[0].trim())
+  );
+
+  // 1. Clean Supabase Storage folder(s) for this employee + docKey
+  try {
+    const folders = Array.from(
+      new Set(
+        [emp.id, emp.employee_id]
+          .filter(Boolean)
+          .map((v) => String(v).replace(/[^a-zA-Z0-9_-]/g, '_'))
+      )
+    );
+    const escapedKey = String(docKeyToClean).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const prefixRe = new RegExp(`^${escapedKey}_`, 'i');
+
+    for (const folder of folders) {
+      const { data: listed } = await supabase.storage
+        .from('face-photos')
+        .list(`documents/${folder}`, { limit: 200 });
+      if (!Array.isArray(listed) || listed.length === 0) continue;
+
+      const pathsToRemove = [];
+      for (const obj of listed) {
+        if (!obj?.name || !prefixRe.test(obj.name)) continue;
+        const { data: pub } = supabase.storage
+          .from('face-photos')
+          .getPublicUrl(`documents/${folder}/${obj.name}`);
+        const pubClean = (pub?.publicUrl || '').split('?')[0].trim();
+        if (!pubClean || !keepSet.has(pubClean)) {
+          pathsToRemove.push(`documents/${folder}/${obj.name}`);
+        }
+      }
+      if (pathsToRemove.length > 0) {
+        await supabase.storage.from('face-photos').remove(pathsToRemove);
+      }
+    }
+  } catch (storageCleanErr) {
+    console.warn('cleanupDocKeyArtifacts storage notice:', storageCleanErr?.message || storageCleanErr);
+  }
+
+  // 2. Clean orphaned rows in the `documents` SQL table for this employee + docKey
+  if (emp.id) {
+    try {
+      const { data: rows } = await supabase
+        .from('documents')
+        .select('id, file_name, file_path')
+        .eq('employee_id', emp.id);
+      if (Array.isArray(rows) && rows.length > 0) {
+        const keyLower = String(docKeyToClean).toLowerCase();
+        const idsToDelete = rows
+          .filter((r) => {
+            const fp = String(r.file_path || '').split('?')[0].trim();
+            const fn = String(r.file_name || '').toLowerCase();
+            const matchesKey =
+              fp.toLowerCase().includes(`/${keyLower}_`) ||
+              fn === keyLower ||
+              fn === `${keyLower}.pdf` ||
+              fn.includes(`submitted_${keyLower}_`);
+            if (!matchesKey) return false;
+            return !fp || !keepSet.has(fp);
+          })
+          .map((r) => r.id)
+          .filter(Boolean);
+        if (idsToDelete.length > 0) {
+          await supabase.from('documents').delete().in('id', idsToDelete);
+        }
+      }
+    } catch (sqlCleanErr) {
+      console.warn('cleanupDocKeyArtifacts SQL notice:', sqlCleanErr?.message || sqlCleanErr);
+    }
+  }
 }
 
 async function mirrorTraineeDocsToStore(emp, docs, documentsPassed, documentsStatus) {
@@ -261,10 +354,10 @@ export default async function handler(req, res) {
         return sendJson(res, 200, Array.isArray(parsed) ? parsed : []);
       }
 
-      // Action: Retrieve all trainee submitted OJT documents (zero-DB public CDN store)
+      // Action: Retrieve all trainee submitted OJT documents (zero-DB public CDN store; supports ?fresh=1 post-mutation)
       if (action === 'get-all-trainee-documents') {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-        const parsed = await readSettingsJsonFast('trainee_documents_store.json', {});
+        const parsed = await readSettingsJsonFast('trainee_documents_store.json', {}, query.fresh === '1');
         return sendJson(res, 200, parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {});
       }
 
@@ -444,11 +537,13 @@ export default async function handler(req, res) {
       }
 
       const regLoc = empData?.registration_location || {};
-      const regDocs = { ...(regLoc.documents || {}) };
+      let regDocs = { ...(regLoc.documents || {}) };
+      let resolvedPassed = Boolean(regLoc.documentsPassed);
+      let resolvedStatus = regLoc.documentsStatus || 'pending';
 
-      // Merge zero-DB trainee_documents_store.json entries so uploads saved during DB contention are always returned
+      // Authoritative sync with trainee_documents_store.json (respects deletions & edits without resurrecting old files!)
       try {
-        const storeMap = await readSettingsJsonFast('trainee_documents_store.json', {});
+        const storeMap = await readSettingsJsonFast('trainee_documents_store.json', {}, query.fresh === '1');
         const storeEntry =
           (empData?.id && storeMap[empData.id]) ||
           (empData?.employee_id && storeMap[empData.employee_id]) ||
@@ -460,212 +555,24 @@ export default async function handler(req, res) {
               (e.id === empData?.id ||
                 (empData?.employee_id && String(e.employeeId || '').toLowerCase() === String(empData.employee_id).toLowerCase()))
           );
-        if (storeEntry?.documents && typeof storeEntry.documents === 'object') {
-          for (const [sKey, sVal] of Object.entries(storeEntry.documents)) {
-            if (!sVal || typeof sVal !== 'object') continue;
-            const prev = regDocs[sKey];
-            const sFiles = Array.isArray(sVal.files) ? sVal.files : [];
-            const pFiles = Array.isArray(prev?.files) ? prev.files : [];
-            if (!prev || sFiles.length >= pFiles.length) {
-              regDocs[sKey] = {
-                ...(prev || {}),
-                ...sVal,
-                files: sFiles.length > 0 ? sFiles : pFiles.length > 0 ? pFiles : undefined,
-                status: prev?.status === 'passed' || sVal.status === 'passed' ? 'passed' : sVal.status || prev?.status || 'submitted',
-              };
-            }
+        if (storeEntry && typeof storeEntry.documents === 'object') {
+          const storeTs = storeEntry.updatedAt ? new Date(storeEntry.updatedAt).getTime() : 0;
+          const regTs = regLoc.documentsUpdatedAt ? new Date(regLoc.documentsUpdatedAt).getTime() : 0;
+          if (!regTs || storeTs >= regTs) {
+            regDocs = { ...(storeEntry.documents || {}) };
+            if (storeEntry.documentsPassed !== undefined) resolvedPassed = Boolean(storeEntry.documentsPassed);
+            if (storeEntry.documentsStatus) resolvedStatus = storeEntry.documentsStatus;
           }
         }
       } catch { }
 
-      // Ensure any document recorded in the documents table is present in the documents object
-      for (const row of docRows) {
-        const matchKey = Object.keys(regDocs).find((k) => regDocs[k]?.name === row.file_name);
-        if (!matchKey && row.file_name) {
-          const standardKey = [
-            'internshipAgreement', 'moa', 'consent', 'trainingPlan', 'pledgeOfConduct',
-            'medical', 'application', 'resume', 'enrolmentForm', 'endorsement'
-          ].find((k) => row.file_name.toLowerCase().includes(k.toLowerCase()));
-          if (standardKey && !regDocs[standardKey]) {
-            regDocs[standardKey] = {
-              name: row.file_name,
-              fileUrl: row.file_path,
-              dataUrl: row.file_path,
-              fileType: row.file_type || 'application/pdf',
-              size: row.file_size || 0,
-              uploadedAt: row.created_at,
-              status: 'submitted',
-            };
-          }
-        }
-      }
-
-      // Recover orphaned or multi-file uploads directly from Supabase Storage folder `documents/${empId}`
-      const standardRecoveryKeys = [
-        'internshipAgreement', 'moa', 'consent', 'trainingPlan', 'pledgeOfConduct',
-        'medical', 'application', 'resume', 'enrolmentForm', 'endorsement'
-      ];
-      const hasMissingStandardKey = standardRecoveryKeys.some((k) => !regDocs[k]);
-      const needsMultiFileRecovery = Object.entries(regDocs).some(([_, d]) => {
-        if (!d || typeof d !== 'object') return false;
-        const hasMultipleInName = typeof d.name === 'string' && /^\d+\s+Files\b/i.test(d.name);
-        return hasMultipleInName && (!Array.isArray(d.files) || d.files.length <= 1);
-      });
-
-      if ((hasMissingStandardKey || needsMultiFileRecovery) && empData) {
-        try {
-          const folderCandidates = Array.from(
-            new Set(
-              [empData.id, empData.employee_id]
-                .filter(Boolean)
-                .map((v) => String(v).replace(/[^a-zA-Z0-9_-]/g, '_'))
-            )
-          );
-          const allStorageItems = [];
-          for (const folder of folderCandidates) {
-            const { data: listed } = await supabase.storage
-              .from('face-photos')
-              .list(`documents/${folder}`, { limit: 200, sortBy: { column: 'name', order: 'desc' } });
-            if (Array.isArray(listed)) {
-              for (const obj of listed) {
-                if (obj?.name) {
-                  allStorageItems.push({ folder, obj });
-                }
-              }
-            }
-          }
-
-          // 1. Recover completely orphaned requirement files from Storage when DB metadata missed a write
-          let healedOrphans = false;
-          for (const stdKey of standardRecoveryKeys) {
-            if (regDocs[stdKey]) continue;
-            const prefixRe = new RegExp(`^${stdKey}_`, 'i');
-            const matches = allStorageItems
-              .filter(({ obj }) => prefixRe.test(obj.name))
-              .sort((a, b) => new Date(a.obj.created_at || 0).getTime() - new Date(b.obj.created_at || 0).getTime());
-            if (matches.length > 0) {
-              const recoveredFiles = matches.map(({ folder, obj }, idx) => {
-                const { data: pub } = supabase.storage
-                  .from('face-photos')
-                  .getPublicUrl(`documents/${folder}/${obj.name}`);
-                const ext = (obj.name.split('.').pop() || 'pdf').toLowerCase();
-                const mime =
-                  obj.metadata?.mimetype ||
-                  (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)
-                    ? `image/${ext === 'jpg' ? 'jpeg' : ext}`
-                    : ext === 'pdf'
-                      ? 'application/pdf'
-                      : ext === 'docx'
-                        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                        : 'application/octet-stream');
-                return {
-                  id: `recovered-${stdKey}-${idx}`,
-                  name: `Submitted_${stdKey}_${idx + 1}.${ext}`,
-                  size: obj.metadata?.size || 0,
-                  fileType: mime,
-                  uploadedAt: obj.created_at || new Date().toISOString(),
-                  fileUrl: pub?.publicUrl || '',
-                  dataUrl: pub?.publicUrl || '',
-                };
-              });
-              const primary = recoveredFiles[0];
-              const totalBytes = recoveredFiles.reduce((s, f) => s + (Number(f.size) || 0), 0);
-              regDocs[stdKey] = {
-                name: recoveredFiles.length > 1 ? `${recoveredFiles.length} Files (${primary.name})` : primary.name,
-                size: totalBytes,
-                fileType: primary.fileType,
-                uploadedAt: recoveredFiles[recoveredFiles.length - 1].uploadedAt,
-                status: 'submitted',
-                source: 'portal',
-                fileUrl: primary.fileUrl,
-                dataUrl: primary.dataUrl,
-                files: recoveredFiles,
-              };
-              healedOrphans = true;
-            }
-          }
-          if (healedOrphans) {
-            void mirrorTraineeDocsToStore(empData, regDocs, Boolean(regLoc.documentsPassed), regLoc.documentsStatus || 'submitted');
-          }
-
-          for (const [docKey, docVal] of Object.entries(regDocs)) {
-            if (!docVal || typeof docVal !== 'object') continue;
-            const m = typeof docVal.name === 'string' ? docVal.name.match(/^(\d+)\s+Files\s*\((.+)\)$/i) : null;
-            if (!m || (Array.isArray(docVal.files) && docVal.files.length > 1)) continue;
-            const expectedCount = parseInt(m[1], 10) || 0;
-            const firstOriginalName = m[2] || '';
-            if (expectedCount <= 1) continue;
-
-            // Match files named `${docKey}_${idx}_${ts1}_${ts2}.${ext}`
-            const escapedKey = docKey.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            const idxRe = new RegExp(`^${escapedKey}_(\\d+)_(\\d+)`, 'i');
-            const byIndex = new Map();
-            for (const { folder, obj } of allStorageItems) {
-              const hit = obj.name.match(idxRe);
-              if (!hit) continue;
-              const idx = parseInt(hit[1], 10);
-              const ts = parseInt(hit[2], 10) || 0;
-              const prev = byIndex.get(idx);
-              if (!prev || ts > prev.ts) {
-                const { data: pub } = supabase.storage
-                  .from('face-photos')
-                  .getPublicUrl(`documents/${folder}/${obj.name}`);
-                byIndex.set(idx, {
-                  idx,
-                  ts,
-                  storageName: obj.name,
-                  size: obj.metadata?.size || 0,
-                  mimetype: obj.metadata?.mimetype || '',
-                  publicUrl: pub?.publicUrl || '',
-                });
-              }
-            }
-
-            if (byIndex.size > 1) {
-              const sorted = Array.from(byIndex.values())
-                .sort((a, b) => a.idx - b.idx)
-                .slice(0, expectedCount);
-              regDocs[docKey] = {
-                ...docVal,
-                files: sorted.map((entry, i) => {
-                  const ext = (entry.storageName.split('.').pop() || 'pdf').toLowerCase();
-                  const inferredMime =
-                    entry.mimetype ||
-                    (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)
-                      ? `image/${ext === 'jpg' ? 'jpeg' : ext}`
-                      : ext === 'pdf'
-                        ? 'application/pdf'
-                        : ext === 'docx'
-                          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                          : 'application/octet-stream');
-                  const displayFileName =
-                    i === 0 && firstOriginalName
-                      ? firstOriginalName
-                      : `Attachment_${i + 1}.${ext}`;
-                  return {
-                    id: `recovered-${docKey}-${i}`,
-                    name: displayFileName,
-                    size: entry.size || Math.round((Number(docVal.size) || 0) / sorted.length),
-                    fileType: inferredMime,
-                    uploadedAt: docVal.uploadedAt || new Date().toISOString(),
-                    fileUrl: entry.publicUrl,
-                    dataUrl: entry.publicUrl,
-                  };
-                }),
-              };
-            }
-          }
-        } catch (recErr) {
-          console.warn('Multi-file storage recovery notice:', recErr);
-        }
-      }
-
+      res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
       return sendJson(res, 200, {
         success: true,
         employee: empData,
         documents: regDocs,
-        documentsPassed: Boolean(regLoc.documentsPassed),
-        documentsStatus: regLoc.documentsStatus || 'pending',
+        documentsPassed: resolvedPassed,
+        documentsStatus: resolvedStatus,
         storedDocuments: docRows,
       });
     }
@@ -1107,9 +1014,10 @@ export default async function handler(req, res) {
         documents: sanitizedDocs,
         documentsPassed: allPassed,
         documentsStatus: finalStatus,
+        documentsUpdatedAt: new Date().toISOString(),
       };
 
-      // Always mirror to zero-DB trainee_documents_store.json so Instructor immediately sees uploaded files even under DB contention
+      // Always mirror to zero-DB trainee_documents_store.json so Instructor immediately sees uploaded/edited/deleted files
       await mirrorTraineeDocsToStore(emp, sanitizedDocs, allPassed, finalStatus);
 
       // 4. Update employee registration_location in database
@@ -1122,12 +1030,24 @@ export default async function handler(req, res) {
         console.warn('Notice updating employee registration_location (mirrored to store):', updateErr.message);
       }
 
-      // 5. Store / sync ONLY changed or removed document(s) in dedicated documents table
-      if (body.removeDocKey && emp.id) {
-        try {
-          const namesToDelete = [prevRemovedName, `${body.removeDocKey}.pdf`, body.removeDocKey].filter(Boolean);
-          await supabase.from('documents').delete().eq('employee_id', emp.id).in('file_name', namesToDelete);
-        } catch {}
+      // 5. Purge deleted or replaced Storage blobs + orphaned `documents` SQL rows so removed files never reappear
+      if (body.removeDocKey) {
+        await cleanupDocKeyArtifacts(emp, body.removeDocKey, []);
+        if (prevRemovedName && emp.id) {
+          try {
+            await supabase.from('documents').delete().eq('employee_id', emp.id).eq('file_name', prevRemovedName);
+          } catch {}
+        }
+      } else if (docKey && sanitizedDocs[docKey]) {
+        const activeDoc = sanitizedDocs[docKey];
+        const keptUrls = [
+          activeDoc.fileUrl,
+          activeDoc.dataUrl,
+          ...(Array.isArray(activeDoc.files) ? activeDoc.files.flatMap((f) => [f?.fileUrl, f?.dataUrl]) : []),
+        ].filter((u) => typeof u === 'string' && u.startsWith('http'));
+        if (body.isEdit || body.replaceSubmittedDocuments) {
+          await cleanupDocKeyArtifacts(emp, docKey, keptUrls);
+        }
       }
 
       const syncItems = [];

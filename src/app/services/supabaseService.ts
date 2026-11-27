@@ -1225,9 +1225,9 @@ export async function fetchAllTraineeDocumentsStore(forceFresh: boolean = false)
   if (!forceFresh && _storesBootstrapCache.data?.traineeDocuments && _storesBootstrapCache.expiresAt > Date.now()) {
     return _storesBootstrapCache.data.traineeDocuments;
   }
-  // 1. Fast zero-DB API read (/api/documents serves write-through server memory cache with Cache-Control: no-store!)
+  // 1. Fast zero-DB API read (/api/documents serves write-through server memory cache; ?fresh=1 bypasses cross-Lambda CDN lag post-mutation!)
   try {
-    const res = await fetch('/api/documents?action=get-all-trainee-documents');
+    const res = await fetch(`/api/documents?action=get-all-trainee-documents${forceFresh ? '&fresh=1' : ''}`);
     if (res.ok) {
       const parsed = await res.json();
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -1254,7 +1254,7 @@ export async function fetchAllTraineeDocumentsStore(forceFresh: boolean = false)
   return {};
 }
 
-export async function fetchEmployeeDocuments(employeeId: string): Promise<{
+export async function fetchEmployeeDocuments(employeeId: string, forceFresh: boolean = false): Promise<{
   success: boolean;
   documents?: TraineeDocuments;
   documentsPassed?: boolean;
@@ -1265,7 +1265,7 @@ export async function fetchEmployeeDocuments(employeeId: string): Promise<{
 
   // 1. Primary path: Service role endpoint /api/documents (bypasses RLS)
   try {
-    const res = await fetch(`/api/documents?employeeId=${encodeURIComponent(employeeId)}`);
+    const res = await fetch(`/api/documents?employeeId=${encodeURIComponent(employeeId)}${forceFresh ? '&fresh=1' : ''}`);
     if (res.ok) {
       const data = await res.json();
       if (data && data.success) {

@@ -133,6 +133,7 @@ export function Documents() {
     isCustom: boolean;
   } | null>(null);
   const [isSavingEdit, setIsSavingEdit] = useState(false);
+  const hasLocalDocMutationRef = React.useRef(false);
 
   // Proactively fetch latest institutional & departmental requirements posted by instructor on mount
   useEffect(() => {
@@ -154,41 +155,20 @@ export function Documents() {
     };
   }, []);
 
-  // Sync documents from database on mount or user change to prevent disappearance on refresh
+  // Sync authoritative documents from server on mount or user change (respecting edits & deletions without resurrecting old files!)
   useEffect(() => {
     const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id;
     if (!empId) return;
 
-    fetchEmployeeDocuments(empId)
+    fetchEmployeeDocuments(empId, true)
       .then((res) => {
-        if (res && res.documents && Object.keys(res.documents).length > 0) {
-          const mergeDocMaps = (base: TraineeDocuments, incoming: TraineeDocuments): TraineeDocuments => {
-            const out: TraineeDocuments = { ...base };
-            for (const [k, incVal] of Object.entries(incoming)) {
-              if (!incVal || typeof incVal !== 'object') continue;
-              const prevVal = out[k];
-              if (!prevVal) {
-                out[k] = incVal;
-              } else {
-                const incFiles = Array.isArray(incVal.files) ? incVal.files : [];
-                const prevFiles = Array.isArray(prevVal.files) ? prevVal.files : [];
-                out[k] = {
-                  ...prevVal,
-                  ...incVal,
-                  dataUrl: incVal.dataUrl || prevVal.dataUrl,
-                  fileUrl: incVal.fileUrl || prevVal.fileUrl,
-                  files: incFiles.length >= prevFiles.length && incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
-                  status: incVal.status === 'passed' || prevVal.status === 'passed' ? 'passed' : incVal.status || prevVal.status,
-                };
-              }
-            }
-            return out;
-          };
-
-          setDatabaseDocs((prev) => mergeDocMaps(prev || {}, res.documents || {}));
+        if (hasLocalDocMutationRef.current) return;
+        if (res && typeof res.documents === 'object') {
+          const authoritativeDocs: TraineeDocuments = { ...(res.documents || {}) };
+          setDatabaseDocs(authoritativeDocs);
           if (employee) {
             updateEmployee(employee.id, {
-              submittedDocuments: mergeDocMaps(employee.submittedDocuments || {}, res.documents || {}),
+              submittedDocuments: authoritativeDocs,
               documentsPassed: res.documentsPassed ?? employee.documentsPassed,
               documentsStatus: res.documentsStatus ?? employee.documentsStatus,
             });
@@ -199,28 +179,12 @@ export function Documents() {
   }, [employee?.id, currentUser?.employeeId, currentUser?.id]);
 
   const submittedDocs: TraineeDocuments = useMemo(() => {
-    const empDocs = employee?.submittedDocuments || {};
-    const dbDocs = databaseDocs || {};
-    const out: TraineeDocuments = { ...empDocs };
-    for (const [k, dbVal] of Object.entries(dbDocs)) {
-      if (!dbVal || typeof dbVal !== 'object') continue;
-      const empVal = out[k];
-      if (!empVal) {
-        out[k] = dbVal;
-      } else {
-        const dbFiles = Array.isArray(dbVal.files) ? dbVal.files : [];
-        const empFiles = Array.isArray(empVal.files) ? empVal.files : [];
-        out[k] = {
-          ...empVal,
-          ...dbVal,
-          dataUrl: dbVal.dataUrl || empVal.dataUrl,
-          fileUrl: dbVal.fileUrl || empVal.fileUrl,
-          files: dbFiles.length >= empFiles.length && dbFiles.length > 0 ? dbFiles : empFiles.length > 0 ? empFiles : undefined,
-          status: dbVal.status === 'passed' || empVal.status === 'passed' ? 'passed' : dbVal.status || empVal.status,
-        };
-      }
+    // Once databaseDocs is hydrated or mutated locally (upload/edit/replace/delete), databaseDocs is authoritative
+    // so deleted keys or removed sub-files in employee.submittedDocuments never reappear!
+    if (databaseDocs !== null) {
+      return databaseDocs;
     }
-    return out;
+    return employee?.submittedDocuments || {};
   }, [employee?.submittedDocuments, databaseDocs]);
 
   // Helper to safely get document item supporting legacy aliases
@@ -871,6 +835,7 @@ export function Documents() {
       return;
     }
 
+    hasLocalDocMutationRef.current = true;
     setUploadingKey(docKey);
     const meta = allDocRequirements.find((d) => d.key === docKey || d.id === docKey);
     const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
@@ -880,6 +845,7 @@ export function Documents() {
     const cleanDescription = (customDescription ?? submittedDocs[docKey]?.description ?? '').trim();
     const cleanNotes = (customNotes ?? submittedDocs[docKey]?.notes ?? '').trim();
     const baseSubmittedDocs = { ...submittedDocs };
+    const isReplacingExisting = Boolean(baseSubmittedDocs[docKey]);
 
     try {
       // 1. Instant optimistic UI update (< 20ms) using local object URLs so modal closes with zero delay
@@ -930,7 +896,16 @@ export function Documents() {
           allDocRequirements.every((k) => (k.key === docKey ? docItem : updatedDocs[k.key])?.status === 'passed');
         const finalDocStatus = allDocsPassed ? 'passed' : 'submitted';
 
-        setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: docItem }));
+        try {
+          const serializedFiles = JSON.stringify(filesToApply);
+          localStorage.setItem(`ojt_shared_doc_files_${targetEmpId}_${docKey}`, serializedFiles);
+          localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serializedFiles);
+          if (employee?.employeeId) {
+            localStorage.setItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`, serializedFiles);
+          }
+        } catch {}
+
+        setDatabaseDocs({ ...updatedDocs });
 
         // Persist to BOTH local employee context AND /api/documents (+ live Realtime broadcast to Instructor)
         if (persistRemote) {
@@ -959,6 +934,8 @@ export function Documents() {
             // Always persist via dedicated /api/documents endpoint + trainee_documents_store.json + live broadcast so Instructor sees it immediately
             saveDocumentPassStatus(canonicalEmpId, {
               docKey,
+              isEdit: isReplacingExisting,
+              replaceSubmittedDocuments: true,
               status: passStatus,
               allPassed: allDocsPassed,
               documentsStatus: finalDocStatus,
@@ -975,9 +952,14 @@ export function Documents() {
                 detail: {
                   employeeId: targetEmpId,
                   studentName: employee?.name || currentUser?.name || '',
+                  action: isReplacingExisting ? 'edited' : 'uploaded',
                   docKey,
                   docTitle: meta?.title || docKey,
+                  replaceSubmittedDocuments: true,
+                  submittedDocuments: updatedDocs,
                   documentItem: docItem,
+                  documentsPassed: allDocsPassed,
+                  documentsStatus: finalDocStatus,
                   submittedAt: docItem.uploadedAt,
                   filesCount: count,
                 },
@@ -1116,10 +1098,14 @@ export function Documents() {
       }
     }
 
+    hasLocalDocMutationRef.current = true;
     const updatedDocs: TraineeDocuments = { ...submittedDocs };
     delete (updatedDocs as any)[docKey];
     if (docKey === 'consent') delete (updatedDocs as any).parent_consent;
-    if (docKey === 'moa') delete (updatedDocs as any).endorsement;
+    if (docKey === 'moa') {
+      delete (updatedDocs as any).endorsement;
+      delete (updatedDocs as any).memorandum;
+    }
     if (docKey === 'medical') delete (updatedDocs as any).clearance;
     for (const k of Object.keys(updatedDocs)) {
       if (k.toLowerCase() === docKey.toLowerCase()) {
@@ -1127,15 +1113,7 @@ export function Documents() {
       }
     }
 
-    setDatabaseDocs((prev) => {
-      if (!prev) return null;
-      const n = { ...prev };
-      delete (n as any)[docKey];
-      if (docKey === 'consent') delete (n as any).parent_consent;
-      if (docKey === 'moa') delete (n as any).endorsement;
-      if (docKey === 'medical') delete (n as any).clearance;
-      return n;
-    });
+    setDatabaseDocs({ ...updatedDocs });
 
     const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
     try {
@@ -1390,6 +1368,7 @@ export function Documents() {
       return;
     }
 
+    hasLocalDocMutationRef.current = true;
     // If the trainee removed all attached files in the Edit dialog, delete the document cleanly so Instructor sees it removed!
     if (files.length === 0) {
       setIsSavingEdit(false);
@@ -1473,7 +1452,7 @@ export function Documents() {
         }
       } catch {}
 
-      setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: updatedDocItem }));
+      setDatabaseDocs({ ...updatedDocs });
 
       if (persistRemote) {
         const canonicalEmpId = employee?.id || targetEmpId;

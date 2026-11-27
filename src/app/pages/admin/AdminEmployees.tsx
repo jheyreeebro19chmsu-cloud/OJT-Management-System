@@ -1453,7 +1453,7 @@ export function AdminEmployees() {
   const hydrateSelectedEmployeeDocs = (emp: Employee) => {
     const targetId = emp.id || emp.employeeId;
     if (!targetId) return;
-    fetchEmployeeDocuments(targetId)
+    fetchEmployeeDocuments(targetId, true)
       .then((res) => {
         if (!res || typeof res.documents !== 'object') return;
         const merged: TraineeDocuments = {};
