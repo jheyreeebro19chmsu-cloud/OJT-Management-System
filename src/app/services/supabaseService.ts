@@ -1016,7 +1016,10 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
       }),
     });
     if (res.ok) {
-      return true;
+      const resJson = await res.json().catch(() => null);
+      if (!resJson || resJson.success !== false) {
+        return true;
+      }
     }
     const errText = await res.text().catch(() => '');
     console.warn(`API endpoint /api/employees returned status ${res.status}:`, errText);
@@ -1024,9 +1027,19 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     // Fall back to direct Supabase client below
   }
 
-  // 2. Direct Supabase client fallback
+  // 2. Direct Supabase client fallback (strip registration_location if existingRegLoc had no documents loaded and submittedDocuments wasn't explicitly passed, preventing accidental wipe of documents!)
   try {
-    let query = supabase.from('employees').update(supabaseUpdates);
+    const safeDirectUpdates = { ...supabaseUpdates };
+    if (
+      safeDirectUpdates.registration_location &&
+      updates.submittedDocuments === undefined &&
+      !safeDirectUpdates.registration_location.documents
+    ) {
+      delete safeDirectUpdates.registration_location;
+    }
+    if (Object.keys(safeDirectUpdates).length === 0) return true;
+
+    let query = supabase.from('employees').update(safeDirectUpdates);
     if (isUuid(id)) {
       query = query.eq('id', id);
     } else if (updates.email) {
@@ -1051,6 +1064,47 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     }
     throw err;
   }
+}
+
+export async function fetchAllTraineeDocumentsStore(): Promise<Record<string, {
+  id?: string;
+  employeeId?: string;
+  email?: string;
+  name?: string;
+  documents?: TraineeDocuments;
+  documentsPassed?: boolean;
+  documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial';
+  updatedAt?: string;
+}>> {
+  // 1. Fast zero-DB CDN / API read
+  try {
+    const res = await fetch(`/api/documents?action=get-all-trainee-documents&t=${Math.floor(Date.now() / 4000)}`, {
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      const parsed = await res.json();
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  // 2. Direct public Storage CDN fallback
+  try {
+    const base = (import.meta.env.VITE_SUPABASE_URL || 'https://wooighmdckuoebsuegzz.supabase.co').replace(/\/$/, '');
+    const pubRes = await fetch(
+      `${base}/storage/v1/object/public/face-photos/settings/trainee_documents_store.json?t=${Math.floor(Date.now() / 4000)}`,
+      { cache: 'no-store' }
+    );
+    if (pubRes.ok) {
+      const parsed = await pubRes.json();
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  return {};
 }
 
 export async function fetchEmployeeDocuments(employeeId: string): Promise<{
@@ -1107,6 +1161,7 @@ export async function saveDocumentPassStatus(
   employeeId: string,
   payload: {
     docKey?: string;
+    removeDocKey?: string;
     status?: 'passed' | 'pending' | 'submitted' | 'rejected';
     allPassed?: boolean;
     documentsStatus?: 'passed' | 'pending' | 'submitted' | 'partial' | 'incomplete';
@@ -1129,7 +1184,19 @@ export async function saveDocumentPassStatus(
     documentItem: sanitizedDocItem,
   };
 
-  // 1. Primary path: Dedicated /api/documents endpoint (bypasses RLS with service role)
+  const emitLiveDocBroadcast = () => {
+    broadcastLiveEvent('document_uploaded', {
+      employeeId,
+      docKey: payload.docKey,
+      removeDocKey: payload.removeDocKey,
+      documentItem: cleanPayload.documentItem,
+      submittedDocuments: cleanPayload.submittedDocuments,
+      documentsPassed: payload.allPassed,
+      documentsStatus: payload.documentsStatus,
+    });
+  };
+
+  // 1. Primary path: Dedicated /api/documents endpoint (bypasses RLS with service role + mirrors to trainee_documents_store.json)
   try {
     const res = await fetch('/api/documents', {
       method: 'POST',
@@ -1140,14 +1207,7 @@ export async function saveDocumentPassStatus(
       }),
     });
     if (res.ok) {
-      broadcastLiveEvent('document_uploaded', {
-        employeeId,
-        docKey: payload.docKey,
-        documentItem: cleanPayload.documentItem,
-        submittedDocuments: cleanPayload.submittedDocuments,
-        documentsPassed: payload.allPassed,
-        documentsStatus: payload.documentsStatus,
-      });
+      emitLiveDocBroadcast();
       return true;
     }
   } catch (err) {
@@ -1170,6 +1230,7 @@ export async function saveDocumentPassStatus(
       }),
     });
     if (res.ok) {
+      emitLiveDocBroadcast();
       return true;
     }
   } catch (err) {

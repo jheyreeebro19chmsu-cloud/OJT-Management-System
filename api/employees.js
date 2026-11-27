@@ -367,7 +367,7 @@ function syncStorageAccountsIndexAsync() {
     supabase
       .from('employees')
       .select(
-        'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, created_at'
+        'id, employee_id, email, name, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at'
       )
       .limit(1000),
     supabase.from('host_supervisors').select(HOST_LIGHT_COLS).limit(200),
@@ -379,6 +379,18 @@ function syncStorageAccountsIndexAsync() {
         for (const [k, v] of Object.entries(e)) {
           if (v !== null && v !== undefined && v !== '') {
             if (k === 'photo' && String(v).startsWith('data:')) continue;
+            if (k === 'registration_location' && v && typeof v === 'object') {
+              out[k] = {
+                lat: v.lat,
+                lng: v.lng,
+                radius: v.radius,
+                address: v.address,
+                documentsPassed: v.documentsPassed,
+                documentsStatus: v.documentsStatus,
+                documents: v.documents ? sanitizeDocuments(v.documents) : undefined,
+              };
+              continue;
+            }
             out[k] = v;
           }
         }
@@ -629,12 +641,12 @@ export default async function handler(req, res) {
         error = updateRes?.error;
       } catch (tErr) {
         console.warn('api/employees update timeout:', tErr.message);
-        return sendJson(res, 200, { success: true, warning: 'Database slow, optimistic sync persisted', updated: dbPayload });
+        return sendJson(res, 503, { success: false, warning: 'Database slow', updated: dbPayload });
       }
 
       if (error) {
         console.warn('api/employees update error:', error.message);
-        return sendJson(res, 200, { success: false, warning: error.message, updated: dbPayload });
+        return sendJson(res, 500, { success: false, warning: error.message, updated: dbPayload });
       }
 
       // 3. Sync documents into dedicated documents table in database

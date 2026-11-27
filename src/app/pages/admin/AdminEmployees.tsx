@@ -9,7 +9,7 @@ import { isSecurityApiConfigured, registerFace } from '../../services/securityAp
 import { useApp } from '../../store/AppContext';
 import { Employee, TraineeDocuments, TraineeDocumentFile, RequiredDocument, TraineeDocumentItem } from '../../types';
 import { getPhotoUrl } from '../../services/config';
-import { fetchEmployeeDocuments, saveDocumentPassStatus, uploadDocumentToStorage } from '../../services/supabaseService';
+import { fetchEmployeeDocuments, fetchAllTraineeDocumentsStore, saveDocumentPassStatus, uploadDocumentToStorage } from '../../services/supabaseService';
 import { campusOptions, departmentOptions, getCoursesForDepartment } from '../../data/academicOptions';
 import { getCampusLocation } from '../../utils/campusLocations';
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../../data/documentRequirements';
@@ -229,6 +229,40 @@ export function AdminEmployees() {
         if (!r.assignedEmployeeIds || r.assignedEmployeeIds.length === 0 || r.assignedEmployeeIds.includes('all') || r.assignedEmployeeIds.includes(empId)) {
           map.set(r.id, r);
         }
+      }
+    }
+    // Also surface any extra custom documents uploaded directly by the trainee in OJT Documents (`+ Add Document`)
+    const submitted = (emp.submittedDocuments || {}) as Record<string, any>;
+    const standardAndAliasKeys = new Set([
+      ...REQUIRED_TRAINEE_DOC_KEYS,
+      'parent_consent',
+      'memorandum',
+      'clearance',
+      'endorsement_letter',
+      'endorsementLetter',
+      'applicationForm',
+      'application_letter',
+      'applicationLetter',
+      'training_plan',
+      'agreement',
+    ]);
+    for (const [docKey, docVal] of Object.entries(submitted)) {
+      if (!docVal || typeof docVal !== 'object') continue;
+      if (standardAndAliasKeys.has(docKey as any) || map.has(docKey)) continue;
+      const alreadyMatchedByTitle = Array.from(map.values()).some(
+        (m) => m.title && docVal.title && m.title.toLowerCase().trim() === String(docVal.title).toLowerCase().trim()
+      );
+      if (alreadyMatchedByTitle) continue;
+      if (docVal.fileUrl || docVal.dataUrl || docVal.name || (Array.isArray(docVal.files) && docVal.files.length > 0)) {
+        map.set(docKey, {
+          id: docKey,
+          employeeId: empId,
+          title: docVal.title || docVal.name || 'Additional Submitted Document',
+          description: docVal.description || 'Additional compliance document submitted by trainee.',
+          notes: docVal.notes || '',
+          required: false,
+          createdAt: docVal.uploadedAt || new Date().toISOString(),
+        });
       }
     }
     return Array.from(map.values());
@@ -578,20 +612,59 @@ export function AdminEmployees() {
     }
   }, [location.pathname, searchParams]);
 
+  const [cloudTraineeDocsMap, setCloudTraineeDocsMap] = useState<Record<string, any>>({});
+
+  // Proactively sync trainee uploaded documents from cloud store whenever Instructor views AdminEmployees / Documents Hub (zero DB writes!)
+  useEffect(() => {
+    refreshData?.({ force: true } as any)?.catch?.(() => {});
+    fetchAllTraineeDocumentsStore()
+      .then((storeMap) => {
+        if (storeMap && typeof storeMap === 'object') {
+          setCloudTraineeDocsMap(storeMap);
+        }
+      })
+      .catch(() => {});
+  }, [activeCategoryTab]);
+
+  // Keep open Review/View modal in sync when `employees` state receives live document updates
+  useEffect(() => {
+    if (!selectedEmp) return;
+    const latest = employees.find(
+      (e) => e.id === selectedEmp.id || (e.employeeId && e.employeeId === selectedEmp.employeeId)
+    );
+    if (latest && latest.submittedDocuments !== selectedEmp.submittedDocuments) {
+      setSelectedEmp((cur) =>
+        cur
+          ? {
+              ...cur,
+              submittedDocuments: {
+                ...(cur.submittedDocuments || {}),
+                ...(latest.submittedDocuments || {}),
+              },
+              documentsPassed: latest.documentsPassed ?? cur.documentsPassed,
+              documentsStatus: latest.documentsStatus ?? cur.documentsStatus,
+            }
+          : cur
+      );
+    }
+  }, [employees]);
+
   useEffect(() => {
     const handleDocSubmitted = (e: any) => {
-      const detail = e.detail;
+      const detail = e?.detail;
       if (detail?.studentName) {
         toast.info(`📄 ${detail.studentName} submitted "${detail.docTitle}" for instructor review!`, {
           duration: 6000,
         });
       }
-      refreshData();
+      refreshData?.({ force: true } as any)?.catch?.(() => {});
     };
 
     window.addEventListener('ojt_document_submitted', handleDocSubmitted);
+    window.addEventListener('ojt_employee_documents_updated', handleDocSubmitted);
     return () => {
       window.removeEventListener('ojt_document_submitted', handleDocSubmitted);
+      window.removeEventListener('ojt_employee_documents_updated', handleDocSubmitted);
     };
   }, [refreshData]);
 
@@ -624,9 +697,48 @@ export function AdminEmployees() {
     );
   }, [currentUser, currentEmp]);
 
+  // Enrich employees with live zero-DB cloudTraineeDocsMap so both Documents Hub and Trainees tabs show instant uploads
+  const enrichedEmployees = useMemo(() => {
+    if (!cloudTraineeDocsMap || Object.keys(cloudTraineeDocsMap).length === 0) return employees;
+    return employees.map((emp) => {
+      const hit =
+        cloudTraineeDocsMap[emp.id] ||
+        (emp.employeeId ? cloudTraineeDocsMap[emp.employeeId] : undefined) ||
+        Object.values(cloudTraineeDocsMap).find(
+          (s: any) =>
+            s &&
+            (s.id === emp.id ||
+              (emp.employeeId && s.employeeId && String(s.employeeId).toLowerCase() === emp.employeeId.toLowerCase()) ||
+              (emp.email && s.email && String(s.email).toLowerCase() === emp.email.toLowerCase()))
+        );
+      if (!hit?.documents || Object.keys(hit.documents).length === 0) return emp;
+      const mergedDocs: TraineeDocuments = { ...(emp.submittedDocuments || {}) };
+      for (const [k, v] of Object.entries(hit.documents as Record<string, any>)) {
+        if (!v || typeof v !== 'object') continue;
+        const prev = mergedDocs[k];
+        const incFiles = Array.isArray(v.files) ? v.files : [];
+        const prevFiles = Array.isArray(prev?.files) ? prev.files : [];
+        mergedDocs[k] = {
+          ...(prev || {}),
+          ...v,
+          dataUrl: v.dataUrl || prev?.dataUrl,
+          fileUrl: v.fileUrl || prev?.fileUrl,
+          files: incFiles.length >= prevFiles.length && incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
+          status: prev?.status === 'passed' || v.status === 'passed' ? 'passed' : v.status || prev?.status || 'submitted',
+        };
+      }
+      return {
+        ...emp,
+        submittedDocuments: mergedDocs,
+        documentsPassed: hit.documentsPassed ?? emp.documentsPassed,
+        documentsStatus: hit.documentsStatus || emp.documentsStatus,
+      };
+    });
+  }, [employees, cloudTraineeDocsMap]);
+
   // All student trainees for document compliance monitoring
   const allTrainees = useMemo(() => {
-    return employees.filter((emp) => {
+    return enrichedEmployees.filter((emp) => {
       const pos = (emp.position || '').toLowerCase();
       const role = ((emp as any).role || '').toLowerCase();
       return (
@@ -640,9 +752,9 @@ export function AdminEmployees() {
         !pos.includes('host')
       );
     });
-  }, [employees]);
+  }, [enrichedEmployees]);
 
-  // Document Compliance Statistics
+  // Document Compliance Statistics (includes standard 10 + custom uploaded documents)
   const docStats = useMemo(() => {
     let compliantCount = 0;
     let pendingCount = 0;
@@ -651,19 +763,28 @@ export function AdminEmployees() {
 
     allTrainees.forEach((t) => {
       const docs = t.submittedDocuments || {};
-      const uploadedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+      const customReqs = getCustomRequirementsForEmp(t);
+      const stdUploaded = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
         const item = getTraineeDocItem(docs, k);
         return Boolean(item?.dataUrl || item?.fileUrl || item?.name);
       }).length;
+      const customUploaded = customReqs.filter((cr) => resolveCustomTraineeDoc(t, cr).hasFile).length;
+      const uploadedCount = stdUploaded + customUploaded;
+
       const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
         const item = getTraineeDocItem(docs, k);
         return item?.status === 'passed';
       }).length;
-      const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
+      const hasStdPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
         const item = getTraineeDocItem(docs, k);
         const hasF = Boolean(item?.dataUrl || item?.fileUrl || item?.name);
         return (item?.status === 'pending' || item?.status === 'submitted' || !item?.status) && hasF && item?.status !== 'passed';
       });
+      const hasCustomPending = customReqs.some((cr) => {
+        const res = resolveCustomTraineeDoc(t, cr);
+        return res.hasFile && !res.isPassed;
+      });
+      const hasPending = hasStdPending || hasCustomPending;
 
       totalFilesUploaded += uploadedCount;
 
@@ -995,7 +1116,7 @@ export function AdminEmployees() {
 
   const filteredGroups = {
     pending: deduplicateAccounts(
-      employees.filter(
+      enrichedEmployees.filter(
         (e) =>
           // Pending is strictly for student trainees awaiting verification or HTE deployment
           getEmployeeGroup(e) === 'student' &&
@@ -1016,7 +1137,7 @@ export function AdminEmployees() {
       )
     ),
     student: deduplicateAccounts(
-      employees.filter(
+      enrichedEmployees.filter(
         (e) =>
           (e.active === true || e.active == null) &&
           e.approvalStatus !== 'pending' &&
@@ -1208,22 +1329,41 @@ export function AdminEmployees() {
           const prev = merged[k];
           const incFiles = Array.isArray(inc.files) ? inc.files : [];
           const prevFiles = Array.isArray(prev?.files) ? prev.files : [];
-          if (!prev || incFiles.length > prevFiles.length) {
+          const isNewer = Boolean(inc.uploadedAt && (!prev?.uploadedAt || inc.uploadedAt > prev.uploadedAt));
+          if (!prev || incFiles.length >= prevFiles.length || isNewer || (!prev.fileUrl && inc.fileUrl)) {
             merged[k] = {
               ...(prev || {}),
               ...inc,
               name: inc.name || prev?.name || k,
+              dataUrl: inc.dataUrl || prev?.dataUrl,
+              fileUrl: inc.fileUrl || prev?.fileUrl,
               uploadedAt: inc.uploadedAt || prev?.uploadedAt || new Date().toISOString(),
-              files: incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
+              files: incFiles.length >= prevFiles.length && incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
               status: prev?.status === 'passed' || inc.status === 'passed' ? 'passed' : inc.status || prev?.status || 'submitted',
             };
             changed = true;
           }
         }
         if (changed) {
+          setCloudTraineeDocsMap((prevMap) => ({
+            ...prevMap,
+            [emp.id]: {
+              id: emp.id,
+              employeeId: emp.employeeId,
+              email: emp.email,
+              documents: merged,
+              documentsPassed: res.documentsPassed ?? emp.documentsPassed,
+              documentsStatus: res.documentsStatus || emp.documentsStatus,
+            },
+          }));
           setSelectedEmp((cur) =>
             cur && (cur.id === emp.id || cur.employeeId === emp.employeeId)
-              ? { ...cur, submittedDocuments: merged }
+              ? {
+                  ...cur,
+                  submittedDocuments: merged,
+                  documentsPassed: res.documentsPassed ?? cur.documentsPassed,
+                  documentsStatus: res.documentsStatus || cur.documentsStatus,
+                }
               : cur
           );
         }
@@ -2809,19 +2949,27 @@ export function AdminEmployees() {
                       <tbody className="divide-y divide-gray-100 text-xs">
                         {paginatedDocTrainees.map((trainee) => {
                           const docs = trainee.submittedDocuments || {};
-                          const uploadedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+                          const customReqsForRow = getCustomRequirementsForEmp(trainee);
+                          const stdUploaded = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
                             const item = getTraineeDocItem(docs, k);
                             return Boolean(item?.dataUrl || item?.fileUrl || item?.name);
                           }).length;
+                          const customUploaded = customReqsForRow.filter((cr) => resolveCustomTraineeDoc(trainee, cr).hasFile).length;
+                          const uploadedCount = stdUploaded + customUploaded;
                           const passedCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
                             const item = getTraineeDocItem(docs, k);
                             return item?.status === 'passed';
                           }).length;
-                          const hasPending = REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
-                            const item = getTraineeDocItem(docs, k);
-                            const hasF = Boolean(item?.dataUrl || item?.fileUrl || item?.name);
-                            return (item?.status === 'pending' || item?.status === 'submitted' || !item?.status) && hasF && item?.status !== 'passed';
-                          });
+                          const hasPending =
+                            REQUIRED_TRAINEE_DOC_KEYS.some((k) => {
+                              const item = getTraineeDocItem(docs, k);
+                              const hasF = Boolean(item?.dataUrl || item?.fileUrl || item?.name);
+                              return (item?.status === 'pending' || item?.status === 'submitted' || !item?.status) && hasF && item?.status !== 'passed';
+                            }) ||
+                            customReqsForRow.some((cr) => {
+                              const r = resolveCustomTraineeDoc(trainee, cr);
+                              return r.hasFile && !r.isPassed;
+                            });
                           const isCompliant = passedCount === REQUIRED_TRAINEE_DOC_KEYS.length || (trainee.documentsPassed === true && trainee.documentsStatus === 'passed');
                           const photoUrl = getPhotoUrl(trainee.photo);
 

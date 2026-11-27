@@ -937,8 +937,9 @@ export function Documents() {
 
         setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: docItem }));
 
-        // Only trigger remote employee/document API persistence once permanent URLs are ready (avoids duplicate DB roundtrips)
+        // Persist to BOTH local employee context AND /api/documents (+ live Realtime broadcast to Instructor)
         if (persistRemote) {
+          const canonicalEmpId = employee?.id || targetEmpId;
           if (employee) {
             updateEmployee(employee.id, {
               submittedDocuments: updatedDocs,
@@ -947,8 +948,8 @@ export function Documents() {
             });
           }
 
-          if (targetEmpId) {
-            submitRequiredDocument(meta?.id || docKey, targetEmpId, {
+          if (canonicalEmpId) {
+            submitRequiredDocument(meta?.id || docKey, canonicalEmpId, {
               fileName: displayName,
               fileUrl: primaryFile.fileUrl || primaryFile.dataUrl,
               fileDataUrl: primaryFile.dataUrl,
@@ -957,18 +958,18 @@ export function Documents() {
               files: filesToApply,
               note: (customNotes ?? '').trim(),
               notes: (customDescription ?? '').trim(),
-            });
+              skipRemoteEmployeeSync: true,
+            } as any);
 
-            if (!employee) {
-              saveDocumentPassStatus(targetEmpId, {
-                docKey,
-                status: passStatus,
-                allPassed: allDocsPassed,
-                documentsStatus: finalDocStatus,
-                submittedDocuments: updatedDocs,
-                documentItem: docItem,
-              }).catch(console.warn);
-            }
+            // Always persist via dedicated /api/documents endpoint + trainee_documents_store.json + live broadcast so Instructor sees it immediately
+            saveDocumentPassStatus(canonicalEmpId, {
+              docKey,
+              status: passStatus,
+              allPassed: allDocsPassed,
+              documentsStatus: finalDocStatus,
+              submittedDocuments: updatedDocs,
+              documentItem: docItem,
+            }).catch(console.warn);
           }
         }
 
@@ -1171,6 +1172,7 @@ export function Documents() {
       });
       if (targetEmpId) {
         saveDocumentPassStatus(targetEmpId, {
+          removeDocKey: docKey,
           allPassed: false,
           documentsStatus: remainingCount > 0 ? 'partial' : 'pending',
           submittedDocuments: updatedDocs,
@@ -1178,6 +1180,7 @@ export function Documents() {
       }
     } else if (targetEmpId) {
       saveDocumentPassStatus(targetEmpId, {
+        removeDocKey: docKey,
         allPassed: false,
         documentsStatus: remainingCount > 0 ? 'partial' : 'pending',
         submittedDocuments: updatedDocs,
@@ -1420,12 +1423,14 @@ export function Documents() {
       setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: updatedDocItem }));
 
       if (persistRemote) {
+        const canonicalEmpId = employee?.id || targetEmpId;
         if (employee) {
           updateEmployee(employee.id, {
             submittedDocuments: updatedDocs,
           });
-        } else if (targetEmpId) {
-          saveDocumentPassStatus(targetEmpId, {
+        }
+        if (canonicalEmpId) {
+          saveDocumentPassStatus(canonicalEmpId, {
             docKey,
             status: updatedDocItem.status || 'submitted',
             submittedDocuments: updatedDocs,
@@ -1433,8 +1438,8 @@ export function Documents() {
           }).catch(console.warn);
         }
 
-        if (targetEmpId && hasFiles) {
-          submitRequiredDocument(docKey, targetEmpId, {
+        if (canonicalEmpId && hasFiles) {
+          submitRequiredDocument(docKey, canonicalEmpId, {
             fileName: displayName,
             fileUrl: primaryFile?.fileUrl || primaryFile?.dataUrl,
             fileDataUrl: primaryFile?.dataUrl,
@@ -1443,7 +1448,8 @@ export function Documents() {
             files: filesToApply,
             note: notes.trim(),
             notes: description.trim(),
-          });
+            skipRemoteEmployeeSync: true,
+          } as any);
         }
       }
     };

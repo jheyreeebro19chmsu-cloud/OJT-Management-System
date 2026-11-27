@@ -167,6 +167,47 @@ async function readSettingsJsonFast(fileName, fallbackValue) {
   return fallbackValue;
 }
 
+async function mirrorTraineeDocsToStore(emp, docs, documentsPassed, documentsStatus) {
+  if (!emp || (!emp.id && !emp.employee_id)) return;
+  try {
+    let existingMap = {};
+    try {
+      const { data: dlBlob, error: dlErr } = await supabase.storage
+        .from('face-photos')
+        .download('settings/trainee_documents_store.json');
+      if (!dlErr && dlBlob) {
+        const parsed = JSON.parse(await dlBlob.text());
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          existingMap = parsed;
+        }
+      }
+    } catch {}
+
+    const key = String(emp.id || emp.employee_id);
+    const cleanDocs = sanitizeDocuments(docs || {});
+    existingMap[key] = {
+      id: emp.id || key,
+      employeeId: emp.employee_id || emp.employeeId || '',
+      email: emp.email || '',
+      name: emp.name || '',
+      documents: cleanDocs,
+      documentsPassed: Boolean(documentsPassed),
+      documentsStatus: documentsStatus || 'pending',
+      updatedAt: new Date().toISOString(),
+    };
+
+    _settingsStoreCache.delete('trainee_documents_store.json');
+    const buf = Buffer.from(JSON.stringify(existingMap), 'utf8');
+    await supabase.storage.from('face-photos').upload('settings/trainee_documents_store.json', buf, {
+      contentType: 'application/json',
+      cacheControl: '0',
+      upsert: true,
+    });
+  } catch (e) {
+    console.warn('mirrorTraineeDocsToStore notice:', e?.message || e);
+  }
+}
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
@@ -188,6 +229,13 @@ export default async function handler(req, res) {
       if (action === 'get-requirements') {
         const parsed = await readSettingsJsonFast('requirements_store.json', []);
         return sendJson(res, 200, Array.isArray(parsed) ? parsed : []);
+      }
+
+      // Action: Retrieve all trainee submitted OJT documents (zero-DB public CDN store)
+      if (action === 'get-all-trainee-documents') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        const parsed = await readSettingsJsonFast('trainee_documents_store.json', {});
+        return sendJson(res, 200, parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {});
       }
 
       // Action: Retrieve Monitoring Reports (Mid-Term, End-Term, Monthly) and Trainee File Submissions
@@ -368,6 +416,38 @@ export default async function handler(req, res) {
       const regLoc = empData?.registration_location || {};
       const regDocs = { ...(regLoc.documents || {}) };
 
+      // Merge zero-DB trainee_documents_store.json entries so uploads saved during DB contention are always returned
+      try {
+        const storeMap = await readSettingsJsonFast('trainee_documents_store.json', {});
+        const storeEntry =
+          (empData?.id && storeMap[empData.id]) ||
+          (empData?.employee_id && storeMap[empData.employee_id]) ||
+          storeMap[String(empId)] ||
+          Object.values(storeMap).find(
+            (e) =>
+              e &&
+              typeof e === 'object' &&
+              (e.id === empData?.id ||
+                (empData?.employee_id && String(e.employeeId || '').toLowerCase() === String(empData.employee_id).toLowerCase()))
+          );
+        if (storeEntry?.documents && typeof storeEntry.documents === 'object') {
+          for (const [sKey, sVal] of Object.entries(storeEntry.documents)) {
+            if (!sVal || typeof sVal !== 'object') continue;
+            const prev = regDocs[sKey];
+            const sFiles = Array.isArray(sVal.files) ? sVal.files : [];
+            const pFiles = Array.isArray(prev?.files) ? prev.files : [];
+            if (!prev || sFiles.length >= pFiles.length) {
+              regDocs[sKey] = {
+                ...(prev || {}),
+                ...sVal,
+                files: sFiles.length > 0 ? sFiles : pFiles.length > 0 ? pFiles : undefined,
+                status: prev?.status === 'passed' || sVal.status === 'passed' ? 'passed' : sVal.status || prev?.status || 'submitted',
+              };
+            }
+          }
+        }
+      } catch {}
+
       // Ensure any document recorded in the documents table is present in the documents object
       for (const row of docRows) {
         const matchKey = Object.keys(regDocs).find((k) => regDocs[k]?.name === row.file_name);
@@ -384,20 +464,25 @@ export default async function handler(req, res) {
               fileType: row.file_type || 'application/pdf',
               size: row.file_size || 0,
               uploadedAt: row.created_at,
-              status: 'pending',
+              status: 'submitted',
             };
           }
         }
       }
 
-      // Recover multi-file arrays from Supabase Storage if an earlier save stripped `files`
+      // Recover orphaned or multi-file uploads directly from Supabase Storage folder `documents/${empId}`
+      const standardRecoveryKeys = [
+        'internshipAgreement', 'moa', 'consent', 'trainingPlan', 'pledgeOfConduct',
+        'medical', 'application', 'resume', 'enrolmentForm', 'endorsement'
+      ];
+      const hasMissingStandardKey = standardRecoveryKeys.some((k) => !regDocs[k]);
       const needsMultiFileRecovery = Object.entries(regDocs).some(([_, d]) => {
         if (!d || typeof d !== 'object') return false;
         const hasMultipleInName = typeof d.name === 'string' && /^\d+\s+Files\b/i.test(d.name);
         return hasMultipleInName && (!Array.isArray(d.files) || d.files.length <= 1);
       });
 
-      if (needsMultiFileRecovery && empData) {
+      if ((hasMissingStandardKey || needsMultiFileRecovery) && empData) {
         try {
           const folderCandidates = Array.from(
             new Set(
@@ -418,6 +503,59 @@ export default async function handler(req, res) {
                 }
               }
             }
+          }
+
+          // 1. Recover completely orphaned requirement files from Storage when DB metadata missed a write
+          let healedOrphans = false;
+          for (const stdKey of standardRecoveryKeys) {
+            if (regDocs[stdKey]) continue;
+            const prefixRe = new RegExp(`^${stdKey}_`, 'i');
+            const matches = allStorageItems
+              .filter(({ obj }) => prefixRe.test(obj.name))
+              .sort((a, b) => new Date(a.obj.created_at || 0).getTime() - new Date(b.obj.created_at || 0).getTime());
+            if (matches.length > 0) {
+              const recoveredFiles = matches.map(({ folder, obj }, idx) => {
+                const { data: pub } = supabase.storage
+                  .from('face-photos')
+                  .getPublicUrl(`documents/${folder}/${obj.name}`);
+                const ext = (obj.name.split('.').pop() || 'pdf').toLowerCase();
+                const mime =
+                  obj.metadata?.mimetype ||
+                  (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)
+                    ? `image/${ext === 'jpg' ? 'jpeg' : ext}`
+                    : ext === 'pdf'
+                      ? 'application/pdf'
+                      : ext === 'docx'
+                        ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                        : 'application/octet-stream');
+                return {
+                  id: `recovered-${stdKey}-${idx}`,
+                  name: `Submitted_${stdKey}_${idx + 1}.${ext}`,
+                  size: obj.metadata?.size || 0,
+                  fileType: mime,
+                  uploadedAt: obj.created_at || new Date().toISOString(),
+                  fileUrl: pub?.publicUrl || '',
+                  dataUrl: pub?.publicUrl || '',
+                };
+              });
+              const primary = recoveredFiles[0];
+              const totalBytes = recoveredFiles.reduce((s, f) => s + (Number(f.size) || 0), 0);
+              regDocs[stdKey] = {
+                name: recoveredFiles.length > 1 ? `${recoveredFiles.length} Files (${primary.name})` : primary.name,
+                size: totalBytes,
+                fileType: primary.fileType,
+                uploadedAt: recoveredFiles[recoveredFiles.length - 1].uploadedAt,
+                status: 'submitted',
+                source: 'portal',
+                fileUrl: primary.fileUrl,
+                dataUrl: primary.dataUrl,
+                files: recoveredFiles,
+              };
+              healedOrphans = true;
+            }
+          }
+          if (healedOrphans) {
+            void mirrorTraineeDocsToStore(empData, regDocs, Boolean(regLoc.documentsPassed), regLoc.documentsStatus || 'submitted');
           }
 
           for (const [docKey, docVal] of Object.entries(regDocs)) {
@@ -861,18 +999,31 @@ export default async function handler(req, res) {
         : {};
       const currentDocs = { ...(curRegLoc.documents || {}) };
 
-      // 2. Merge single document or full document list
+      // 2. Merge single document, full document list, or explicit removal
       const docKey = body.docKey;
       const documentItem = body.documentItem;
+      if (body.removeDocKey) {
+        delete currentDocs[body.removeDocKey];
+        if (body.removeDocKey === 'consent') delete currentDocs.parent_consent;
+        if (body.removeDocKey === 'moa') delete currentDocs.memorandum;
+        if (body.removeDocKey === 'medical') delete currentDocs.clearance;
+      }
+      if (body.submittedDocuments && typeof body.submittedDocuments === 'object') {
+        if (body.removeDocKey) {
+          // Replace removed keys cleanly while merging remaining keys
+          for (const k of Object.keys(currentDocs)) {
+            if (!(k in body.submittedDocuments) && k === body.removeDocKey) {
+              delete currentDocs[k];
+            }
+          }
+        }
+        Object.assign(currentDocs, body.submittedDocuments);
+      }
       if (docKey && documentItem && typeof documentItem === 'object') {
         currentDocs[docKey] = {
           ...(currentDocs[docKey] || {}),
           ...documentItem,
         };
-      }
-
-      if (body.submittedDocuments && typeof body.submittedDocuments === 'object') {
-        Object.assign(currentDocs, body.submittedDocuments);
       }
 
       // 3. Determine pass status
@@ -884,20 +1035,29 @@ export default async function handler(req, res) {
         ? Boolean(body.allPassed)
         : (docKeys.length > 0 && docKeys.every((k) => currentDocs[k]?.status === 'passed'));
 
+      const hasAnyUploaded = Object.values(currentDocs).some(
+        (d) => d && typeof d === 'object' && (d.fileUrl || d.dataUrl || d.name)
+      );
       const finalStatus = body.documentsStatus !== undefined
         ? body.documentsStatus
         : allPassed
           ? 'passed'
           : docKeys.some((k) => currentDocs[k]?.status === 'passed')
             ? 'partial'
-            : 'pending';
+            : hasAnyUploaded
+              ? 'submitted'
+              : 'pending';
 
+      const sanitizedDocs = sanitizeDocuments(currentDocs);
       const updatedRegLoc = {
         ...curRegLoc,
-        documents: sanitizeDocuments(currentDocs),
+        documents: sanitizedDocs,
         documentsPassed: allPassed,
         documentsStatus: finalStatus,
       };
+
+      // Always mirror to zero-DB trainee_documents_store.json so Instructor immediately sees uploaded files even under DB contention
+      await mirrorTraineeDocsToStore(emp, sanitizedDocs, allPassed, finalStatus);
 
       // 4. Update employee registration_location in database
       const { error: updateErr } = await supabase
@@ -906,8 +1066,7 @@ export default async function handler(req, res) {
         .eq('id', emp.id);
 
       if (updateErr) {
-        console.error('Failed to update employee registration_location:', updateErr);
-        return sendJson(res, 500, { error: updateErr.message });
+        console.warn('Notice updating employee registration_location (mirrored to store):', updateErr.message);
       }
 
       // 5. Store / sync ONLY changed document(s) into dedicated documents table in parallel (instead of 20 sequential queries)

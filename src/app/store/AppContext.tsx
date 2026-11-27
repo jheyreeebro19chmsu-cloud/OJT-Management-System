@@ -1976,11 +1976,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setEmployees((prev) => {
           const next = prev.map((emp) => {
             if (emp.id !== payload.employeeId && emp.employeeId !== payload.employeeId) return emp;
-            const mergedDocs = {
+            const mergedDocs: Record<string, any> = {
               ...(emp.submittedDocuments || {}),
               ...(payload.submittedDocuments || {}),
               ...(payload.docKey && payload.documentItem ? { [payload.docKey]: payload.documentItem } : {}),
             };
+            if (payload.removeDocKey) {
+              delete mergedDocs[payload.removeDocKey];
+            }
             return {
               ...emp,
               submittedDocuments: mergedDocs,
@@ -2221,6 +2224,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         zonesSettled,
         settingsSettled,
         recordsSettled,
+        traineeDocsStoreSettled,
       ] = await Promise.allSettled([
         supabaseService.fetchEmployees(),
         supabaseService.fetchHostSupervisors(),
@@ -2232,9 +2236,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
               activeUser.employeeId ? [activeUser.employeeId] : []
             )
           : supabaseService.fetchTimeRecords(),
+        supabaseService.fetchAllTraineeDocumentsStore(),
       ]);
 
-      const supabaseEmployees = empSettled.status === 'fulfilled' ? empSettled.value : null;
+      const rawSupabaseEmployees = empSettled.status === 'fulfilled' ? empSettled.value : null;
+      const traineeDocsStore =
+        traineeDocsStoreSettled.status === 'fulfilled' && traineeDocsStoreSettled.value
+          ? traineeDocsStoreSettled.value
+          : {};
+      const supabaseEmployees = rawSupabaseEmployees
+        ? rawSupabaseEmployees.map((emp) => {
+            const storeHit =
+              traineeDocsStore[emp.id] ||
+              (emp.employeeId ? traineeDocsStore[emp.employeeId] : undefined) ||
+              Object.values(traineeDocsStore).find(
+                (s) =>
+                  s &&
+                  (s.id === emp.id ||
+                    (emp.employeeId && s.employeeId && s.employeeId.toLowerCase() === emp.employeeId.toLowerCase()) ||
+                    (emp.email && s.email && s.email.toLowerCase() === emp.email.toLowerCase()))
+              );
+            if (!storeHit?.documents || Object.keys(storeHit.documents).length === 0) return emp;
+            const combinedDocs: TraineeDocuments = { ...(emp.submittedDocuments || {}) };
+            for (const [dk, dv] of Object.entries(storeHit.documents)) {
+              if (!dv || typeof dv !== 'object') continue;
+              const prev = combinedDocs[dk];
+              const incFiles = Array.isArray(dv.files) ? dv.files : [];
+              const prevFiles = Array.isArray(prev?.files) ? prev.files : [];
+              combinedDocs[dk] = {
+                ...(prev || {}),
+                ...dv,
+                dataUrl: dv.dataUrl || prev?.dataUrl,
+                fileUrl: dv.fileUrl || prev?.fileUrl,
+                files: incFiles.length >= prevFiles.length && incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
+                status: prev?.status === 'passed' || dv.status === 'passed' ? 'passed' : dv.status || prev?.status,
+              };
+            }
+            return {
+              ...emp,
+              submittedDocuments: combinedDocs,
+              documentsPassed: storeHit.documentsPassed ?? emp.documentsPassed,
+              documentsStatus: storeHit.documentsStatus || emp.documentsStatus,
+            };
+          })
+        : null;
       const supabaseHostSupervisors = hostsSettled.status === 'fulfilled' ? hostsSettled.value : null;
       const supabaseZones = zonesSettled.status === 'fulfilled' ? zonesSettled.value : null;
       const supabaseSettings = settingsSettled.status === 'fulfilled' ? settingsSettled.value : null;
@@ -6441,35 +6486,60 @@ export function AppProvider({ children }: { children: ReactNode }) {
     else if (lowerDoc.includes('endorsement') || lowerDoc.includes('doc-10')) docKey = 'endorsement';
 
     const finalKey = (docKey || documentId) as keyof TraineeDocuments;
-    const currentEmp = employees.find((e) => e.id === employeeId || e.employeeId === employeeId) || getCurrentEmployee();
-    if (currentEmp) {
-      const prevDoc = currentEmp.submittedDocuments?.[finalKey];
-      const newStatus: 'passed' | 'submitted' = prevDoc?.status === 'passed' ? 'passed' : 'submitted';
-      const updatedDocs = {
-        ...(currentEmp.submittedDocuments || {}),
-        [finalKey]: {
-          name: payload.fileName || 'Uploaded Document.pdf',
-          dataUrl: payload.fileDataUrl || payload.fileUrl || prevDoc?.dataUrl || '',
-          fileUrl: payload.fileUrl || payload.fileDataUrl || prevDoc?.fileUrl || '',
-          size: payload.fileSize || prevDoc?.size || 0,
-          fileType: payload.fileType || prevDoc?.fileType || 'application/pdf',
-          uploadedAt: now,
-          status: newStatus,
-          description: payload.notes || payload.note || prevDoc?.description || '',
-          notes: notes || prevDoc?.notes || '',
-          source: 'portal' as const,
-          files: payload.files && payload.files.length > 0 ? payload.files : prevDoc?.files,
-        },
-      } as TraineeDocuments;
+    const skipRemoteSync = Boolean((payload as any)?.skipRemoteEmployeeSync);
+    let targetEmpForRemote: string | null = null;
+    let updatedDocsForRemote: TraineeDocuments | null = null;
 
-      updateEmployee(currentEmp.id, {
-        submittedDocuments: updatedDocs,
-        documentsStatus: 'submitted',
+    setEmployees((prev) => {
+      let matched = false;
+      const next = prev.map((emp) => {
+        if (emp.id !== employeeId && emp.employeeId !== employeeId) return emp;
+        matched = true;
+        targetEmpForRemote = emp.id;
+        const prevDoc = emp.submittedDocuments?.[finalKey];
+        const newStatus: 'passed' | 'submitted' = prevDoc?.status === 'passed' ? 'passed' : 'submitted';
+        const updatedDocs = {
+          ...(emp.submittedDocuments || {}),
+          [finalKey]: {
+            name: payload.fileName || prevDoc?.name || 'Uploaded Document.pdf',
+            dataUrl: payload.fileDataUrl || payload.fileUrl || prevDoc?.dataUrl || '',
+            fileUrl: payload.fileUrl || payload.fileDataUrl || prevDoc?.fileUrl || '',
+            size: payload.fileSize || prevDoc?.size || 0,
+            fileType: payload.fileType || prevDoc?.fileType || 'application/pdf',
+            uploadedAt: now,
+            status: newStatus,
+            description: payload.notes || payload.note || prevDoc?.description || '',
+            notes: notes || prevDoc?.notes || '',
+            source: 'portal' as const,
+            files: payload.files && payload.files.length > 0 ? payload.files : prevDoc?.files,
+          },
+        } as TraineeDocuments;
+        updatedDocsForRemote = updatedDocs;
+        return {
+          ...emp,
+          submittedDocuments: updatedDocs,
+          documentsStatus: (emp.documentsPassed ? 'passed' : 'submitted') as Employee['documentsStatus'],
+        };
       });
-      try {
-        window.dispatchEvent(new CustomEvent('ojt_employee_documents_updated'));
-      } catch {}
+      if (matched) {
+        saveToStorage(STORAGE_KEYS.EMPLOYEES, next);
+      }
+      return matched ? next : prev;
+    });
+
+    if (!skipRemoteSync && targetEmpForRemote && updatedDocsForRemote && useSupabase) {
+      supabaseService
+        .saveDocumentPassStatus(targetEmpForRemote, {
+          docKey: String(finalKey),
+          status: 'submitted',
+          documentsStatus: 'submitted',
+          submittedDocuments: updatedDocsForRemote,
+        })
+        .catch(() => {});
     }
+    try {
+      window.dispatchEvent(new CustomEvent('ojt_employee_documents_updated'));
+    } catch {}
 
     return saved;
   };
