@@ -1846,10 +1846,10 @@ export function Register() {
           <h2 className="text-2xl font-black text-gray-900 mb-1">
             {role === 'trainee' ? 'Registration Submitted!' : 'Registration Complete!'}
           </h2>
-          <p className="text-sm text-gray-600 mb-5">
+          <p className="text-sm text-gray-600 mb-4">
             {role === 'trainee' ? (
               <>
-                Welcome to the CHMSU OJT Management System, <span className="font-bold text-gray-800">{displayName}</span>. Your account is saved in the system and is currently in <strong className="text-amber-700">Pending Approval</strong> awaiting instructor deployment in an HTE.
+                Welcome to the CHMSU OJT Management System, <span className="font-bold text-gray-800">{displayName}</span>. Your account is saved in <strong className="text-amber-700">Pending Approval</strong>. Attendance / Time In is locked until you upload all required OJT documents and your Instructor verifies them and deploys you to your designated HTE.
               </>
             ) : (
               <>
@@ -1857,6 +1857,15 @@ export function Register() {
               </>
             )}
           </p>
+
+          {role === 'trainee' && (
+            <div className="mb-5 text-left bg-amber-50/80 border border-amber-200 rounded-2xl p-3.5 text-xs text-amber-950 space-y-1.5">
+              <p className="font-extrabold uppercase tracking-wider text-[10px] text-amber-800">Next Steps Before Attendance Unlocks:</p>
+              <p><strong>1.</strong> Open <strong>OJT Documents</strong> and upload all required OJT compliance documents.</p>
+              <p><strong>2.</strong> Your OJT Instructor checks &amp; approves your uploaded documents in <strong>Pending Approvals</strong>.</p>
+              <p><strong>3.</strong> Your Instructor enrolls &amp; deploys you to your designated <strong>HTE</strong> to unlock Time In / Out.</p>
+            </div>
+          )}
 
           <div className={`inline-flex items-center gap-2 px-3.5 py-1.5 rounded-full ${role === 'trainee' ? 'bg-amber-50 border-amber-200 text-amber-800' : 'bg-blue-50 border-blue-200 text-blue-800'} text-xs font-bold mb-6`}>
             <span className={`w-2 h-2 rounded-full ${role === 'trainee' ? 'bg-amber-500' : 'bg-emerald-500'} animate-pulse`} />
@@ -1895,15 +1904,29 @@ export function Register() {
             </div>
           )}
 
-          {/* Primary Action Buttons: Go to Dashboard OR Back to Login Page */}
+          {/* Primary Action Buttons: Upload OJT Documents (for trainees) / Go to Dashboard OR Back to Login Page */}
           <div className="flex flex-col gap-3">
+            {role === 'trainee' && (
+              <button
+                type="button"
+                onClick={() => {
+                  toast.success('Opening OJT Documents so you can upload your required credentials...');
+                  navigate('/app/documents');
+                }}
+                className="w-full py-3.5 bg-violet-600 hover:bg-violet-700 active:scale-[0.99] text-white rounded-xl text-sm font-bold shadow-lg shadow-violet-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              >
+                <FileText size={16} />
+                <span>Upload Required OJT Documents</span>
+                <ArrowRight size={16} />
+              </button>
+            )}
             <button
               type="button"
               onClick={() => {
                 toast.success('Entering your dashboard...');
                 navigate(targetDashboard);
               }}
-              className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 active:scale-[0.99] text-white rounded-xl text-sm font-bold shadow-lg shadow-blue-500/25 transition-all flex items-center justify-center gap-2 cursor-pointer"
+              className={`w-full py-3.5 ${role === 'trainee' ? 'bg-slate-800 hover:bg-slate-900' : 'bg-blue-600 hover:bg-blue-700 shadow-lg shadow-blue-500/25'} active:scale-[0.99] text-white rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-2 cursor-pointer`}
             >
               <span>Go to Dashboard</span>
               <ArrowRight size={16} />

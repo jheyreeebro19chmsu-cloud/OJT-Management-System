@@ -279,7 +279,32 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
     return R * c;
   }
 
+  const rawCompanyName = String(profile?.company_name || profile?.companyName || '').trim();
+  const normCompany = rawCompanyName.toLowerCase();
+  const hasDesignatedHte =
+    normCompany.length > 0 &&
+    normCompany !== 'n/a' &&
+    normCompany !== 'none' &&
+    !normCompany.includes('pending') &&
+    normCompany !== 'unassigned' &&
+    normCompany !== 'not assigned' &&
+    normCompany !== 'no company yet';
+  const appStatus = String(profile?.application_status || profile?.applicationStatus || profile?.approvalStatus || '').toLowerCase();
+  const isEnrolledAndDeployed =
+    hasDesignatedHte &&
+    profile?.active !== false &&
+    appStatus !== 'pending' &&
+    appStatus !== 'unregistered' &&
+    appStatus !== 'rejected';
+
   function handleAction(type: 'in' | 'out') {
+    if (!isEnrolledAndDeployed) {
+      Alert.alert(
+        'Attendance Locked',
+        'You cannot Time In or use Attendance yet because you are not enrolled and deployed in a designated HTE. Please upload all required OJT documents first so your Instructor can check them in Pending Approvals and deploy you to your designated HTE.'
+      );
+      return;
+    }
     if (permissionDenied || !currentLocation) {
       Alert.alert(
         permissionDenied ? 'GPS Permission Denied' : 'GPS Location Permission Required',
@@ -300,6 +325,14 @@ export default function DTRScreen({ onBack, profile }: DTRScreenProps) {
 
   // Attendance submission upon face verification completion
   async function submitAttendance(photo: string) {
+    if (!isEnrolledAndDeployed) {
+      setShowScanner(false);
+      Alert.alert(
+        'Attendance Locked',
+        'You must upload all required OJT documents and be enrolled & deployed to a designated HTE by your Instructor before recording attendance.'
+      );
+      return;
+    }
     setLoading(true);
     try {
       const now = new Date();

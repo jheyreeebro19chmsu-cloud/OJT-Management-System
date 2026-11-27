@@ -95,6 +95,54 @@ export function isInvalidHteCompany(companyName?: string | null): boolean {
 }
 
 /**
+ * Returns true only when a student trainee has been officially enrolled/approved
+ * by their OJT Instructor AND deployed to a designated Host Training Establishment (HTE).
+ * Newly signed-up trainees cannot Time In / Time Out until this is true.
+ */
+export function isTraineeEnrolledAndDeployed(
+  employee?: Partial<Employee> | null
+): boolean {
+  if (!employee) return false;
+  if (!isTraineeRole(employee)) return true;
+
+  const hasValidHte = Boolean(
+    employee.companyName && !isInvalidHteCompany(employee.companyName)
+  );
+  if (!hasValidHte) return false;
+
+  const approval = String(employee.approvalStatus || '').toLowerCase();
+  const appStatus = String(employee.applicationStatus || '').toLowerCase();
+
+  if (
+    employee.active === false ||
+    approval === 'pending' ||
+    approval === 'rejected' ||
+    appStatus === 'pending' ||
+    appStatus === 'unregistered' ||
+    appStatus === 'rejected'
+  ) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Checks whether a single trainee document item actually contains an uploaded file
+ * (ignoring empty 0-byte placeholders without fileUrl/dataUrl/files).
+ */
+export function hasRealUploadedDocFile(doc: any): boolean {
+  if (!doc || typeof doc !== 'object') return false;
+  if (Array.isArray(doc.files) && doc.files.length > 0) {
+    return doc.files.some((f: any) => Boolean(f && (f.fileUrl || f.dataUrl || f.name)));
+  }
+  if (doc.fileUrl || doc.dataUrl) return true;
+  if (doc.name && Number(doc.size) > 0) return true;
+  if (doc.name && !/^[a-zA-Z0-9_-]+\.pdf$/i.test(String(doc.name)) && doc.size !== 0) return true;
+  return Boolean(doc.name && doc.size !== 0);
+}
+
+/**
  * Determines whether a user account or employee is a trainee (student).
  */
 export function isTraineeRole(employee?: Partial<Employee> | null): boolean {

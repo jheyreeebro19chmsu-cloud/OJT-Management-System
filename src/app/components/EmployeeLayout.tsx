@@ -1,4 +1,4 @@
-import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check, Award, AlertTriangle, CheckCircle, ChevronRight, Sparkles, Settings, ClipboardCheck } from 'lucide-react';
+import { Home, Clock, FileText, User, LogOut, Bell, Menu, X, FileCheck, Check, Award, AlertTriangle, CheckCircle, ChevronRight, Sparkles, Settings, ClipboardCheck, Lock } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useMemo } from 'react';
 import { NavLink, Outlet, useNavigate, useLocation } from 'react-router-dom';
@@ -11,11 +11,12 @@ import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRe
 import { computeTraineeOjtNotifications, TraineeOjtNotification } from '../utils/traineeNotifications';
 import { isQuestionnaireAnswered, countAnsweredQuestions } from '../types';
 import { SystemLogBellButton } from './SystemLogBellButton';
+import { isTraineeEnrolledAndDeployed, hasRealUploadedDocFile } from '../utils/hteLocation';
 
 
 const navItems = [
   { to: '/app', label: 'Home', icon: Home, end: true },
-  { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false },
+  { to: '/app/time-record', label: 'Time Record', icon: Clock, end: false, isTimeNav: true },
   { to: '/app/records', label: 'Records', icon: FileText, end: false },
   { to: '/app/documents', label: 'OJT Documents', icon: FileCheck, end: false, isDocNav: true },
   { to: '/app/monitoring-report', label: 'Monitoring Report', icon: ClipboardCheck, end: false },
@@ -128,9 +129,10 @@ export function EmployeeLayout() {
   const totalRequired = docKeys.length;
   const uploadedDocsCount = docKeys.filter((k) => {
     const doc = getTraineeDocItem(submittedDocs, k);
-    return Boolean(doc?.dataUrl || doc?.name);
+    return hasRealUploadedDocFile(doc);
   }).length;
   const missingDocsCount = Math.max(0, totalRequired - uploadedDocsCount);
+  const isAttendanceUnlocked = isTraineeEnrolledAndDeployed(employee);
 
   const traineeEvaluation = evaluations.find(
     (e) => e.employeeId === employee?.id || e.employeeId === employee?.employeeId
@@ -224,6 +226,14 @@ export function EmployeeLayout() {
                     )}
                   </div>
                   <span className="text-sm font-medium whitespace-nowrap">{label}</span>
+                  {(item as any).isTimeNav && !isAttendanceUnlocked && (
+                    <span
+                      className="ml-auto inline-flex items-center gap-1 text-[9.5px] font-extrabold px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-400/30"
+                      title="Attendance locked until documents are verified and Instructor deploys you to a designated HTE"
+                    >
+                      <Lock size={9} /> Locked
+                    </span>
+                  )}
                   {(item as any).isDocNav && (
                     <span
                       className={`ml-auto text-[10px] font-extrabold px-1.5 py-0.5 rounded-full ${

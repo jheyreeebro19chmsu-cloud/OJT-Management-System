@@ -50,12 +50,13 @@ import { supabase } from '../lib/supabase';
 import { useApp } from '../store/AppContext';
 import { formatTime } from '../utils/geo';
 import { getPhotoUrl } from '../services/config';
-import { transformSupabaseEmployee, uploadDocumentToStorage, saveDocumentPassStatus, fetchTimeRecordsForEmployee } from '../services/supabaseService';
+import { transformSupabaseEmployee, uploadDocumentToStorage, saveDocumentPassStatus, fetchTimeRecordsForEmployee, fetchAllTraineeDocumentsStore } from '../services/supabaseService';
 import { STANDARD_REQUIRED_DOCS } from './Documents';
 import { REQUIRED_TRAINEE_DOC_KEYS, REQUIRED_TRAINEE_DOCUMENTS, getTraineeDocItem } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory, formatFileSize } from '../utils/attachmentHelper';
 import { computeTraineeOjtNotifications } from '../utils/traineeNotifications';
 import { getPaginationWindow } from '../utils/pagination';
+import { isTraineeEnrolledAndDeployed, isInvalidHteCompany, hasRealUploadedDocFile } from '../utils/hteLocation';
 import type { Announcement, Employee, TraineeDocuments, TraineeDocumentItem } from '../types';
 
 
@@ -406,14 +407,20 @@ export function Dashboard() {
   const totalRequired = docKeys.length;
   const uploadedDocsCount = docKeys.filter((k) => {
     const d = getTraineeDocItem(submittedDocs, k);
-    return Boolean(d?.dataUrl || d?.name);
+    return hasRealUploadedDocFile(d);
   }).length;
-  const missingDocsCount = totalRequired - uploadedDocsCount;
+  const passedDocsCount = docKeys.filter((k) => {
+    const d = getTraineeDocItem(submittedDocs, k);
+    return hasRealUploadedDocFile(d) && d?.status === 'passed';
+  }).length;
+  const missingDocsCount = Math.max(0, totalRequired - uploadedDocsCount);
+  const isAllDocsUploaded = uploadedDocsCount === totalRequired;
   const isAllDocsPassed =
-    (currentEmp?.documentsPassed && currentEmp?.documentsStatus === 'passed') ||
-    currentEmp?.documentsPassed === true ||
-    uploadedDocsCount === totalRequired;
+    isAllDocsUploaded &&
+    ((currentEmp?.documentsPassed && currentEmp?.documentsStatus === 'passed') ||
+      passedDocsCount === totalRequired);
   const docsProgressPercent = Math.round((uploadedDocsCount / totalRequired) * 100);
+  const isTraineeAttendanceReady = isAdmin || isTraineeEnrolledAndDeployed(currentEmp);
 
   const resolveDocDataUrl = (docKey: string, docItem?: TraineeDocumentItem): string => {
     if (docItem?.dataUrl) return docItem.dataUrl;
@@ -589,10 +596,51 @@ export function Dashboard() {
     }
   };
 
-  // Derive pending apps directly from AppContext `employees` (avoids redundant SELECT * FROM employees on mount!)
+  // Derive pending apps directly from AppContext `employees` + merge cloud document store so Instructor sees live uploaded doc counts
+  const [cloudPendingDocsMap, setCloudPendingDocsMap] = useState<Record<string, any>>({});
+
+  useEffect(() => {
+    if (!isAdmin) return;
+    fetchAllTraineeDocumentsStore()
+      .then((storeMap) => {
+        if (storeMap && typeof storeMap === 'object') {
+          setCloudPendingDocsMap(storeMap);
+        }
+      })
+      .catch(() => {});
+  }, [isAdmin]);
+
   useEffect(() => {
     if (isAdmin) {
-      setPendingApps(employees.filter((e) => e.applicationStatus === 'pending' || e.approvalStatus === 'pending'));
+      const rawPending = employees.filter(
+        (e) =>
+          !e.position?.toLowerCase().includes('instructor') &&
+          !e.position?.toLowerCase().includes('hte') &&
+          (e.applicationStatus === 'pending' || e.approvalStatus === 'pending' || e.active === false)
+      );
+      const enrichedPending = rawPending.map((emp) => {
+        const hit =
+          cloudPendingDocsMap[emp.id] ||
+          (emp.employeeId ? cloudPendingDocsMap[emp.employeeId] : undefined) ||
+          Object.values(cloudPendingDocsMap).find(
+            (s: any) =>
+              s &&
+              (s.id === emp.id ||
+                (emp.employeeId && s.employeeId && String(s.employeeId).toLowerCase() === emp.employeeId.toLowerCase()) ||
+                (emp.email && s.email && String(s.email).toLowerCase() === emp.email.toLowerCase()))
+          );
+        if (!hit?.documents) return emp;
+        return {
+          ...emp,
+          submittedDocuments: {
+            ...(emp.submittedDocuments || {}),
+            ...hit.documents,
+          },
+          documentsPassed: hit.documentsPassed ?? emp.documentsPassed,
+          documentsStatus: hit.documentsStatus || emp.documentsStatus,
+        };
+      });
+      setPendingApps(enrichedPending);
 
       const fetchHteRequests = async () => {
         // Table hte_student_access is unmigrated in this Supabase instance
@@ -616,7 +664,7 @@ export function Dashboard() {
 
       fetchHteRequests();
     }
-  }, [isAdmin, employees]);
+  }, [isAdmin, employees, cloudPendingDocsMap]);
 
   const handleApproveHte = async (request: any) => {
     setProcessingId(request.id);
@@ -848,6 +896,7 @@ export function Dashboard() {
   });
 
   const statusColor = () => {
+    if (!isTraineeAttendanceReady) return 'from-slate-700 to-slate-800';
     if (!todayRecord) return 'from-gray-500 to-gray-600';
     if (todayRecord.timeIn && todayRecord.timeOut) return 'from-green-500 to-emerald-600';
     if (todayRecord.timeIn) return 'from-sky-500 to-blue-600';
@@ -855,6 +904,12 @@ export function Dashboard() {
   };
 
   const todayStatus = () => {
+    if (!isTraineeAttendanceReady) {
+      return {
+        label: 'Pending HTE Deployment',
+        color: 'text-amber-900 bg-amber-200',
+      };
+    }
     const currentH = currentTime.getHours();
     const currentM = currentTime.getMinutes();
     const currentTimeInMinutes = currentH * 60 + currentM;
@@ -1026,7 +1081,7 @@ export function Dashboard() {
           </div>
         </div>
 
-        {/* Instructor: Pending Student Registrations Awaiting Verification */}
+        {/* Instructor: Pending Student Registrations Awaiting Document Check & HTE Deployment */}
         {pendingApps.length > 0 && (
           <div className="bg-amber-50/70 rounded-2xl border border-amber-200/80 p-6 shadow-sm">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-amber-200/60">
@@ -1035,53 +1090,109 @@ export function Dashboard() {
                   <User size={20} />
                 </div>
                 <div>
-                  <h3 className="font-bold text-gray-900 text-base">Pending Trainee Registrations</h3>
+                  <h3 className="font-bold text-gray-900 text-base">Pending Trainee Approvals &amp; HTE Deployment</h3>
                   <p className="text-xs text-amber-900/80 mt-0.5">
-                    Newly registered student trainees awaiting instructor approval to begin their OJT tracking
+                    Check each trainee&apos;s uploaded OJT documents first, then enroll and deploy them to their designated HTE
                   </p>
                 </div>
               </div>
-              <span className="px-3.5 py-1 bg-amber-500 text-white text-xs font-bold rounded-full shadow-xs self-start sm:self-auto">
-                {pendingApps.length} Awaiting Approval
-              </span>
+              <Link
+                to="/admin/employees?tab=pending"
+                className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-bold rounded-full shadow-xs self-start sm:self-auto transition-colors"
+              >
+                {pendingApps.length} Pending Approval →
+              </Link>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-              {pendingApps.map((app) => (
-                <div key={app.id} className="bg-white p-4 rounded-xl border border-amber-200/70 shadow-xs flex flex-col justify-between gap-3">
-                  <div>
-                    <div className="flex justify-between items-start gap-2">
-                      <p className="font-bold text-gray-900 text-sm truncate" title={app.name}>{app.name}</p>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700 shrink-0">
-                        {app.employeeId || 'ID: Pending'}
-                      </span>
+              {pendingApps.map((app) => {
+                const appDocs = app.submittedDocuments || {};
+                const appTotalReq = REQUIRED_TRAINEE_DOC_KEYS.length;
+                const appUploaded = REQUIRED_TRAINEE_DOC_KEYS.filter((k) =>
+                  hasRealUploadedDocFile(getTraineeDocItem(appDocs, k))
+                ).length;
+                const appPassed = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+                  const d = getTraineeDocItem(appDocs, k);
+                  return hasRealUploadedDocFile(d) && d?.status === 'passed';
+                }).length;
+                const appDocsVerified =
+                  appUploaded === appTotalReq &&
+                  (appPassed === appTotalReq || (app.documentsPassed === true && app.documentsStatus === 'passed'));
+
+                return (
+                  <div key={app.id} className="bg-white p-4 rounded-xl border border-amber-200/70 shadow-xs flex flex-col justify-between gap-3">
+                    <div>
+                      <div className="flex justify-between items-start gap-2">
+                        <p className="font-bold text-gray-900 text-sm truncate" title={app.name}>{app.name}</p>
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-gray-100 text-gray-700 shrink-0">
+                          {app.employeeId || 'ID: Pending'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-500 mt-1">{app.course || (app as any).year_section || 'Trainee'}</p>
+                      <p className="text-xs text-amber-800 font-semibold mt-1 flex items-center gap-1">
+                        <Building size={12} className="shrink-0" />
+                        <span className="truncate">
+                          {!isInvalidHteCompany(app.companyName) ? app.companyName : 'Unassigned • Awaiting HTE Deployment'}
+                        </span>
+                      </p>
+                      <div className="mt-2 flex items-center gap-1.5 flex-wrap">
+                        <span
+                          className={`text-[10px] font-bold px-2 py-0.5 rounded-full border inline-flex items-center gap-1 ${
+                            appDocsVerified
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : appUploaded === appTotalReq
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
+                              : 'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}
+                        >
+                          <FileCheck size={10} />
+                          {appDocsVerified
+                            ? `✓ ${appTotalReq}/${appTotalReq} Docs Verified`
+                            : appUploaded === appTotalReq
+                            ? `📎 ${appUploaded}/${appTotalReq} Uploaded • Needs Check`
+                            : `📎 ${appUploaded}/${appTotalReq} Docs Uploaded`}
+                        </span>
+                      </div>
                     </div>
-                    <p className="text-xs text-gray-500 mt-1">{app.course || (app as any).year_section || 'Trainee'}</p>
-                    <p className="text-xs text-blue-700 font-semibold mt-1 flex items-center gap-1">
-                      <Building size={12} className="shrink-0" />
-                      <span className="truncate">{app.companyName || 'Host Establishment Pending'}</span>
-                    </p>
+                    <div className="flex items-center gap-1.5 pt-2 border-t border-gray-100">
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/admin/employees?tab=pending&review=${encodeURIComponent(app.id)}`)}
+                        className="flex-1 py-1.5 px-2 bg-violet-600 hover:bg-violet-700 text-white text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer text-center inline-flex items-center justify-center gap-1"
+                        title="View and check trainee's uploaded OJT documents before enrolling"
+                      >
+                        <Eye size={12} />
+                        <span>Check Docs</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => navigate(`/admin/employees?tab=pending&deploy=${encodeURIComponent(app.id)}`)}
+                        className={`flex-1 py-1.5 px-2 text-[11px] font-bold rounded-lg transition-colors shadow-xs cursor-pointer text-center inline-flex items-center justify-center gap-1 ${
+                          appDocsVerified
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                            : 'bg-slate-200 hover:bg-slate-300 text-slate-700 border border-slate-300'
+                        }`}
+                        title={
+                          appDocsVerified
+                            ? 'Enroll & deploy trainee to a designated HTE'
+                            : 'Must check & approve uploaded documents first before enrolling & deploying'
+                        }
+                      >
+                        {appDocsVerified ? <Building size={12} /> : <Lock size={11} />}
+                        <span>Enroll &amp; Deploy</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReject(app)}
+                        disabled={!!processingId}
+                        className="py-1.5 px-2.5 bg-red-50 hover:bg-red-100 text-red-700 text-[11px] font-bold rounded-lg transition-colors border border-red-200 disabled:opacity-50 cursor-pointer"
+                      >
+                        Reject
+                      </button>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
-                    <button
-                      type="button"
-                      onClick={() => handleApprove(app)}
-                      disabled={!!processingId}
-                      className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition-colors shadow-xs disabled:opacity-50 cursor-pointer text-center"
-                    >
-                      {processingId === app.id ? 'Approving...' : 'Approve'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleReject(app)}
-                      disabled={!!processingId}
-                      className="py-1.5 px-3 bg-red-50 hover:bg-red-100 text-red-700 text-xs font-bold rounded-lg transition-colors border border-red-200 disabled:opacity-50 cursor-pointer"
-                    >
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -2325,9 +2436,48 @@ export function Dashboard() {
         )}
       </motion.div>
 
-      {/* Primary Call-To-Action (CTA): Dynamic Shift Punch Hero Button */}
+      {/* Primary Call-To-Action (CTA): Dynamic Shift Punch Hero Button (Locked until enrolled & deployed to HTE) */}
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
-        {(() => {
+        {!isTraineeAttendanceReady ? (
+          <div className="relative overflow-hidden rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-amber-50 via-orange-50/70 to-amber-50 border-2 border-amber-300 shadow-sm">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div className="flex items-start gap-4">
+                <div className="flex items-center justify-center w-13 h-13 bg-amber-500 text-white rounded-2xl shrink-0 shadow-sm">
+                  <Lock size={24} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-950 border border-amber-300">
+                      Attendance Locked • Not Deployed to Designated HTE
+                    </span>
+                    <span className="text-xs font-bold text-amber-900">
+                      {uploadedDocsCount}/{totalRequired} Docs Uploaded
+                    </span>
+                  </div>
+                  <h3 className="text-base sm:text-lg font-extrabold text-slate-900 mt-1">
+                    {missingDocsCount > 0
+                      ? 'Step 1: Pass All Required OJT Documents Before Enrollment'
+                      : 'Documents Uploaded — Awaiting Instructor Check & HTE Deployment'}
+                  </h3>
+                  <p className="text-xs text-slate-700 mt-0.5 leading-relaxed max-w-2xl">
+                    {missingDocsCount > 0
+                      ? `You cannot Time In or use Attendance yet because you are not deployed in a designated HTE. Please upload all ${totalRequired} required documents in OJT Documents (${missingDocsCount} remaining) so your Instructor can check them in Pending Approvals and deploy you.`
+                      : 'All required documents have been uploaded! Your OJT Instructor will inspect your documents in Pending Approvals and enroll & deploy you to your designated HTE to unlock Time In / Out.'}
+                  </p>
+                </div>
+              </div>
+
+              <Link
+                to="/app/documents"
+                className="px-5 py-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white font-bold text-xs sm:text-sm shadow-md shadow-violet-500/20 flex items-center gap-2 self-start sm:self-center shrink-0 transition-all"
+              >
+                <FileCheck size={16} />
+                <span>{missingDocsCount > 0 ? 'Upload OJT Documents' : 'Open OJT Documents'}</span>
+                <ChevronRight size={16} />
+              </Link>
+            </div>
+          </div>
+        ) : (() => {
           const h = currentTime.getHours();
           const safeTimeOut =
             todayRecord?.timeOut && todayRecord.timeOut !== todayRecord.timeIn
@@ -2626,17 +2776,26 @@ export function Dashboard() {
                   <span className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400">
                     Assigned HTE Partner
                   </span>
-                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-1">
-                    <CheckCircle2 size={11} /> Active Placement
-                  </span>
+                  {isTraineeAttendanceReady && !isInvalidHteCompany(currentEmp?.companyName) ? (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 flex items-center gap-1">
+                      <CheckCircle2 size={11} /> Active Placement
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                      <Clock size={11} /> Pending Instructor Deployment
+                    </span>
+                  )}
                 </div>
 
                 <p className="text-base font-bold text-slate-900 mt-1 flex items-center gap-1.5">
-                  <Building size={16} className="text-blue-600" />
-                  {hteCompanyName}
+                  <Building size={16} className={isTraineeAttendanceReady && !isInvalidHteCompany(currentEmp?.companyName) ? 'text-blue-600' : 'text-amber-600'} />
+                  {!isInvalidHteCompany(currentEmp?.companyName) ? hteCompanyName : 'Not Assigned Yet (Awaiting Instructor Deployment)'}
                 </p>
                 <p className="text-xs text-slate-600 mt-0.5">
-                  Supervisor: <span className="font-semibold text-slate-800">{hteSupervisorName}</span>
+                  Supervisor:{' '}
+                  <span className="font-semibold text-slate-800">
+                    {!isInvalidHteCompany(currentEmp?.companyName) ? hteSupervisorName : 'Assigned upon HTE deployment'}
+                  </span>
                 </p>
               </div>
 

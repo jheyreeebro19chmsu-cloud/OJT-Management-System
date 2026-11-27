@@ -16,6 +16,9 @@ import {
   CheckCircle2,
   ChevronRight,
   Calendar,
+  FileCheck,
+  Upload,
+  Building2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import React, { useState, useEffect, useRef } from 'react';
@@ -43,7 +46,8 @@ import {
 } from '../utils/geo';
 import { authAPI } from '../services/authApi';
 import type { TimeRecord as TimeRecordType } from '../types';
-import { isInvalidHteCompany } from '../utils/hteLocation';
+import { isInvalidHteCompany, isTraineeEnrolledAndDeployed, hasRealUploadedDocFile } from '../utils/hteLocation';
+import { REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocItem } from '../data/documentRequirements';
 import { logActivity } from '../services/activityLogService';
 
 type PageState = 'check-geofence' | 'face-scan' | 'completed' | 'error';
@@ -412,6 +416,22 @@ export function TimeRecord() {
     employee?.companyName &&
     !isInvalidHteCompany(employee.companyName)
   );
+  const isEnrolledAndDeployed = !isStudent || isTraineeEnrolledAndDeployed(employee);
+
+  const submittedDocs = employee?.submittedDocuments || {};
+  const totalRequiredDocs = REQUIRED_TRAINEE_DOC_KEYS.length;
+  const uploadedDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) =>
+    hasRealUploadedDocFile(getTraineeDocItem(submittedDocs, k))
+  ).length;
+  const passedDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+    const d = getTraineeDocItem(submittedDocs, k);
+    return hasRealUploadedDocFile(d) && d?.status === 'passed';
+  }).length;
+  const missingDocsCount = Math.max(0, totalRequiredDocs - uploadedDocsCount);
+  const areAllDocsVerified =
+    missingDocsCount === 0 &&
+    (passedDocsCount === totalRequiredDocs ||
+      (employee?.documentsPassed === true && employee?.documentsStatus === 'passed'));
 
   // Late threshold evaluation
   const [startH, startM] = (settings.workStartTime || '08:00').split(':').map(Number);
@@ -443,8 +463,12 @@ export function TimeRecord() {
   );
 
   const proceedToFaceScan = () => {
-    if (isStudent && !hasValidHte) {
-      toast.error('Clock-in blocked: You must be assigned to an approved Host Training Establishment (HTE) workplace by your instructor first.');
+    if (isStudent && !isEnrolledAndDeployed) {
+      toast.error(
+        missingDocsCount > 0
+          ? `Attendance locked: Upload all ${totalRequiredDocs} required OJT documents first, then wait for your Instructor to verify them and deploy you to your designated HTE.`
+          : 'Attendance locked: Waiting for your OJT Instructor to verify your uploaded documents in Pending Approvals and deploy you to a designated HTE.'
+      );
       return;
     }
     if (!geofencePassed) return;
@@ -487,6 +511,11 @@ export function TimeRecord() {
   };
 
   const handleFaceSuccess = async (imageData?: string) => {
+    if (isStudent && !isEnrolledAndDeployed) {
+      toast.error('Attendance locked: You must be enrolled and deployed to a designated HTE by your Instructor before recording attendance.');
+      setPageState('check-geofence');
+      return;
+    }
     if (isProcessingAction) return;
     setIsProcessingAction(true);
     try {
@@ -812,15 +841,25 @@ export function TimeRecord() {
               const isGeofenced = Boolean((currentRecord as any)?.[slot.geofenceField] || (rawTime && currentRecord?.timeInGeofenced));
               const isCurrent = selectedSlot === slot.id;
               const isLocked =
+                (isStudent && !isEnrolledAndDeployed) ||
                 (slot.id !== 'am_arrival' && !hasAmInRecorded) ||
                 ((slot.id === 'pm_arrival' || slot.id === 'pm_departure') && !hasAmOutRecorded);
-              const lockMessage = !hasAmInRecorded ? 'Requires AM In' : 'Requires AM Out';
+              const lockMessage =
+                isStudent && !isEnrolledAndDeployed
+                  ? 'Not Deployed to HTE'
+                  : !hasAmInRecorded
+                  ? 'Requires AM In'
+                  : 'Requires AM Out';
 
               return (
                 <button
                   key={slot.id}
                   type="button"
                   onClick={() => {
+                    if (isStudent && !isEnrolledAndDeployed) {
+                      toast.error('Attendance Locked: Upload all required OJT documents and wait for your Instructor to verify them and deploy you to a designated HTE.');
+                      return;
+                    }
                     if (slot.id !== 'am_arrival' && !hasAmInRecorded) {
                       toast.error('Slot Locked: You cannot proceed to this punch until "Time In AM" is completed.');
                       return;
@@ -933,7 +972,134 @@ export function TimeRecord() {
 
       {/* Main Action Area */}
       <AnimatePresence mode="wait">
-        {pageState === 'check-geofence' ? (
+        {isStudent && !isEnrolledAndDeployed ? (
+          <motion.div
+            key="locked-undeployed"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            className="bg-white rounded-3xl p-6 shadow-sm border-2 border-amber-200 space-y-5"
+          >
+            <div className="flex items-start gap-3.5">
+              <div className="w-12 h-12 rounded-2xl bg-amber-100 border border-amber-200 flex items-center justify-center shrink-0">
+                <Lock size={22} className="text-amber-700" />
+              </div>
+              <div className="flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300">
+                    Attendance Locked • Pending HTE Deployment
+                  </span>
+                </div>
+                <h3 className="font-extrabold text-gray-900 text-base sm:text-lg mt-1">
+                  Cannot Time In or Use Attendance Yet
+                </h3>
+                <p className="text-xs sm:text-sm text-gray-600 mt-1 leading-relaxed">
+                  Newly registered trainees cannot Time In / Time Out until all required OJT documents are uploaded, verified by your OJT Instructor in <strong>Pending Approvals</strong>, and you are officially enrolled &amp; deployed to a designated <strong>Host Training Establishment (HTE)</strong>.
+                </p>
+              </div>
+            </div>
+
+            {/* 3-Step Pre-Deployment Onboarding Progress */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div
+                className={`p-4 rounded-2xl border ${
+                  missingDocsCount === 0
+                    ? 'bg-emerald-50/70 border-emerald-200'
+                    : 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-300/50'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Step 1</span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      missingDocsCount === 0
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-amber-200 text-amber-900'
+                    }`}
+                  >
+                    {uploadedDocsCount}/{totalRequiredDocs} Uploaded
+                  </span>
+                </div>
+                <p className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                  <Upload size={14} className={missingDocsCount === 0 ? 'text-emerald-600' : 'text-amber-600'} />
+                  Pass Required OJT Documents
+                </p>
+                <p className="text-[11px] text-slate-600 mt-1">
+                  {missingDocsCount === 0
+                    ? 'All mandatory OJT documents have been uploaded.'
+                    : `Upload the remaining ${missingDocsCount} required document${missingDocsCount === 1 ? '' : 's'} in OJT Documents.`}
+                </p>
+              </div>
+
+              <div
+                className={`p-4 rounded-2xl border ${
+                  areAllDocsVerified
+                    ? 'bg-emerald-50/70 border-emerald-200'
+                    : 'bg-slate-50 border-slate-200'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Step 2</span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      areAllDocsVerified
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : 'bg-blue-100 text-blue-800'
+                    }`}
+                  >
+                    {areAllDocsVerified ? 'Verified ✓' : `${passedDocsCount}/${totalRequiredDocs} Checked`}
+                  </span>
+                </div>
+                <p className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                  <FileCheck size={14} className={areAllDocsVerified ? 'text-emerald-600' : 'text-blue-600'} />
+                  Instructor Pending Approval Check
+                </p>
+                <p className="text-[11px] text-slate-600 mt-1">
+                  {areAllDocsVerified
+                    ? 'Your OJT Instructor has verified your uploaded documents.'
+                    : 'Your OJT Instructor inspects your uploaded files in Pending Approvals before enrollment.'}
+                </p>
+              </div>
+
+              <div className="p-4 rounded-2xl border bg-slate-50 border-slate-200">
+                <div className="flex items-center justify-between mb-1.5">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-slate-500">Step 3</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                    {hasValidHte ? 'Pending Enrollment' : 'Unassigned'}
+                  </span>
+                </div>
+                <p className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                  <Building2 size={14} className="text-indigo-600" />
+                  Enroll &amp; Deploy to Designated HTE
+                </p>
+                <p className="text-[11px] text-slate-600 mt-1">
+                  Once deployed by your Instructor to your designated HTE, GPS &amp; facial attendance unlocks.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-2 border-t border-slate-100">
+              <span className="text-xs text-slate-500">
+                {missingDocsCount > 0
+                  ? `Action Needed: Please upload ${missingDocsCount} remaining document${missingDocsCount === 1 ? '' : 's'} now.`
+                  : 'All documents uploaded! Waiting for Instructor verification & HTE deployment.'}
+              </span>
+              <button
+                type="button"
+                onClick={() => navigate('/app/documents')}
+                className="px-5 py-3 rounded-2xl bg-violet-600 hover:bg-violet-700 text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-2 shadow-md shadow-violet-500/20 transition-all cursor-pointer"
+              >
+                <FileCheck size={16} />
+                <span>
+                  {missingDocsCount > 0
+                    ? `Upload Required Documents (${uploadedDocsCount}/${totalRequiredDocs})`
+                    : 'View My Uploaded OJT Documents'}
+                </span>
+                <ChevronRight size={15} />
+              </button>
+            </div>
+          </motion.div>
+        ) : pageState === 'check-geofence' ? (
           <motion.div
             key="geofence"
             initial={{ opacity: 0, y: 20 }}

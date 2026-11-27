@@ -38,6 +38,7 @@ import { uploadDocumentToStorage, saveDocumentPassStatus, fetchEmployeeDocuments
 import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS } from '../data/documentRequirements';
 import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl } from '../utils/attachmentHelper';
 import { logActivity } from '../services/activityLogService';
+import { isTraineeEnrolledAndDeployed, hasRealUploadedDocFile } from '../utils/hteLocation';
 
 export const STANDARD_REQUIRED_DOCS = REQUIRED_TRAINEE_DOCUMENTS;
 
@@ -1545,6 +1546,53 @@ export function Documents() {
 
   return (
     <div className="space-y-6 pb-12 max-w-6xl mx-auto">
+      {/* Pre-Enrollment & Pre-Deployment Onboarding Step Banner for Pending Trainees */}
+      {!isTraineeEnrolledAndDeployed(employee) && (
+        <div
+          className={`rounded-3xl border p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+            missingCount > 0
+              ? 'bg-amber-50/90 border-amber-200 text-amber-950'
+              : 'bg-blue-50/90 border-blue-200 text-blue-950'
+          }`}
+        >
+          <div className="flex items-start gap-3.5">
+            <div
+              className={`w-11 h-11 rounded-2xl flex items-center justify-center shrink-0 font-bold shadow-xs ${
+                missingCount > 0 ? 'bg-amber-500 text-white' : 'bg-blue-600 text-white'
+              }`}
+            >
+              {missingCount > 0 ? <Upload size={20} /> : <CheckCircle2 size={20} />}
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span
+                  className={`text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded-full ${
+                    missingCount > 0
+                      ? 'bg-amber-200 text-amber-900 border border-amber-300'
+                      : 'bg-blue-200 text-blue-900 border border-blue-300'
+                  }`}
+                >
+                  {missingCount > 0 ? 'Required Before HTE Deployment' : 'Submitted • Awaiting Instructor Review'}
+                </span>
+                <span className="text-xs font-bold opacity-80">
+                  {uploadedCount}/{totalRequired} Documents Uploaded
+                </span>
+              </div>
+              <h2 className="text-sm sm:text-base font-extrabold mt-1">
+                {missingCount > 0
+                  ? `Upload All ${totalRequired} Required OJT Documents to Qualify for HTE Enrollment`
+                  : 'All Required Documents Uploaded — Awaiting Instructor Check & HTE Deployment'}
+              </h2>
+              <p className="text-xs opacity-90 mt-0.5 leading-relaxed max-w-3xl">
+                {missingCount > 0
+                  ? `Time In / Attendance is currently locked because you are not yet deployed to a designated Host Training Establishment (HTE). Upload the remaining ${missingCount} document${missingCount === 1 ? '' : 's'} below so your OJT Instructor can inspect them in Pending Approvals and enroll & deploy you to your HTE.`
+                  : 'Your uploaded documents have been synced to your OJT Instructor. Once your Instructor checks and approves them in Pending Approvals and deploys you to your designated HTE, Time In / Attendance will unlock automatically.'}
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Header Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-sm">
         <div>

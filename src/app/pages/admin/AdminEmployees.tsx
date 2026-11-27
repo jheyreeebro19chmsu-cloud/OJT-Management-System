@@ -16,7 +16,8 @@ import { REQUIRED_TRAINEE_DOCUMENTS, REQUIRED_TRAINEE_DOC_KEYS, getTraineeDocIte
 import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl, dataUrlToBlobUrl, openDocumentInNewTab } from '../../utils/attachmentHelper';
 import { isWithinNegrosOccidental } from '../../utils/geo';
 import { getPaginationWindow } from '../../utils/pagination';
-import { resolveHteLocation, isInvalidHteCompany } from '../../utils/hteLocation';
+import { resolveHteLocation, isInvalidHteCompany, hasRealUploadedDocFile } from '../../utils/hteLocation';
+import { Lock } from 'lucide-react';
 type ModalMode = 'view' | 'add' | 'edit' | 'review' | null;
 
 const BLANK_FORM = {
@@ -597,7 +598,8 @@ export function AdminEmployees() {
 
   // Document monitoring state
   const location = useLocation();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [reviewedDocEmpIds, setReviewedDocEmpIds] = useState<string[]>([]);
   const [docViewMode, setDocViewMode] = useState<'monitoring' | 'requirements'>('monitoring');
   const [docFilterStatus, setDocFilterStatus] = useState<'all' | 'pending' | 'compliant' | 'incomplete'>('all');
   const [docFilterRequirement, setDocFilterRequirement] = useState<string>('all');
@@ -609,6 +611,8 @@ export function AdminEmployees() {
   useEffect(() => {
     if (location.pathname === '/admin/documents' || searchParams.get('tab') === 'documents') {
       setActiveCategoryTab('documents');
+    } else if (searchParams.get('tab') === 'pending') {
+      setActiveCategoryTab('pending');
     }
   }, [location.pathname, searchParams]);
 
@@ -1114,6 +1118,54 @@ export function AdminEmployees() {
     );
   };
 
+  const isPendingApprovalTrainee = (emp: Employee) =>
+    getEmployeeGroup(emp) === 'student' &&
+    (emp.active === false ||
+      emp.approvalStatus === 'pending' ||
+      emp.applicationStatus === 'pending' ||
+      emp.applicationStatus === 'unregistered' ||
+      (emp.active == null && emp.applicationStatus !== 'approved') ||
+      !isTraineeDeployed(emp));
+
+  const getTraineeEnrollmentDocGate = (emp: Employee) => {
+    const docs = emp.submittedDocuments || {};
+    const customReqs = getCustomRequirementsForEmp(emp);
+    const totalRequired = REQUIRED_TRAINEE_DOC_KEYS.length + customReqs.length;
+    const stdUploaded = REQUIRED_TRAINEE_DOC_KEYS.filter((k) =>
+      hasRealUploadedDocFile(getTraineeDocItem(docs, k))
+    ).length;
+    const customUploaded = customReqs.filter((cr) => resolveCustomTraineeDoc(emp, cr).hasFile).length;
+    const uploadedCount = stdUploaded + customUploaded;
+
+    const stdPassed = REQUIRED_TRAINEE_DOC_KEYS.filter((k) => {
+      const d = getTraineeDocItem(docs, k);
+      return hasRealUploadedDocFile(d) && d?.status === 'passed';
+    }).length;
+    const customPassed = customReqs.filter((cr) => {
+      const r = resolveCustomTraineeDoc(emp, cr);
+      return r.hasFile && r.isPassed;
+    }).length;
+    const passedCount = stdPassed + customPassed;
+    const missingCount = Math.max(0, totalRequired - uploadedCount);
+    const allUploaded = missingCount === 0;
+    const isDocsVerified =
+      allUploaded &&
+      (passedCount === totalRequired ||
+        (emp.documentsPassed === true && emp.documentsStatus === 'passed'));
+    const hasInstructorChecked =
+      reviewedDocEmpIds.includes(emp.id) || passedCount > 0 || isDocsVerified;
+
+    return {
+      totalRequired,
+      uploadedCount,
+      passedCount,
+      missingCount,
+      allUploaded,
+      isDocsVerified,
+      hasInstructorChecked,
+    };
+  };
+
   const filteredGroups = {
     pending: deduplicateAccounts(
       enrichedEmployees.filter(
@@ -1240,7 +1292,7 @@ export function AdminEmployees() {
   }, [employees, allAvailableHtes, selectedYear, settings?.academicYears, settings?.activeAcademicYear]);
 
   const deployableTrainees = useMemo(() => {
-    return employees.filter((t) => {
+    return enrichedEmployees.filter((t) => {
       if (getEmployeeGroup(t) !== 'student') return false;
       if (t.approvalStatus === 'rejected') return false;
       if (!matchesYear(t)) return false;
@@ -1257,13 +1309,30 @@ export function AdminEmployees() {
         (deployStatusFilter === 'assigned' && isAssigned);
       return matchesSearch && matchesCourse && matchesStatus;
     });
-  }, [employees, deploySearch, deployCourseFilter, deployStatusFilter, selectedYear, settings?.academicYears, settings?.activeAcademicYear, allAvailableHtes]);
+  }, [enrichedEmployees, deploySearch, deployCourseFilter, deployStatusFilter, selectedYear, settings?.academicYears, settings?.activeAcademicYear, allAvailableHtes]);
 
   const handleBatchDeploy = async () => {
     if (!deployTargetHteId || deploySelectedStudentIds.length === 0) return;
     const matchedHte = allAvailableHtes.find((h) => h.id === deployTargetHteId);
     if (!matchedHte) {
       toast.error('Selected HTE not found.');
+      return;
+    }
+
+    // Enforce pre-enrollment document check for any selected trainee still in Pending Approval
+    const unverifiedPendingTrainee = deploySelectedStudentIds
+      .map((id) => enrichedEmployees.find((e) => e.id === id))
+      .find((emp) => emp && isPendingApprovalTrainee(emp) && !getTraineeEnrollmentDocGate(emp).isDocsVerified);
+
+    if (unverifiedPendingTrainee) {
+      const gate = getTraineeEnrollmentDocGate(unverifiedPendingTrainee);
+      setBatchDeployOpen(false);
+      openReview(unverifiedPendingTrainee);
+      toast.error(
+        gate.missingCount > 0
+          ? `Cannot enroll & deploy ${unverifiedPendingTrainee.name}: Trainee has uploaded ${gate.uploadedCount}/${gate.totalRequired} required documents (${gate.missingCount} still missing).`
+          : `Before enrolling & deploying ${unverifiedPendingTrainee.name}, please check and approve their uploaded OJT documents first.`
+      );
       return;
     }
 
@@ -1385,6 +1454,7 @@ export function AdminEmployees() {
 
   const openReview = (emp: Employee) => {
     if (!emp) return;
+    setReviewedDocEmpIds((prev) => (prev.includes(emp.id) ? prev : [...prev, emp.id]));
     setSelectedEmp(emp);
     setFaceEnrollOpen(false);
     setEditingAddress(false);
@@ -1572,17 +1642,65 @@ export function AdminEmployees() {
     }
   };
 
-  const handleApprove = (emp: Employee) => {
-    const isDeployed = isTraineeDeployed(emp);
-    if (!isDeployed) {
-      setDeploySelectedStudentIds([emp.id]);
-      setBatchDeployOpen(true);
-      toast.info(`Please select a Host Training Establishment (HTE) to deploy and enroll ${emp.name}.`);
+  const requestEnrollAndDeploy = (emp: Employee) => {
+    const enrichedEmp =
+      enrichedEmployees.find((e) => e.id === emp.id || (e.employeeId && e.employeeId === emp.employeeId)) || emp;
+    const gate = getTraineeEnrollmentDocGate(enrichedEmp);
+
+    if (isPendingApprovalTrainee(enrichedEmp) && !gate.isDocsVerified) {
+      openReview(enrichedEmp);
+      if (!gate.allUploaded) {
+        toast.warning(
+          `Check Documents First: ${enrichedEmp.name} has uploaded ${gate.uploadedCount}/${gate.totalRequired} required OJT documents (${gate.missingCount} missing). Trainee must pass all required documents before HTE deployment.`,
+          { duration: 6000 }
+        );
+      } else {
+        toast.info(
+          `Check Uploaded Documents First: Please inspect and approve ${enrichedEmp.name}'s ${gate.uploadedCount} uploaded OJT documents before enrolling and deploying to an HTE.`,
+          { duration: 6000 }
+        );
+      }
       return;
     }
-    approveEmployee(emp.id);
-    toast.success(`${emp.name} approved & enrolled for Academic Year ${settings.activeAcademicYear}!`);
+
+    const isDeployed = isTraineeDeployed(enrichedEmp);
+    if (!isDeployed) {
+      setDeploySelectedStudentIds([enrichedEmp.id]);
+      setBatchDeployOpen(true);
+      toast.info(`Documents verified! Select a designated Host Training Establishment (HTE) to enroll and deploy ${enrichedEmp.name}.`);
+      return;
+    }
+    approveEmployee(enrichedEmp.id);
+    toast.success(`${enrichedEmp.name} approved & enrolled for Academic Year ${settings.activeAcademicYear}!`);
   };
+
+  const handleApprove = (emp: Employee) => {
+    requestEnrollAndDeploy(emp);
+  };
+
+  // Support deep links from Instructor Dashboard (?tab=pending&review=<id> or &deploy=<id>)
+  useEffect(() => {
+    const reviewId = searchParams.get('review');
+    const deployId = searchParams.get('deploy');
+    if ((!reviewId && !deployId) || enrichedEmployees.length === 0) return;
+
+    const targetId = reviewId || deployId || '';
+    const found = enrichedEmployees.find(
+      (e) => e.id === targetId || (e.employeeId && e.employeeId === targetId)
+    );
+    if (!found) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('review');
+    nextParams.delete('deploy');
+    setSearchParams(nextParams, { replace: true });
+
+    if (reviewId) {
+      openReview(found);
+    } else if (deployId) {
+      requestEnrollAndDeploy(found);
+    }
+  }, [searchParams, enrichedEmployees]);
 
   const handleReject = (emp: Employee) => {
     if (confirm(`Decline registration request for ${emp.name}?`)) {
@@ -1691,14 +1809,14 @@ export function AdminEmployees() {
           </div>
         ) : (
           <>
-            {/* Desktop Table Headers with Separate HTE, Office/Department, Position Columns */}
-            <div className={`hidden lg:grid ${isPendingGroup ? 'grid-cols-[1.8fr_1.3fr_1.3fr_1fr_1.2fr_auto]' : 'grid-cols-[1.8fr_1.3fr_1.3fr_1fr_1.1fr_1fr_auto]'} gap-4 items-center px-5 py-3 bg-slate-100/90 border-b border-slate-200 text-[11px] font-extrabold text-slate-700 uppercase tracking-wider rounded-t-2xl`}>
+            {/* Desktop Table Headers with Separate HTE, Office/Department, Position, Status/Hours, Uploaded Documents Columns */}
+            <div className="hidden lg:grid grid-cols-[1.75fr_1.25fr_1.25fr_0.95fr_1.05fr_1.15fr_auto] gap-4 items-center px-5 py-3 bg-slate-100/90 border-b border-slate-200 text-[11px] font-extrabold text-slate-700 uppercase tracking-wider rounded-t-2xl">
               <span>{isTraineeGroup ? 'Trainee' : isInstructorGroup ? 'Faculty Coordinator' : isHteGroup ? 'HTE Supervisor' : 'Member'}</span>
               <span>HTE</span>
               <span>Office / Department</span>
               <span>Position</span>
               <span>{isPendingGroup ? 'Status' : 'Hours & Progress'}</span>
-              {!isPendingGroup && <span>Compliance</span>}
+              <span>{isPendingGroup ? 'Uploaded Documents' : 'Compliance'}</span>
               <span className="text-right">Actions</span>
             </div>
 
@@ -1713,8 +1831,8 @@ export function AdminEmployees() {
                   transition={{ delay: idx * 0.04 }}
                 >
                   <div
-                    onClick={() => openView(emp)}
-                    className={`hidden lg:grid ${isPendingGroup ? 'grid-cols-[1.8fr_1.3fr_1.3fr_1fr_1.2fr_auto]' : 'grid-cols-[1.8fr_1.3fr_1.3fr_1fr_1.1fr_1fr_auto]'} gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors`}
+                    onClick={() => (isPendingGroup ? openReview(emp) : openView(emp))}
+                    className="hidden lg:grid grid-cols-[1.75fr_1.25fr_1.25fr_0.95fr_1.05fr_1.15fr_auto] gap-4 items-center px-5 py-4 border-b border-gray-50 hover:bg-blue-50/60 cursor-pointer transition-colors"
                   >
                     {/* 1. Trainee Identity Column */}
                     <div className="flex items-center gap-3 min-w-0">
@@ -1849,14 +1967,12 @@ export function AdminEmployees() {
                       <p className="text-[11px] text-gray-400 mt-0.5">{emp.companyName || 'Partner Network'}</p>
                     </div>
                   )}
-                  {isTraineeGroup && !isPendingGroup ? (
+                  {isTraineeGroup ? (
                     <div className="flex flex-col gap-1 items-start">
                       {(() => {
-                        const missingDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
-                          (k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name
-                        ).length;
-                        const isFullyCertified = missingDocsCount === 0 && emp.documentsPassed === true && emp.documentsStatus === 'passed';
-                        const isSubmittedPendingReview = missingDocsCount === 0 && (emp.documentsStatus === 'submitted' || (!isFullyCertified && emp.documentsStatus !== 'pending'));
+                        const gate = getTraineeEnrollmentDocGate(emp);
+                        const isFullyCertified = gate.isDocsVerified;
+                        const isSubmittedPendingReview = gate.allUploaded && !isFullyCertified;
 
                         return (
                           <>
@@ -1873,7 +1989,7 @@ export function AdminEmployees() {
                                   ? 'text-blue-700 bg-blue-50 border-blue-200 hover:bg-blue-100 hover:border-blue-300 ring-1 ring-blue-300/60'
                                   : 'text-amber-700 bg-amber-50 border-amber-200 hover:bg-amber-100 hover:border-amber-300 ring-1 ring-amber-300/60'
                               }`}
-                              title="Click to Review Trainee Compliance Documents"
+                              title="Click to Check & Verify Trainee Uploaded Documents"
                             >
                               {isFullyCertified ? (
                                 <>
@@ -1881,17 +1997,17 @@ export function AdminEmployees() {
                                 </>
                               ) : isSubmittedPendingReview ? (
                                 <>
-                                  <CheckCircle2 size={12} className="text-blue-600" /> Docs: Submitted
+                                  <Eye size={12} className="text-blue-600" /> Check Docs ({gate.uploadedCount}/{gate.totalRequired})
                                 </>
                               ) : (
                                 <>
-                                  <FileText size={12} className="text-amber-600 animate-pulse" /> Docs: Pending
+                                  <FileText size={12} className="text-amber-600 animate-pulse" /> Uploaded: {gate.uploadedCount}/{gate.totalRequired}
                                 </>
                               )}
                             </button>
-                            {missingDocsCount > 0 ? (
+                            {gate.missingCount > 0 ? (
                               <span className="text-[10px] font-extrabold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                ⚠️ {missingDocsCount} Missing
+                                ⚠️ {gate.missingCount} Missing
                               </span>
                             ) : (
                               <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${
@@ -1899,7 +2015,9 @@ export function AdminEmployees() {
                                   ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
                                   : 'text-blue-700 bg-blue-50 border-blue-200'
                               }`}>
-                                ✓ Complete ({REQUIRED_TRAINEE_DOCUMENTS.length}/{REQUIRED_TRAINEE_DOCUMENTS.length})
+                                {isFullyCertified
+                                  ? `✓ Verified (${gate.totalRequired}/${gate.totalRequired})`
+                                  : `📎 All ${gate.totalRequired} Uploaded • Needs Check`}
                               </span>
                             )}
                           </>
@@ -1934,44 +2052,70 @@ export function AdminEmployees() {
                       </span>
                     </div>
                   ) : null}
-                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5 flex-wrap justify-end" onClick={(e) => e.stopPropagation()}>
                     {isPendingGroup ? (
-                      <>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setDeploySelectedStudentIds([emp.id]);
-                            setBatchDeployOpen(true);
-                          }}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                          title="Deploy Trainee to HTE"
-                        >
-                          <Building size={13} />
-                          Deploy to HTE
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleApprove(emp);
-                          }}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
-                          title="Accept & Enroll Trainee"
-                        >
-                          <CheckCircle size={13} />
-                          Accept & Enroll
-                        </button>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleReject(emp);
-                          }}
-                          className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
-                          title="Decline Request"
-                        >
-                          <XCircle size={13} />
-                          Decline
-                        </button>
-                      </>
+                      (() => {
+                        const gate = getTraineeEnrollmentDocGate(emp);
+                        return (
+                          <>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openReview(emp);
+                              }}
+                              className="px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                              title="Inspect & Verify Trainee's Uploaded OJT Documents Before Enrolling"
+                            >
+                              <FileCheck size={13} />
+                              <span>Check Docs ({gate.uploadedCount}/{gate.totalRequired})</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                requestEnrollAndDeploy(emp);
+                              }}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 shadow-sm transition-all cursor-pointer ${
+                                gate.isDocsVerified
+                                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                  : 'bg-slate-200 hover:bg-slate-300 text-slate-700 border border-slate-300'
+                              }`}
+                              title={
+                                gate.isDocsVerified
+                                  ? 'Documents verified — Enroll & Deploy Trainee to Designated HTE'
+                                  : 'Check and approve all uploaded OJT documents first before enrolling & deploying to HTE'
+                              }
+                            >
+                              {gate.isDocsVerified ? <Building size={13} /> : <Lock size={12} />}
+                              <span>Enroll &amp; Deploy HTE</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                openView(emp);
+                              }}
+                              className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition-all cursor-pointer"
+                              title="View Trainee Profile"
+                            >
+                              <Eye size={15} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleReject(emp);
+                              }}
+                              className="px-2.5 py-1.5 bg-red-50 hover:bg-red-100 text-red-600 rounded-xl text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer"
+                              title="Decline Request"
+                            >
+                              <XCircle size={13} />
+                              Decline
+                            </button>
+                          </>
+                        );
+                      })()
                     ) : (
                       <>
                         {/* View Profile Button */}
@@ -2074,24 +2218,25 @@ export function AdminEmployees() {
                                 <button
                                   onClick={async () => {
                                     setOpenMenuId(null);
-                                    const missingDocsCount = REQUIRED_TRAINEE_DOC_KEYS.filter(
-                                      (k) => !emp.submittedDocuments?.[k]?.dataUrl && !emp.submittedDocuments?.[k]?.name
-                                    ).length;
-                                    const isCurrentlyPassed = missingDocsCount === 0 && emp.documentsPassed === true && emp.documentsStatus === 'passed';
-                                    const willPass = !isCurrentlyPassed;
+                                    const gate = getTraineeEnrollmentDocGate(emp);
+                                    if (!gate.allUploaded) {
+                                      openReview(emp);
+                                      toast.warning(
+                                        `${emp.name} has uploaded ${gate.uploadedCount}/${gate.totalRequired} required documents (${gate.missingCount} missing). Inspecting uploaded documents...`
+                                      );
+                                      return;
+                                    }
+                                    const willPass = !gate.isDocsVerified;
                                     const currentDocs = emp.submittedDocuments || {};
-                                    const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
                                     const updatedDocs: TraineeDocuments = { ...currentDocs };
-                                    docKeys.forEach((k) => {
-                                      updatedDocs[k] = {
-                                        ...(currentDocs[k] || {
-                                          name: `${k}.pdf`,
-                                          type: 'application/pdf',
-                                          size: 0,
-                                          uploadedAt: new Date().toISOString(),
-                                        }),
-                                        status: willPass ? 'passed' : 'pending',
-                                      };
+                                    REQUIRED_TRAINEE_DOC_KEYS.forEach((k) => {
+                                      const existing = getTraineeDocItem(currentDocs, k);
+                                      if (hasRealUploadedDocFile(existing)) {
+                                        updatedDocs[k] = {
+                                          ...existing!,
+                                          status: willPass ? 'passed' : 'pending',
+                                        };
+                                      }
                                     });
 
                                     await updateEmployee(emp.id, {
@@ -2099,16 +2244,19 @@ export function AdminEmployees() {
                                       documentsPassed: willPass,
                                       documentsStatus: willPass ? 'passed' : 'pending',
                                     });
-                                    toast.success(willPass ? 'All documents marked as PASSED' : 'Documents marked as PENDING');
+                                    saveDocumentPassStatus(emp.id, {
+                                      allPassed: willPass,
+                                      documentsStatus: willPass ? 'passed' : 'pending',
+                                      submittedDocuments: updatedDocs,
+                                    }).catch(console.warn);
+                                    toast.success(willPass ? 'All uploaded documents marked as PASSED' : 'Documents marked as PENDING');
                                   }}
                                   className="w-full flex items-center gap-2.5 px-3.5 py-2 text-xs font-semibold text-gray-700 hover:bg-emerald-50 hover:text-emerald-700 transition-colors cursor-pointer"
                                 >
                                   <CheckCircle2 size={14} className="text-emerald-600" />
-                                  {(REQUIRED_TRAINEE_DOC_KEYS.every(
-                                    (k) => emp.submittedDocuments?.[k]?.dataUrl || emp.submittedDocuments?.[k]?.name
-                                  ) && emp.documentsPassed === true && emp.documentsStatus === 'passed')
+                                  {getTraineeEnrollmentDocGate(emp).isDocsVerified
                                     ? 'Set Docs as Pending'
-                                    : 'Approve All Documents'}
+                                    : 'Approve Uploaded Docs'}
                                 </button>
                               )}
 
@@ -2193,36 +2341,47 @@ export function AdminEmployees() {
                         </div>
                         <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                           {isPendingGroup ? (
-                            <div className="flex flex-col gap-1">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setDeploySelectedStudentIds([emp.id]);
-                                  setBatchDeployOpen(true);
-                                }}
-                                className="px-2 py-1 bg-blue-600 text-white rounded-lg text-xs font-bold cursor-pointer"
-                              >
-                                Deploy
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleApprove(emp);
-                                }}
-                                className="px-2 py-1 bg-emerald-600 text-white rounded-lg text-xs font-bold cursor-pointer"
-                              >
-                                Accept
-                              </button>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleReject(emp);
-                                }}
-                                className="px-2 py-1 bg-red-50 text-red-600 rounded-lg text-xs cursor-pointer"
-                              >
-                                Decline
-                              </button>
-                            </div>
+                            (() => {
+                              const gate = getTraineeEnrollmentDocGate(emp);
+                              return (
+                                <div className="flex flex-col gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      openReview(emp);
+                                    }}
+                                    className="px-2.5 py-1 bg-violet-600 text-white rounded-lg text-xs font-bold cursor-pointer"
+                                  >
+                                    Check Docs ({gate.uploadedCount}/{gate.totalRequired})
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      requestEnrollAndDeploy(emp);
+                                    }}
+                                    className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer ${
+                                      gate.isDocsVerified
+                                        ? 'bg-emerald-600 text-white'
+                                        : 'bg-slate-200 text-slate-700'
+                                    }`}
+                                  >
+                                    {gate.isDocsVerified ? 'Enroll & Deploy' : '🔒 Enroll & Deploy'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReject(emp);
+                                    }}
+                                    className="px-2.5 py-1 bg-red-50 text-red-600 rounded-lg text-xs cursor-pointer"
+                                  >
+                                    Decline
+                                  </button>
+                                </div>
+                              );
+                            })()
                           ) : (
                             <>
                               <button
@@ -4450,43 +4609,10 @@ export function AdminEmployees() {
                                   })()}
                                   <button
                                     type="button"
-                                    onClick={async () => {
-                                      const missingDocs = REQUIRED_TRAINEE_DOC_KEYS.filter(
-                                        (k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name
-                                      ).length;
-                                      const isCurrentlyPassed = missingDocs === 0 && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
-                                      const willPass = !isCurrentlyPassed;
-                                      const currentDocs = selectedEmp.submittedDocuments || {};
-                                      const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
-                                      const updatedDocs: TraineeDocuments = { ...currentDocs };
-                                      docKeys.forEach((k) => {
-                                        updatedDocs[k] = {
-                                          ...(currentDocs[k] || {
-                                            name: `${k}.pdf`,
-                                            type: 'application/pdf',
-                                            size: 0,
-                                            uploadedAt: new Date().toISOString(),
-                                          }),
-                                          status: willPass ? 'passed' : 'pending',
-                                        };
-                                      });
-
-                                      await updateEmployee(selectedEmp.id, {
-                                        submittedDocuments: updatedDocs,
-                                        documentsPassed: willPass,
-                                        documentsStatus: willPass ? 'passed' : 'pending',
-                                      });
-                                      setSelectedEmp({
-                                        ...selectedEmp,
-                                        submittedDocuments: updatedDocs,
-                                        documentsPassed: willPass,
-                                        documentsStatus: willPass ? 'passed' : 'pending',
-                                      });
-                                      toast.success(willPass ? 'Registration documents marked as PASSED!' : 'Registration documents marked as PENDING');
-                                    }}
-                                    className="text-[11px] text-blue-600 hover:text-blue-800 font-semibold underline ml-1 cursor-pointer"
+                                    onClick={() => openReview(selectedEmp)}
+                                    className="text-[11px] text-violet-700 hover:text-violet-900 font-semibold underline ml-1 cursor-pointer"
                                   >
-                                    Toggle Status
+                                    Inspect Uploaded Docs
                                   </button>
                                   {selectedEmp.faceRegistered ? (
                                     <span className="text-xs flex items-center gap-0.5 text-green-600 bg-green-100 px-2 py-0.5 rounded-full">
@@ -4624,6 +4750,13 @@ export function AdminEmployees() {
                                 <button
                                   type="button"
                                   onClick={() => {
+                                    if (!assigningHte && isPendingApprovalTrainee(selectedEmp) && !getTraineeEnrollmentDocGate(selectedEmp).isDocsVerified) {
+                                      openReview(selectedEmp);
+                                      toast.warning(
+                                        `Please check and approve ${selectedEmp.name}'s uploaded OJT documents first before enrolling and deploying to an HTE.`
+                                      );
+                                      return;
+                                    }
                                     setAssigningHte(!assigningHte);
                                     setSelectedHteId(selectedEmp.hteId || '');
                                   }}
@@ -5900,78 +6033,154 @@ export function AdminEmployees() {
                     {/* Compliance Overview Card & Bulk Approval */}
                     {(() => {
                       const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
-                      const missingCount = docKeys.filter((k) => !selectedEmp.submittedDocuments?.[k]?.dataUrl && !selectedEmp.submittedDocuments?.[k]?.name).length;
-                      const passedCount = docKeys.filter((k) => selectedEmp.submittedDocuments?.[k]?.status === 'passed').length;
-                      const isFullyPassed = missingCount === 0 && passedCount === REQUIRED_TRAINEE_DOCUMENTS.length && selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed';
+                      const customReqs = getCustomRequirementsForEmp(selectedEmp);
+                      const totalReqsCount = REQUIRED_TRAINEE_DOCUMENTS.length + customReqs.length;
+                      const uploadedStdKeys = docKeys.filter((k) =>
+                        hasRealUploadedDocFile(getTraineeDocItem(selectedEmp.submittedDocuments, k))
+                      );
+                      const uploadedCustomReqs = customReqs.filter((cr) => resolveCustomTraineeDoc(selectedEmp, cr).hasFile);
+                      const uploadedTotal = uploadedStdKeys.length + uploadedCustomReqs.length;
+                      const missingCount = Math.max(0, totalReqsCount - uploadedTotal);
+                      const passedCount =
+                        docKeys.filter((k) => {
+                          const d = getTraineeDocItem(selectedEmp.submittedDocuments, k);
+                          return hasRealUploadedDocFile(d) && d?.status === 'passed';
+                        }).length +
+                        customReqs.filter((cr) => {
+                          const r = resolveCustomTraineeDoc(selectedEmp, cr);
+                          return r.hasFile && r.isPassed;
+                        }).length;
+                      const isFullyPassed =
+                        missingCount === 0 &&
+                        (passedCount === totalReqsCount ||
+                          (selectedEmp.documentsPassed === true && selectedEmp.documentsStatus === 'passed'));
 
                       return (
-                        <div className={`p-4 rounded-2xl border transition-all ${
+                        <div className={`p-4 rounded-2xl border transition-all space-y-3 ${
                           isFullyPassed ? 'bg-emerald-50/70 border-emerald-200' : 'bg-amber-50/70 border-amber-200'
                         }`}>
                           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-2 flex-wrap">
                                 <FileCheck size={18} className={isFullyPassed ? 'text-emerald-700' : 'text-amber-700'} />
                                 <h4 className="font-bold text-sm text-gray-900">
-                                  Required OJT Document Compliance ({passedCount}/{REQUIRED_TRAINEE_DOCUMENTS.length} Certified)
+                                  Required OJT Document Compliance ({uploadedTotal}/{totalReqsCount} Uploaded • {passedCount}/{totalReqsCount} Approved)
                                 </h4>
                               </div>
                               <p className="text-xs text-gray-600 mt-1">
                                 {isFullyPassed
-                                  ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} compliance credentials verified. Trainee is certified for deployment.`
-                                  : 'Review submitted attachments below. Mark individual documents as passed or approve all.'}
+                                  ? `All ${totalReqsCount} compliance credentials uploaded & verified! You can now enroll and deploy ${selectedEmp.name} to a designated HTE.`
+                                  : missingCount > 0
+                                  ? `Trainee has uploaded ${uploadedTotal} of ${totalReqsCount} required documents (${missingCount} still missing). Inspect uploaded files below; trainee must upload all ${totalReqsCount} before HTE deployment.`
+                                  : `All ${totalReqsCount} required documents have been uploaded by ${selectedEmp.name}. Inspect the attachments below and approve them to unlock HTE enrollment & deployment.`}
                               </p>
                             </div>
 
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                const willPass = !isFullyPassed;
-                                const targetStatus: 'passed' | 'pending' = willPass ? 'passed' : 'pending';
-                                const currentDocs = selectedEmp.submittedDocuments || {};
-                                const updatedDocs: TraineeDocuments = { ...currentDocs };
-                                docKeys.forEach((k) => {
-                                  updatedDocs[k] = {
-                                    ...(currentDocs[k] || {
-                                      name: `${k}.pdf`,
-                                      fileType: 'application/pdf',
-                                      size: 0,
-                                      uploadedAt: new Date().toISOString(),
-                                    }),
-                                    status: targetStatus,
-                                  };
-                                });
+                            <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                              <button
+                                type="button"
+                                disabled={uploadedTotal === 0}
+                                onClick={async () => {
+                                  const willPass = !isFullyPassed;
+                                  const targetStatus: 'passed' | 'pending' = willPass ? 'passed' : 'pending';
+                                  const currentDocs = selectedEmp.submittedDocuments || {};
+                                  const updatedDocs: TraineeDocuments = { ...currentDocs };
+                                  // Only approve documents that the trainee actually uploaded (never fabricate fake empty PDFs!)
+                                  docKeys.forEach((k) => {
+                                    const existing = getTraineeDocItem(currentDocs, k);
+                                    if (hasRealUploadedDocFile(existing)) {
+                                      updatedDocs[k] = {
+                                        ...existing!,
+                                        status: targetStatus,
+                                      };
+                                    }
+                                  });
+                                  customReqs.forEach((cr) => {
+                                    const res = resolveCustomTraineeDoc(selectedEmp, cr);
+                                    if (res.hasFile && res.doc) {
+                                      (updatedDocs as any)[cr.id] = {
+                                        ...res.doc,
+                                        status: targetStatus,
+                                      };
+                                    }
+                                  });
 
-                                await updateEmployee(selectedEmp.id, {
-                                  submittedDocuments: updatedDocs,
-                                  documentsPassed: willPass,
-                                  documentsStatus: willPass ? 'passed' : 'pending',
-                                });
-                                saveDocumentPassStatus(selectedEmp.id, {
-                                  allPassed: willPass,
-                                  documentsStatus: willPass ? 'passed' : 'pending',
-                                  submittedDocuments: updatedDocs,
-                                }).catch(console.warn);
-                                setSelectedEmp({
-                                  ...selectedEmp,
-                                  submittedDocuments: updatedDocs,
-                                  documentsPassed: willPass,
-                                  documentsStatus: willPass ? 'passed' : 'pending',
-                                });
-                                toast.success(
-                                  willPass
-                                    ? `All ${REQUIRED_TRAINEE_DOCUMENTS.length} documents marked as PASSED for ${selectedEmp.name}!`
-                                    : `Documents marked as PENDING for ${selectedEmp.name}`
-                                );
-                              }}
-                              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer ${
-                                isFullyPassed
-                                  ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
-                                  : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
-                              }`}
-                            >
-                              {isFullyPassed ? 'Mark All as Pending' : `✓ Approve All ${REQUIRED_TRAINEE_DOCUMENTS.length} Documents`}
-                            </button>
+                                  const allCompleteAndPassed = willPass && missingCount === 0;
+                                  const finalDocStatus = allCompleteAndPassed
+                                    ? 'passed'
+                                    : uploadedTotal > 0
+                                    ? 'partial'
+                                    : 'pending';
+
+                                  await updateEmployee(selectedEmp.id, {
+                                    submittedDocuments: updatedDocs,
+                                    documentsPassed: allCompleteAndPassed,
+                                    documentsStatus: finalDocStatus,
+                                  });
+                                  saveDocumentPassStatus(selectedEmp.id, {
+                                    allPassed: allCompleteAndPassed,
+                                    documentsStatus: finalDocStatus,
+                                    submittedDocuments: updatedDocs,
+                                  }).catch(console.warn);
+                                  setSelectedEmp({
+                                    ...selectedEmp,
+                                    submittedDocuments: updatedDocs,
+                                    documentsPassed: allCompleteAndPassed,
+                                    documentsStatus: finalDocStatus,
+                                  });
+                                  if (willPass && missingCount > 0) {
+                                    toast.info(
+                                      `Approved ${uploadedTotal} uploaded document(s). ${selectedEmp.name} still needs to upload ${missingCount} missing document(s) before HTE deployment.`
+                                    );
+                                  } else {
+                                    toast.success(
+                                      allCompleteAndPassed
+                                        ? `All ${totalReqsCount} uploaded documents verified & approved! Ready to enroll & deploy ${selectedEmp.name} to HTE.`
+                                        : `Documents marked as PENDING for ${selectedEmp.name}`
+                                    );
+                                  }
+                                }}
+                                className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-sm shrink-0 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${
+                                  isFullyPassed
+                                    ? 'bg-amber-100 text-amber-800 hover:bg-amber-200 border border-amber-300'
+                                    : 'bg-emerald-600 text-white hover:bg-emerald-700 shadow-emerald-200'
+                                }`}
+                              >
+                                {isFullyPassed
+                                  ? 'Mark Uploaded as Pending'
+                                  : uploadedTotal === 0
+                                  ? 'No Uploaded Docs Yet'
+                                  : missingCount > 0
+                                  ? `✓ Approve ${uploadedTotal} Uploaded Docs`
+                                  : `✓ Approve All ${totalReqsCount} Uploaded Docs`}
+                              </button>
+
+                              {isPendingApprovalTrainee(selectedEmp) && (
+                                <button
+                                  type="button"
+                                  disabled={!isFullyPassed}
+                                  onClick={() => {
+                                    const targetEmp = selectedEmp;
+                                    closeModal();
+                                    setDeploySelectedStudentIds([targetEmp.id]);
+                                    setBatchDeployOpen(true);
+                                  }}
+                                  className={`px-4 py-2 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 transition-all shadow-sm cursor-pointer ${
+                                    isFullyPassed
+                                      ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-blue-200'
+                                      : 'bg-gray-200 text-gray-500 cursor-not-allowed border border-gray-300'
+                                  }`}
+                                  title={
+                                    isFullyPassed
+                                      ? 'Proceed to enroll & deploy this trainee to their designated HTE'
+                                      : 'Approve all required uploaded documents first to unlock HTE enrollment & deployment'
+                                  }
+                                >
+                                  {isFullyPassed ? <Building size={14} /> : <Lock size={13} />}
+                                  <span>Enroll &amp; Deploy to HTE →</span>
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </div>
                       );
@@ -6219,24 +6428,41 @@ export function AdminEmployees() {
 
                               <button
                                 type="button"
+                                disabled={!hasFile}
                                 onClick={async () => {
+                                  if (!hasFile) {
+                                    toast.warning(`Trainee has not uploaded "${docItem.title}" yet.`);
+                                    return;
+                                  }
                                   const newDocStatus: 'passed' | 'pending' = isPassed ? 'pending' : 'passed';
                                   const currentDocs = selectedEmp.submittedDocuments || {};
+                                  const existingDoc = getTraineeDocItem(currentDocs, docItem.key);
                                   const updatedDocs: TraineeDocuments = {
                                     ...currentDocs,
                                     [docItem.key]: {
-                                      ...(currentDocs[docItem.key] || {
-                                        name: `${docItem.title}.pdf`,
-                                        fileType: 'application/pdf',
-                                        size: 0,
+                                      ...(existingDoc || {
+                                        name: resolvedFiles[0]?.name || `${docItem.title}`,
+                                        fileType: resolvedFiles[0]?.fileType || 'application/pdf',
+                                        size: resolvedFiles[0]?.size || 1,
+                                        fileUrl: resolvedFiles[0]?.fileUrl,
+                                        dataUrl: resolvedFiles[0]?.dataUrl,
                                         uploadedAt: new Date().toISOString(),
                                       }),
                                       status: newDocStatus,
                                     },
                                   };
                                   const docKeys = REQUIRED_TRAINEE_DOC_KEYS;
-                                  const allPassed = docKeys.every((k) => updatedDocs[k]?.status === 'passed');
-                                  const anyPassed = docKeys.some((k) => updatedDocs[k]?.status === 'passed');
+                                  const customReqs = getCustomRequirementsForEmp(selectedEmp);
+                                  const allStdPassed = docKeys.every((k) => {
+                                    const d = getTraineeDocItem(updatedDocs, k);
+                                    return hasRealUploadedDocFile(d) && d?.status === 'passed';
+                                  });
+                                  const allCustomPassed = customReqs.every((cr) => {
+                                    const r = resolveCustomTraineeDoc({ ...selectedEmp, submittedDocuments: updatedDocs }, cr);
+                                    return r.hasFile && r.isPassed;
+                                  });
+                                  const allPassed = allStdPassed && allCustomPassed;
+                                  const anyPassed = docKeys.some((k) => getTraineeDocItem(updatedDocs, k)?.status === 'passed');
                                   const finalDocStatus = allPassed ? 'passed' : anyPassed ? 'partial' : 'pending';
 
                                   await updateEmployee(selectedEmp.id, {
@@ -6264,13 +6490,16 @@ export function AdminEmployees() {
                                       : `${docItem.title} marked as PENDING`
                                   );
                                 }}
-                                className={`py-1.5 px-3.5 rounded-xl text-xs font-bold border transition-all cursor-pointer shadow-2xs ${
-                                  isPassed
-                                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                                    : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
+                                className={`py-1.5 px-3.5 rounded-xl text-xs font-bold border transition-all shadow-2xs ${
+                                  !hasFile
+                                    ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                    : isPassed
+                                    ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100 cursor-pointer'
+                                    : 'bg-emerald-600 text-white border-emerald-600 hover:bg-emerald-700 shadow-emerald-200 cursor-pointer'
                                 }`}
+                                title={!hasFile ? 'Trainee must upload this document first before approval' : undefined}
                               >
-                                {isPassed ? 'Revoke' : '✓ Approve'}
+                                {!hasFile ? 'Awaiting Upload' : isPassed ? 'Revoke' : '✓ Approve'}
                               </button>
                             </div>
                           </div>
@@ -7035,12 +7264,18 @@ export function AdminEmployees() {
                     <button
                       type="button"
                       onClick={() => {
-                        const allIds = deployableTrainees.map((t) => t.id);
-                        setDeploySelectedStudentIds(allIds);
+                        const eligibleIds = deployableTrainees
+                          .filter((t) => !isPendingApprovalTrainee(t) || getTraineeEnrollmentDocGate(t).isDocsVerified)
+                          .map((t) => t.id);
+                        const skipped = deployableTrainees.length - eligibleIds.length;
+                        setDeploySelectedStudentIds(eligibleIds);
+                        if (skipped > 0) {
+                          toast.info(`Selected ${eligibleIds.length} document-verified trainee(s). ${skipped} pending trainee(s) require document check first.`);
+                        }
                       }}
                       className="text-xs font-bold text-blue-600 hover:text-blue-800 cursor-pointer"
                     >
-                      Select All Filtered ({deployableTrainees.length})
+                      Select All Verified ({deployableTrainees.filter((t) => !isPendingApprovalTrainee(t) || getTraineeEnrollmentDocGate(t).isDocsVerified).length})
                     </button>
                     <span className="text-slate-300">•</span>
                     <button
@@ -7104,10 +7339,23 @@ export function AdminEmployees() {
                       const studentHteName = (student.companyName && !isInvalidHteCompany(student.companyName))
                         ? student.companyName
                         : (student.hteId && hteLookup[student.hteId]?.companyName ? hteLookup[student.hteId].companyName : null);
+                      const docGate = getTraineeEnrollmentDocGate(student);
+                      const isPendingStudent = isPendingApprovalTrainee(student);
+                      const blockedByDocs = isPendingStudent && !docGate.isDocsVerified;
                       return (
                         <div
                           key={student.id}
                           onClick={() => {
+                            if (blockedByDocs) {
+                              setBatchDeployOpen(false);
+                              openReview(student);
+                              toast.warning(
+                                docGate.missingCount > 0
+                                  ? `${student.name} has uploaded ${docGate.uploadedCount}/${docGate.totalRequired} required documents (${docGate.missingCount} missing). Inspecting uploaded documents...`
+                                  : `Please check and approve ${student.name}'s uploaded OJT documents first before enrolling & deploying to an HTE.`
+                              );
+                              return;
+                            }
                             setDeploySelectedStudentIds((prev) =>
                               prev.includes(student.id)
                                 ? prev.filter((id) => id !== student.id)
@@ -7115,25 +7363,54 @@ export function AdminEmployees() {
                             );
                           }}
                           className={`flex items-center justify-between p-3 cursor-pointer transition-colors ${
-                            isSelected ? 'bg-blue-50/70' : 'hover:bg-slate-50'
+                            isSelected
+                              ? 'bg-blue-50/70'
+                              : blockedByDocs
+                              ? 'bg-amber-50/30 hover:bg-amber-50/60'
+                              : 'hover:bg-slate-50'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-3 min-w-0">
                             <input
                               type="checkbox"
                               checked={isSelected}
+                              disabled={blockedByDocs}
                               onChange={() => {}}
-                              className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 pointer-events-none"
+                              className="rounded text-blue-600 focus:ring-blue-500 h-4 w-4 pointer-events-none disabled:opacity-40"
                             />
-                            <div>
-                              <p className="text-xs font-bold text-slate-900">{student.name}</p>
-                              <p className="text-[11px] text-slate-500 font-mono">
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-slate-900 truncate">{student.name}</p>
+                              <p className="text-[11px] text-slate-500 font-mono truncate">
                                 {student.employeeId || student.email} • {student.course || student.department || 'Trainee'}
                               </p>
                             </div>
                           </div>
 
-                          <div className="text-right">
+                          <div className="flex items-center gap-2 shrink-0">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setBatchDeployOpen(false);
+                                openReview(student);
+                              }}
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-bold border inline-flex items-center gap-1 cursor-pointer ${
+                                docGate.isDocsVerified
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                  : docGate.allUploaded
+                                  ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100'
+                                  : 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                              }`}
+                              title="Click to inspect trainee's uploaded OJT documents"
+                            >
+                              <FileCheck size={10} />
+                              {docGate.isDocsVerified
+                                ? `✓ ${docGate.totalRequired}/${docGate.totalRequired} Docs Verified`
+                                : docGate.allUploaded
+                                ? `Check Docs (${docGate.uploadedCount}/${docGate.totalRequired})`
+                                : `${docGate.uploadedCount}/${docGate.totalRequired} Uploaded`}
+                            </button>
+
                             {isAssigned && studentHteName ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
                                 {studentHteName}
