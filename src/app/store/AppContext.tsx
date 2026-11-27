@@ -2014,184 +2014,31 @@ export function AppProvider({ children }: { children: ReactNode }) {
           saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
           return merged;
         });
+      } else if (type === 'employee_updated' && payload.id) {
+        setEmployees((prev) => {
+          const next = prev.map((emp) =>
+            emp.id === payload.id || emp.employeeId === payload.id ? { ...emp, ...(payload.updates || {}) } : emp
+          );
+          saveToStorage(STORAGE_KEYS.EMPLOYEES, next);
+          return next;
+        });
+      } else if (type === 'attendance_updated' && payload.record) {
+        setTimeRecords((prev) => {
+          const merged = mergeTimeRecords([payload.record], prev);
+          saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+          return merged;
+        });
+      } else if (type === 'evaluation_updated' && Array.isArray(payload.evaluations)) {
+        setEvaluations((prev) => {
+          const merged = mergeEvaluations(payload.evaluations, prev);
+          saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
+          return merged;
+        });
       }
     });
 
     return unsubscribe;
   }, [setEmployees]);
-
-  // Real-time Supabase Broadcast Subscription across all 3 roles (Instructor, Employee/Trainee, HTE)
-  useEffect(() => {
-    if (!useSupabase || !currentUser) return;
-
-    const channel = supabase
-      .channel('public-realtime-system-binding')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'geofence_zones' }, async () => {
-        try {
-          const supabaseZones = await supabaseService.fetchGeofenceZones();
-          const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
-          if (sanitizedZones.length > 0) {
-            setGeofenceZones(sanitizedZones);
-            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
-          }
-        } catch (err) {
-          console.error('Real-time geofence_zones sync error:', err);
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'employees' }, async () => {
-        try {
-          const [supabaseEmployees, supabaseZones] = await Promise.all([
-            supabaseService.fetchEmployees(),
-            supabaseService.fetchGeofenceZones(),
-          ]);
-          setEmployees((prev) => {
-            const merged = mergeEmployees(supabaseEmployees, prev);
-            saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
-            return merged;
-          });
-          const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
-          if (sanitizedZones.length > 0) {
-            setGeofenceZones(sanitizedZones);
-            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
-          }
-
-          // If current logged-in user is updated, keep currentUser in sync immediately
-          if (currentUser && currentUser.id !== 'admin') {
-            const freshSelf = supabaseEmployees.find(
-              (e) =>
-                e.id === currentUser.id ||
-                e.employeeId === currentUser.employeeId ||
-                (currentUser.email && e.email && normalizeEmail(e.email) === normalizeEmail(currentUser.email))
-            );
-            if (freshSelf) {
-              setCurrentUser((prev) => {
-                if (!prev) return prev;
-                const updated = {
-                  ...prev,
-                  ...freshSelf,
-                  registrationLocation: freshSelf.registrationLocation || prev.registrationLocation,
-                  registrationAddress: freshSelf.registrationAddress || prev.registrationAddress,
-                  registrationRadius: freshSelf.registrationRadius || prev.registrationRadius,
-                  geofenceOverride: freshSelf.geofenceOverride || (prev as any).geofenceOverride,
-                  companyName: freshSelf.companyName || prev.companyName,
-                  companyAddress: freshSelf.companyAddress || (prev as any).companyAddress,
-                  hteId: freshSelf.hteId || (prev as any).hteId,
-                };
-                saveToStorage(STORAGE_KEYS.CURRENT_USER, updated);
-                return updated as any;
-              });
-            } else {
-              const stillExists = supabaseEmployees.some(
-                (e) => (e.id === currentUser.id || normalizeEmail(e.email) === normalizeEmail(currentUser.email || '')) && e.active !== false
-              );
-              if (!stillExists) {
-                console.warn('Current user account deleted in database. Forcing logout.');
-                clearAuthStorage();
-                setCurrentUser(null);
-                supabase.auth.signOut().catch(() => {});
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Real-time employees/geofence sync error:', err);
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'host_supervisors' }, async () => {
-        try {
-          const [supabaseHostSupervisors, supabaseZones] = await Promise.all([
-            supabaseService.fetchHostSupervisors(),
-            supabaseService.fetchGeofenceZones(),
-          ]);
-          if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) {
-            setHostSupervisors((prev) => {
-              const merged = mergeHostSupervisors(supabaseHostSupervisors, prev);
-              saveToStorage(STORAGE_KEYS.HOST_SUPERVISORS, merged);
-              return merged;
-            });
-            // If current logged in user is this host supervisor, keep in sync
-            if (currentUser) {
-              const freshHost = supabaseHostSupervisors.find(
-                (h) =>
-                  h.id === currentUser.id ||
-                  h.employeeId === currentUser.employeeId ||
-                  (currentUser.email && h.email && normalizeEmail(h.email) === normalizeEmail(currentUser.email))
-              );
-              if (freshHost) {
-                setCurrentUser((prev) => {
-                  if (!prev) return prev;
-                  const updated = {
-                    ...prev,
-                    name: freshHost.name || prev.name,
-                    companyName: freshHost.companyName || prev.companyName,
-                    companyAddress: freshHost.companyAddress || (prev as any).companyAddress,
-                    registrationLocation: freshHost.registrationLocation || prev.registrationLocation,
-                    registrationAddress: freshHost.registrationAddress || (prev as any).registrationAddress,
-                    registrationRadius: freshHost.registrationRadius || (prev as any).registrationRadius,
-                  };
-                  saveToStorage(STORAGE_KEYS.CURRENT_USER, updated);
-                  return updated as any;
-                });
-              }
-            }
-          }
-          const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
-          if (sanitizedZones.length > 0) {
-            setGeofenceZones(sanitizedZones);
-            saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
-          }
-        } catch (err) {
-          console.error('Real-time host_supervisors sync error:', err);
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'time_records' }, async (payload) => {
-        try {
-          if (payload.new && (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE')) {
-            const transformed = supabaseService.transformSupabaseTimeRecord(payload.new);
-            setTimeRecords((prev) => {
-              const updated = [transformed, ...prev.filter((r) => r.id !== transformed.id)];
-              saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
-              return updated;
-            });
-          } else if (payload.old && payload.eventType === 'DELETE') {
-            setTimeRecords((prev) => {
-              const updated = prev.filter((r) => r.id !== (payload.old as any).id);
-              saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
-              return updated;
-            });
-          }
-        } catch (err) {
-          console.error('Real-time time_records sync error:', err);
-        }
-      })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'evaluations' }, async () => {
-        try {
-          const freshEvals = await supabaseService.fetchEvaluations();
-          if (freshEvals && freshEvals.length > 0) {
-            setEvaluations((prev) => {
-              const merged = mergeEvaluations(freshEvals, prev);
-              saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
-              return merged;
-            });
-          }
-        } catch (err) {
-          console.error('Real-time evaluations sync error:', err);
-        }
-      })
-      .subscribe();
-
-    const handlePageHide = () => {
-      try {
-        supabase.removeChannel(channel);
-      } catch {}
-    };
-
-    window.addEventListener('pagehide', handlePageHide);
-
-    return () => {
-      window.removeEventListener('pagehide', handlePageHide);
-      supabase.removeChannel(channel);
-    };
-  }, [useSupabase, currentUser]);
 
   const lastRefreshTimeRef = useRef<number>(0);
   const isRefreshingRef = useRef<boolean>(false);
@@ -2201,64 +2048,50 @@ export function AppProvider({ children }: { children: ReactNode }) {
     currentUserRef.current = currentUser;
   }, [currentUser]);
 
-  // Periodic polling & window focus auto-sync across all open tabs/devices
+  // Consolidated Nano-safe cloud synchronization (2 cached endpoints instead of 14 parallel DB queries; 0 WAL listeners!)
   const refreshData = useCallback(async (options?: { force?: boolean }) => {
     if (!useSupabase && !isSupabaseConfigured()) return;
     const activeUser = currentUserRef.current;
     if (!activeUser && !options?.force) return;
     if (isRefreshingRef.current) return;
     const now = Date.now();
-    // Allow explicit forced refreshes with an 8s guard against duplicate mount/focus storms, 60s for background polls
-    const cooldown = options?.force ? 8000 : 60000;
+    // 25s dedupe guard on forced page-mount refreshes so navigating tabs fires 0 extra server calls; 180s for idle background sync
+    const cooldown = options?.force ? 25000 : 180000;
     if (now - lastRefreshTimeRef.current < cooldown) {
       return;
     }
     isRefreshingRef.current = true;
     lastRefreshTimeRef.current = now;
     try {
-      // Tier 1: Core Dashboard Data (Employees, Host Supervisors, Geofence Zones, Settings, Time Records)
-      // Loaded first with Promise.allSettled so the dashboard renders instantly without blocking on heavy background storage
-      const [
-        empSettled,
-        hostsSettled,
-        zonesSettled,
-        settingsSettled,
-        recordsSettled,
-        traineeDocsStoreSettled,
-      ] = await Promise.allSettled([
-        supabaseService.fetchEmployees(),
-        supabaseService.fetchHostSupervisors(),
-        supabaseService.fetchGeofenceZones(),
-        supabaseService.fetchSettings(),
-        activeUser?.role === 'employee' && activeUser.id
-          ? supabaseService.fetchTimeRecordsForEmployee(
-              activeUser.id,
-              activeUser.employeeId ? [activeUser.employeeId] : []
-            )
-          : supabaseService.fetchTimeRecords(),
-        supabaseService.fetchAllTraineeDocumentsStore(),
+      const [coreSettled, storesSettled] = await Promise.allSettled([
+        supabaseService.fetchCoreBootstrap(),
+        supabaseService.fetchBootstrapStores(),
       ]);
 
-      const rawSupabaseEmployees = empSettled.status === 'fulfilled' ? empSettled.value : null;
-      const traineeDocsStore =
-        traineeDocsStoreSettled.status === 'fulfilled' && traineeDocsStoreSettled.value
-          ? traineeDocsStoreSettled.value
-          : {};
+      const core = coreSettled.status === 'fulfilled' ? coreSettled.value : null;
+      const stores = storesSettled.status === 'fulfilled' ? storesSettled.value : null;
+
+      const rawSupabaseEmployees = core?.employees || null;
+      const supabaseHostSupervisors = core?.hostSupervisors || null;
+      const supabaseZones = core?.geofenceZones || null;
+      const supabaseSettings = core?.settings || null;
+
+      const traineeDocsStore = stores?.traineeDocuments || {};
       const supabaseEmployees = rawSupabaseEmployees
         ? rawSupabaseEmployees.map((emp) => {
             const storeHit =
               traineeDocsStore[emp.id] ||
               (emp.employeeId ? traineeDocsStore[emp.employeeId] : undefined) ||
               Object.values(traineeDocsStore).find(
-                (s) =>
+                (s: any) =>
                   s &&
                   (s.id === emp.id ||
-                    (emp.employeeId && s.employeeId && s.employeeId.toLowerCase() === emp.employeeId.toLowerCase()) ||
-                    (emp.email && s.email && s.email.toLowerCase() === emp.email.toLowerCase()))
+                    (emp.employeeId && s.employeeId && String(s.employeeId).toLowerCase() === emp.employeeId.toLowerCase()) ||
+                    (emp.email && s.email && String(s.email).toLowerCase() === emp.email.toLowerCase()))
               );
             if (!storeHit?.documents || Object.keys(storeHit.documents).length === 0) return emp;
             const combinedDocs: TraineeDocuments = { ...(emp.submittedDocuments || {}) };
-            for (const [dk, dv] of Object.entries(storeHit.documents)) {
+            for (const [dk, dv] of Object.entries(storeHit.documents as Record<string, any>)) {
               if (!dv || typeof dv !== 'object') continue;
               const prev = combinedDocs[dk];
               const incFiles = Array.isArray(dv.files) ? dv.files : [];
@@ -2280,19 +2113,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             };
           })
         : null;
-      const supabaseHostSupervisors = hostsSettled.status === 'fulfilled' ? hostsSettled.value : null;
-      const supabaseZones = zonesSettled.status === 'fulfilled' ? zonesSettled.value : null;
-      const supabaseSettings = settingsSettled.status === 'fulfilled' ? settingsSettled.value : null;
-      const supabaseRecords = recordsSettled.status === 'fulfilled' ? recordsSettled.value : null;
 
-      // Immediately commit Core Data
       if (supabaseEmployees && supabaseEmployees.length > 0) {
         setEmployees((prev) => {
           const merged = mergeEmployees(supabaseEmployees, prev);
           saveToStorage(STORAGE_KEYS.EMPLOYEES, merged);
 
-          // Real-time synchronization: Keep currentUser in sync ONLY when meaningful fields actually changed
-          // (avoids creating a new currentUser reference on every poll, which previously caused an infinite re-sync loop!)
           const curU = currentUserRef.current;
           if (curU) {
             const matchedEmp = merged.find(
@@ -2356,14 +2182,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      if (supabaseRecords && supabaseRecords.length > 0) {
-        setTimeRecords((prev) => {
-          const merged = mergeTimeRecords(supabaseRecords, prev);
-          saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-          return merged;
-        });
-      }
-
       const sanitizedZones = sanitizeGeofenceZones(supabaseZones);
       if (sanitizedZones && sanitizedZones.length > 0) {
         setGeofenceZones(sanitizedZones);
@@ -2392,98 +2210,67 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       }
 
-      // Tier 2: Background Data (Evaluations, Announcements, Submissions, Feedback, Documents, DTTR Store)
-      const [
-        evalSettled,
-        annSettled,
-        subSettled,
-        feedbackSettled,
-        docsSettled,
-        reportsSettled,
-        dttrStoreSettled,
-      ] = await Promise.allSettled([
-        supabaseService.fetchEvaluations(),
-        supabaseService.fetchAnnouncements(),
-        supabaseService.fetchAnnouncementSubmissions(),
-        supabaseService.fetchHostFeedback(),
-        supabaseService.fetchRequiredDocumentsFromStorage(),
-        supabaseService.fetchMonitoringReportsFromStorage(),
-        supabaseService.fetchDttrStoreFromStorage(),
-      ]);
-
-      const supabaseEvaluations = evalSettled.status === 'fulfilled' ? evalSettled.value : null;
-      const supabaseAnnouncements = annSettled.status === 'fulfilled' ? annSettled.value : null;
-      const supabaseSubmissions = subSettled.status === 'fulfilled' ? subSettled.value : null;
-      const supabaseHostFeedback = feedbackSettled.status === 'fulfilled' ? feedbackSettled.value : null;
-      const supabaseRequiredDocs = docsSettled.status === 'fulfilled' ? docsSettled.value : null;
-      const supabaseMonitoringReports = reportsSettled.status === 'fulfilled' ? reportsSettled.value : null;
-      const supabaseDttrStore = dttrStoreSettled.status === 'fulfilled' ? dttrStoreSettled.value : null;
-
-      if (supabaseDttrStore && Array.isArray(supabaseDttrStore.monthlyDttrs) && supabaseDttrStore.monthlyDttrs.length > 0) {
-        setMonthlyDttrs((prev) => {
-          const merged = supabaseService.mergeMonthlyDttrsList(supabaseDttrStore.monthlyDttrs, prev);
-          saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, merged);
-          return merged;
-        });
-      }
-
-      if (supabaseDttrStore && Array.isArray(supabaseDttrStore.timeRecords) && supabaseDttrStore.timeRecords.length > 0) {
-        setTimeRecords((prev) => {
-          const merged = mergeTimeRecords(supabaseDttrStore.timeRecords, prev);
-          saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
-          return merged;
-        });
-      }
-
-      if (Array.isArray(supabaseMonitoringReports) && supabaseMonitoringReports.length > 0) {
-        setMonitoringReports((prev) => {
-          const merged = supabaseService.mergeMonitoringReportsList(supabaseMonitoringReports, prev);
-          saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
-          return merged;
-        });
-      }
-
-      if (supabaseRequiredDocs && supabaseRequiredDocs.length > 0) {
-        setRequiredDocuments((prev) => {
-          const merged = [...supabaseRequiredDocs];
-          for (const p of prev) {
-            if (!merged.some((m) => m.id === p.id || m.title.toLowerCase().trim() === p.title.toLowerCase().trim())) {
-              merged.push(p);
-            }
-          }
-          saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, merged);
-          return merged;
-        });
-      }
-
-
-      if (supabaseEvaluations && supabaseEvaluations.length > 0) {
-        setEvaluations((prev) => {
-          const merged = mergeEvaluations(supabaseEvaluations, prev);
-          saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
-          return merged;
-        });
-      }
-      if (supabaseAnnouncements && supabaseAnnouncements.length > 0) {
-        setAnnouncements((prev) => {
-          const merged = [...supabaseAnnouncements];
-          for (const p of prev) { if (!merged.some(m => m.id === p.id)) merged.push(p); }
-          const sorted = sortAnnouncements(merged);
-          saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, sorted);
-          return sorted;
-        });
-        const fromAnn = extractCommentsFromAnnouncements(supabaseAnnouncements);
-        if (fromAnn.length > 0) {
-          setAnnouncementComments((prev) => {
-            const merged = deduplicateComments([...fromAnn, ...prev]);
-            saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+      if (stores) {
+        if (Array.isArray(stores.dttr?.monthlyDttrs) && stores.dttr.monthlyDttrs.length > 0) {
+          setMonthlyDttrs((prev) => {
+            const merged = supabaseService.mergeMonthlyDttrsList(stores.dttr.monthlyDttrs, prev);
+            saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, merged);
             return merged;
           });
         }
+        if (Array.isArray(stores.dttr?.timeRecords) && stores.dttr.timeRecords.length > 0) {
+          setTimeRecords((prev) => {
+            const merged = mergeTimeRecords(stores.dttr.timeRecords, prev);
+            saveToStorage(STORAGE_KEYS.TIME_RECORDS, merged);
+            return merged;
+          });
+        }
+        if (Array.isArray(stores.monitoringReports) && stores.monitoringReports.length > 0) {
+          setMonitoringReports((prev) => {
+            const merged = supabaseService.mergeMonitoringReportsList(stores.monitoringReports, prev);
+            saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
+            return merged;
+          });
+        }
+        if (Array.isArray(stores.requirements) && stores.requirements.length > 0) {
+          setRequiredDocuments((prev) => {
+            const merged = [...stores.requirements];
+            for (const p of prev) {
+              if (!merged.some((m) => m.id === p.id || m.title.toLowerCase().trim() === p.title.toLowerCase().trim())) {
+                merged.push(p);
+              }
+            }
+            saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENTS, merged);
+            return merged;
+          });
+        }
+        if (Array.isArray(stores.evaluations) && stores.evaluations.length > 0) {
+          setEvaluations((prev) => {
+            const merged = mergeEvaluations(stores.evaluations, prev);
+            saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
+            return merged;
+          });
+        }
+        if (Array.isArray(stores.announcements) && stores.announcements.length > 0) {
+          setAnnouncements((prev) => {
+            const merged = [...stores.announcements];
+            for (const p of prev) {
+              if (!merged.some((m) => m.id === p.id)) merged.push(p);
+            }
+            const sorted = sortAnnouncements(merged);
+            saveToStorage(STORAGE_KEYS.ANNOUNCEMENTS, sorted);
+            return sorted;
+          });
+          const fromAnn = extractCommentsFromAnnouncements(stores.announcements);
+          if (fromAnn.length > 0) {
+            setAnnouncementComments((prev) => {
+              const merged = deduplicateComments([...fromAnn, ...prev]);
+              saveToStorage(STORAGE_KEYS.ANNOUNCEMENT_COMMENTS, merged);
+              return merged;
+            });
+          }
+        }
       }
-      if (supabaseSubmissions && supabaseSubmissions.length > 0) setAnnouncementSubmissions(supabaseSubmissions);
-      if (supabaseHostFeedback && supabaseHostFeedback.length > 0) setHostFeedback(supabaseHostFeedback);
-      if (supabaseHostSupervisors && supabaseHostSupervisors.length > 0) setHostSupervisors(supabaseHostSupervisors);
     } catch (err) {
       console.warn('Manual or auto refreshData failed:', err);
     } finally {
@@ -2540,37 +2327,30 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     });
 
-    // Supabase Realtime: Immediately synchronize announcements across ALL devices & accounts
-    const annChannel = supabase
-      .channel('public:announcements_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, () => {
-        refreshData({ force: true });
-      })
-      .subscribe();
-
-    // Periodic fallback sync every 2 minutes (Realtime WebSockets handle instant live updates with zero DB load)
+    // Periodic fallback sync every 3 minutes (zero-DB Realtime Broadcast handles instant <100ms live updates)
     const syncInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
       refreshData();
-    }, 120000);
+    }, 180000);
 
     return () => {
       window.removeEventListener('focus', onFocus);
       clearInterval(syncInterval);
-      annChannel.unsubscribe();
       authListener?.subscription?.unsubscribe();
     };
   }, [refreshData, useSupabase, currentUser?.id]);
 
-  // Cross-Device Permanent Attendance Synchronization:
-  // When a trainee or supervisor logs in or loads on any device (phone, laptop, tablet),
-  // immediately pull their authentic database time records so all timestamps are permanently visible.
+  // Cross-Device Permanent Attendance Synchronization (throttled to avoid duplicate polling on Nano Postgres):
+  const lastAttendancePullRef = useRef<number>(0);
   useEffect(() => {
     if (!currentUser?.id && !currentUser?.employeeId) return;
     const lookupId = currentUser.id || currentUser.employeeId || '';
     const altIds = [currentUser.employeeId, currentUser.id, currentUser.email].filter(Boolean) as string[];
 
-    const pullAttendance = () => {
+    const pullAttendance = (force = false) => {
+      const now = Date.now();
+      if (!force && now - lastAttendancePullRef.current < 60000) return;
+      lastAttendancePullRef.current = now;
       supabaseService.fetchTimeRecordsForEmployee(lookupId, altIds)
         .then((records) => {
           if (Array.isArray(records) && records.length > 0) {
@@ -2584,22 +2364,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         .catch((err) => console.warn('[AppContext] Cloud attendance sync notice:', err));
     };
 
-    pullAttendance();
+    pullAttendance(true);
 
-    // Re-pull whenever the app comes back to the foreground (phones suspend background tabs)
     const onVisible = () => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      pullAttendance();
+      pullAttendance(false);
     };
     document.addEventListener('visibilitychange', onVisible);
-    window.addEventListener('focus', onVisible);
-    window.addEventListener('pageshow', onVisible);
-    const interval = setInterval(onVisible, 120000);
     return () => {
       document.removeEventListener('visibilitychange', onVisible);
-      window.removeEventListener('focus', onVisible);
-      window.removeEventListener('pageshow', onVisible);
-      clearInterval(interval);
     };
   }, [currentUser?.id, currentUser?.employeeId]);
 

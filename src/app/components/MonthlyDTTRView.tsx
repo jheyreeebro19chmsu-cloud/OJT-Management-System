@@ -168,7 +168,7 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
     window.addEventListener('focus', onFocusOrVisible);
     document.addEventListener('visibilitychange', onFocusOrVisible);
     window.addEventListener('ojt_live_dttr_updated', onLiveDttrUpdated as EventListener);
-    const interval = setInterval(onFocusOrVisible, 90000);
+    const interval = setInterval(onFocusOrVisible, 240000);
 
     return () => {
       mounted = false;

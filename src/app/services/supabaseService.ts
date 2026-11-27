@@ -49,10 +49,169 @@ export const EMPLOYEE_CORE_COLUMNS = [
   'created_at',
 ].join(',');
 
+let _coreBootstrapInflight: Promise<{
+  employees: Employee[];
+  hostSupervisors: HostSupervisor[];
+  geofenceZones: GeofenceZone[];
+  settings: AppSettings | null;
+} | null> | null = null;
+let _coreBootstrapCache: {
+  data: {
+    employees: Employee[];
+    hostSupervisors: HostSupervisor[];
+    geofenceZones: GeofenceZone[];
+    settings: AppSettings | null;
+  } | null;
+  expiresAt: number;
+} = { data: null, expiresAt: 0 };
+
+export async function fetchCoreBootstrap(): Promise<{
+  employees: Employee[];
+  hostSupervisors: HostSupervisor[];
+  geofenceZones: GeofenceZone[];
+  settings: AppSettings | null;
+} | null> {
+  if (_coreBootstrapCache.data && _coreBootstrapCache.expiresAt > Date.now()) {
+    return _coreBootstrapCache.data;
+  }
+  if (_coreBootstrapInflight) {
+    return _coreBootstrapInflight;
+  }
+
+  _coreBootstrapInflight = (async () => {
+    try {
+      const res = await fetch('/api/employees?includeMeta=1');
+      if (res.ok) {
+        const raw = await res.json();
+        if (raw && typeof raw === 'object' && Array.isArray(raw.employees)) {
+          const employees = raw.employees.map(transformSupabaseEmployee);
+          const hostSupervisors = Array.isArray(raw.hostSupervisors)
+            ? raw.hostSupervisors.map(transformSupabaseHostSupervisor)
+            : [];
+          const geofenceZones: GeofenceZone[] = Array.isArray(raw.geofenceZones)
+            ? raw.geofenceZones
+                .filter((zone: any) => !zone.name?.toLowerCase().includes('main training center') && zone.id !== 'zone-1')
+                .map((zone: any) => ({
+                  id: zone.id,
+                  name: zone.name,
+                  address: zone.address,
+                  lat: Number(zone.lat),
+                  lng: Number(zone.lng),
+                  radius: Number(zone.radius) || 100,
+                  active: zone.active !== false,
+                  academicYear: zone.academic_year || undefined,
+                  employeeId: zone.employee_id || zone.employeeId || undefined,
+                  employee_id: zone.employee_id || zone.employeeId || undefined,
+                }))
+            : [];
+          let settings: AppSettings | null = null;
+          if (raw.settings && typeof raw.settings === 'object') {
+            const s = raw.settings;
+            const resolvedYears = Array.from(
+              new Set([
+                ...(Array.isArray(s.academic_years) ? s.academic_years : []),
+                '2025-2026',
+                '2026-2027',
+              ])
+            );
+            settings = {
+              workStartTime: s.work_start_time || '08:00',
+              workEndTime: s.work_end_time || '17:00',
+              lateThresholdMinutes: s.late_threshold_minutes ?? 15,
+              geofenceEnabled: s.geofence_enabled !== false,
+              facialRecognitionEnabled: s.facial_recognition_enabled !== false,
+              academicYears: resolvedYears,
+              activeAcademicYear: s.active_academic_year || '2026-2027',
+            };
+          }
+          const out = { employees, hostSupervisors, geofenceZones, settings };
+          _coreBootstrapCache = { data: out, expiresAt: Date.now() + 12000 };
+          return out;
+        }
+      }
+    } catch {}
+    return _coreBootstrapCache.data || null;
+  })().finally(() => {
+    _coreBootstrapInflight = null;
+  });
+
+  return _coreBootstrapInflight;
+}
+
+let _storesBootstrapInflight: Promise<{
+  traineeDocuments: Record<string, any>;
+  requirements: RequiredDocument[];
+  monitoringReports: MonitoringReport[];
+  evaluations: Evaluation[];
+  announcements: Announcement[];
+  dttr: { monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] };
+} | null> | null = null;
+let _storesBootstrapCache: {
+  data: {
+    traineeDocuments: Record<string, any>;
+    requirements: RequiredDocument[];
+    monitoringReports: MonitoringReport[];
+    evaluations: Evaluation[];
+    announcements: Announcement[];
+    dttr: { monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] };
+  } | null;
+  expiresAt: number;
+} = { data: null, expiresAt: 0 };
+
+export async function fetchBootstrapStores(): Promise<{
+  traineeDocuments: Record<string, any>;
+  requirements: RequiredDocument[];
+  monitoringReports: MonitoringReport[];
+  evaluations: Evaluation[];
+  announcements: Announcement[];
+  dttr: { monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] };
+} | null> {
+  if (_storesBootstrapCache.data && _storesBootstrapCache.expiresAt > Date.now()) {
+    return _storesBootstrapCache.data;
+  }
+  if (_storesBootstrapInflight) {
+    return _storesBootstrapInflight;
+  }
+
+  _storesBootstrapInflight = (async () => {
+    try {
+      const res = await fetch('/api/documents?action=get-bootstrap-stores');
+      if (res.ok) {
+        const raw = await res.json();
+        if (raw && typeof raw === 'object') {
+          const out = {
+            traineeDocuments:
+              raw.traineeDocuments && typeof raw.traineeDocuments === 'object' && !Array.isArray(raw.traineeDocuments)
+                ? raw.traineeDocuments
+                : {},
+            requirements: Array.isArray(raw.requirements) ? (raw.requirements as RequiredDocument[]) : [],
+            monitoringReports: Array.isArray(raw.monitoringReports)
+              ? mergeMonitoringReportsList(raw.monitoringReports)
+              : [],
+            evaluations: Array.isArray(raw.evaluations) ? mergeEvaluationsList(raw.evaluations) : [],
+            announcements: Array.isArray(raw.announcements) ? sortAnnouncements(raw.announcements as Announcement[]) : [],
+            dttr: {
+              monthlyDttrs: Array.isArray(raw.dttr?.monthlyDttrs) ? mergeMonthlyDttrsList(raw.dttr.monthlyDttrs) : [],
+              timeRecords: Array.isArray(raw.dttr?.timeRecords) ? raw.dttr.timeRecords : [],
+            },
+          };
+          _storesBootstrapCache = { data: out, expiresAt: Date.now() + 12000 };
+          return out;
+        }
+      }
+    } catch {}
+    return _storesBootstrapCache.data || null;
+  })().finally(() => {
+    _storesBootstrapInflight = null;
+  });
+
+  return _storesBootstrapInflight;
+}
+
 export async function fetchEmployees(): Promise<Employee[]> {
   if (!isSupabaseConfigured()) return [];
 
-  // 1. Primary path: Service role endpoint /api/employees (bypasses RLS to guarantee complete student documents and pass status)
+  // 1. Primary path: Service role endpoint /api/employees (cached on server; avoids browser PostgREST connection stampedes)
   try {
     const res = await fetch('/api/employees');
     if (res.ok) {
@@ -61,38 +220,19 @@ export async function fetchEmployees(): Promise<Employee[]> {
         return apiData.map(transformSupabaseEmployee);
       }
     }
-  } catch {
-    // Fall back silently to direct Supabase query below
-  }
+  } catch {}
 
-  // 2. Direct Supabase fallback
+  // 2. Public CDN fallback (`accounts_index.json` — 0 Postgres connections!)
   try {
-    const { data, error } = await supabase
-      .from('employees')
-      .select(EMPLOYEE_CORE_COLUMNS)
-      .order('created_at', { ascending: false })
-      .limit(1000);
-
-    if (!error && data && data.length > 0) {
-      return data.map(transformSupabaseEmployee);
-    }
-
-    if (error) {
-      console.warn('Optimized fetchEmployees query notice, trying minimal columns fallback:', error.message);
-      const { data: minimalData, error: minimalError } = await supabase
-        .from('employees')
-        .select('id, name, employee_id, email, department, position, company_name, supervisor_name, school_name, campus, course, start_date, end_date, required_hours, photo, face_registered, active, academic_year, instructor_id, hte_id, application_status, registration_location, created_at')
-        .order('created_at', { ascending: false })
-        .limit(1000);
-
-      if (!minimalError && minimalData) {
-        return minimalData.map(transformSupabaseEmployee);
+    const base = (import.meta.env.VITE_SUPABASE_URL || 'https://wooighmdckuoebsuegzz.supabase.co').replace(/\/$/, '');
+    const pubRes = await fetch(`${base}/storage/v1/object/public/face-photos/settings/accounts_index.json`);
+    if (pubRes.ok) {
+      const parsed = await pubRes.json();
+      if (Array.isArray(parsed?.employees) && parsed.employees.length > 0) {
+        return parsed.employees.map(transformSupabaseEmployee);
       }
-      console.error('Error fetching employees fallback:', minimalError);
     }
-  } catch (err) {
-    console.error('fetchEmployees exception:', err);
-  }
+  } catch {}
 
   return [];
 }
@@ -246,7 +386,11 @@ export type LiveSyncEventType =
   | 'announcement_submission'
   | 'document_uploaded'
   | 'requirement_updated'
-  | 'monitoring_updated';
+  | 'monitoring_updated'
+  | 'employee_updated'
+  | 'attendance_updated'
+  | 'evaluation_updated'
+  | 'geofence_updated';
 
 type LiveSyncListener = (event: { type: LiveSyncEventType; payload: any; senderId?: string }) => void;
 
@@ -1018,6 +1162,8 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
     if (res.ok) {
       const resJson = await res.json().catch(() => null);
       if (!resJson || resJson.success !== false) {
+        _coreBootstrapCache = { data: null, expiresAt: 0 };
+        broadcastLiveEvent('employee_updated', { id, updates });
         return true;
       }
     }
@@ -1076,11 +1222,12 @@ export async function fetchAllTraineeDocumentsStore(): Promise<Record<string, {
   documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial';
   updatedAt?: string;
 }>> {
-  // 1. Fast zero-DB CDN / API read
+  if (_storesBootstrapCache.data?.traineeDocuments) {
+    return _storesBootstrapCache.data.traineeDocuments;
+  }
+  // 1. Fast zero-DB CDN / API read (no cache-busting query string so CDN edge serves from RAM!)
   try {
-    const res = await fetch(`/api/documents?action=get-all-trainee-documents&t=${Math.floor(Date.now() / 4000)}`, {
-      cache: 'no-store',
-    });
+    const res = await fetch('/api/documents?action=get-all-trainee-documents');
     if (res.ok) {
       const parsed = await res.json();
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -1092,10 +1239,7 @@ export async function fetchAllTraineeDocumentsStore(): Promise<Record<string, {
   // 2. Direct public Storage CDN fallback
   try {
     const base = (import.meta.env.VITE_SUPABASE_URL || 'https://wooighmdckuoebsuegzz.supabase.co').replace(/\/$/, '');
-    const pubRes = await fetch(
-      `${base}/storage/v1/object/public/face-photos/settings/trainee_documents_store.json?t=${Math.floor(Date.now() / 4000)}`,
-      { cache: 'no-store' }
-    );
+    const pubRes = await fetch(`${base}/storage/v1/object/public/face-photos/settings/trainee_documents_store.json`);
     if (pubRes.ok) {
       const parsed = await pubRes.json();
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -2947,8 +3091,11 @@ import { sortAnnouncements } from '../utils/announcementHelper';
 
 
 export async function fetchAnnouncementsFromStorage(): Promise<Announcement[]> {
+  if (_storesBootstrapCache.data?.announcements?.length && _storesBootstrapCache.expiresAt > Date.now()) {
+    return _storesBootstrapCache.data.announcements;
+  }
   try {
-    const apiRes = await fetch(`/api/documents?action=get-announcements&t=${Date.now()}`, { cache: 'no-store' });
+    const apiRes = await fetch('/api/documents?action=get-announcements');
     if (apiRes.ok) {
       const data = await apiRes.json();
       if (Array.isArray(data) && data.length > 0) {
@@ -2959,8 +3106,8 @@ export async function fetchAnnouncementsFromStorage(): Promise<Announcement[]> {
 
   try {
     const pubRes = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/announcements_store.json?t=${Date.now()}`,
-      { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(4000) : undefined }
+      'https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/announcements_store.json',
+      { signal: AbortSignal.timeout ? AbortSignal.timeout(4000) : undefined }
     );
     if (pubRes.ok) {
       const data = await pubRes.json();
@@ -2975,6 +3122,7 @@ export async function fetchAnnouncementsFromStorage(): Promise<Announcement[]> {
 
 export async function saveAnnouncementsToStorage(announcements: Announcement[]): Promise<boolean> {
   if (!announcements || announcements.length === 0) return false;
+  _storesBootstrapCache = { data: null, expiresAt: 0 };
   try {
     const apiRes = await fetch('/api/documents', {
       method: 'POST',
@@ -4463,9 +4611,12 @@ export async function resetPasswordDirect(
 // ─── Departmental / Required Documents Cloud Sync ───────────────────────────
 
 export async function fetchRequiredDocumentsFromStorage(): Promise<RequiredDocument[]> {
-  // 1. Try server-side API proxy (service role)
+  if (_storesBootstrapCache.data?.requirements?.length && _storesBootstrapCache.expiresAt > Date.now()) {
+    return _storesBootstrapCache.data.requirements;
+  }
+  // 1. Try server-side API proxy (CDN/memory cached)
   try {
-    const apiRes = await fetch(`/api/documents?action=get-requirements&t=${Date.now()}`);
+    const apiRes = await fetch('/api/documents?action=get-requirements');
     if (apiRes.ok) {
       const data = await apiRes.json();
       if (Array.isArray(data) && data.length > 0) {
@@ -4474,10 +4625,10 @@ export async function fetchRequiredDocumentsFromStorage(): Promise<RequiredDocum
     }
   } catch {}
 
-  // 2. Direct public Supabase URL
+  // 2. Direct public Supabase CDN URL (without cache-busting query string!)
   try {
     const res = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/requirements_store.json?t=${Date.now()}`
+      'https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/requirements_store.json'
     );
     if (res.ok) {
       const data = await res.json();
@@ -4485,26 +4636,13 @@ export async function fetchRequiredDocumentsFromStorage(): Promise<RequiredDocum
         return data;
       }
     }
-  } catch {
-    // Fall back to Supabase client download below
-  }
-
-  // 3. Supabase client download
-  if (isSupabaseConfigured()) {
-    try {
-      const { data, error } = await supabase.storage.from('face-photos').download('settings/requirements_store.json');
-      if (!error && data) {
-        const text = await data.text();
-        const parsed = JSON.parse(text);
-        if (Array.isArray(parsed)) return parsed;
-      }
-    } catch {}
-  }
+  } catch {}
 
   return [];
 }
 
 export async function saveRequiredDocumentsToStorage(docs: RequiredDocument[]): Promise<boolean> {
+  _storesBootstrapCache = { data: null, expiresAt: 0 };
   broadcastLiveEvent('requirement_updated', { docs });
   // 1. Try server-side API proxy (service role)
   try {
@@ -4667,9 +4805,11 @@ export function mergeMonitoringReportsList(
 }
 
 export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringReport[]> {
-  // 1. Server-side API proxy (uses fresh signed URL to bypass CDN cache)
+  if (_storesBootstrapCache.data?.monitoringReports?.length && _storesBootstrapCache.expiresAt > Date.now()) {
+    return _storesBootstrapCache.data.monitoringReports;
+  }
   try {
-    const apiRes = await fetch(`/api/documents?action=get-monitoring-reports&t=${Date.now()}`, { cache: 'no-store' });
+    const apiRes = await fetch('/api/documents?action=get-monitoring-reports');
     if (apiRes.ok) {
       const data = await apiRes.json();
       if (Array.isArray(data)) {
@@ -4678,11 +4818,10 @@ export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringRep
     }
   } catch {}
 
-  // 2. Fallback: Direct cache-busted public Supabase URL with no-store
   try {
     const pubRes = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json`,
-      { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
+      'https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json',
+      { signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
     );
     if (pubRes.ok) {
       const data = await pubRes.json();
@@ -4696,6 +4835,7 @@ export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringRep
 }
 
 export async function saveMonitoringReportsToStorage(reports: MonitoringReport[]): Promise<boolean> {
+  _storesBootstrapCache = { data: null, expiresAt: 0 };
   const slimmed = slimMonitoringReportList(reports);
   broadcastLiveEvent('monitoring_updated', { reports: slimmed });
 
@@ -4806,8 +4946,11 @@ export function mergeEvaluationsList(
 }
 
 export async function fetchEvaluationsFromStorage(): Promise<Evaluation[]> {
+  if (_storesBootstrapCache.data?.evaluations?.length && _storesBootstrapCache.expiresAt > Date.now()) {
+    return _storesBootstrapCache.data.evaluations;
+  }
   try {
-    const apiRes = await fetch(`/api/documents?action=get-evaluations&t=${Date.now()}`, { cache: 'no-store' });
+    const apiRes = await fetch('/api/documents?action=get-evaluations');
     if (apiRes.ok) {
       const data = await apiRes.json();
       if (Array.isArray(data)) {
@@ -4818,8 +4961,8 @@ export async function fetchEvaluationsFromStorage(): Promise<Evaluation[]> {
 
   try {
     const pubRes = await fetch(
-      `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/evaluations_store.json`,
-      { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
+      'https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/evaluations_store.json',
+      { signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
     );
     if (pubRes.ok) {
       const data = await pubRes.json();
@@ -4833,6 +4976,8 @@ export async function fetchEvaluationsFromStorage(): Promise<Evaluation[]> {
 }
 
 export async function saveEvaluationsToStorage(evaluations: Evaluation[]): Promise<boolean> {
+  _storesBootstrapCache = { data: null, expiresAt: 0 };
+  broadcastLiveEvent('evaluation_updated', { evaluations });
   let mergedToSave = evaluations;
   try {
     const existingRemote = await fetchEvaluationsFromStorage();
@@ -4973,6 +5118,9 @@ export async function fetchDttrStoreFromStorage(): Promise<{
   monthlyDttrs: MonthlyDttrRecord[];
   timeRecords: TimeRecord[];
 }> {
+  if (_storesBootstrapCache.data?.dttr && _storesBootstrapCache.expiresAt > Date.now()) {
+    return _storesBootstrapCache.data.dttr;
+  }
   if (_dttrFetchCache.data && _dttrFetchCache.expiresAt > Date.now()) {
     return _dttrFetchCache.data;
   }
@@ -4983,8 +5131,8 @@ export async function fetchDttrStoreFromStorage(): Promise<{
   const p = (async (): Promise<{ monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] }> => {
     try {
       const pubRes = await fetch(
-        `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/dttr_store.json`,
-        { cache: 'no-cache', signal: AbortSignal.timeout ? AbortSignal.timeout(4500) : undefined }
+        'https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/dttr_store.json',
+        { signal: AbortSignal.timeout ? AbortSignal.timeout(4500) : undefined }
       );
       if (pubRes.ok) {
         const data = await pubRes.json();
@@ -4993,14 +5141,14 @@ export async function fetchDttrStoreFromStorage(): Promise<{
             monthlyDttrs: Array.isArray(data.monthlyDttrs) ? mergeMonthlyDttrsList(data.monthlyDttrs) : [],
             timeRecords: Array.isArray(data.timeRecords) ? data.timeRecords : [],
           };
-          _dttrFetchCache = { data: out, expiresAt: Date.now() + 6000, inflight: null };
+          _dttrFetchCache = { data: out, expiresAt: Date.now() + 25000, inflight: null };
           return out;
         }
       }
     } catch {}
 
     try {
-      const apiRes = await fetch(`/api/documents?action=get-dttr`, { cache: 'no-store' });
+      const apiRes = await fetch('/api/documents?action=get-dttr');
       if (apiRes.ok) {
         const data = await apiRes.json();
         if (data && typeof data === 'object') {
@@ -5008,7 +5156,7 @@ export async function fetchDttrStoreFromStorage(): Promise<{
             monthlyDttrs: Array.isArray(data.monthlyDttrs) ? mergeMonthlyDttrsList(data.monthlyDttrs) : [],
             timeRecords: Array.isArray(data.timeRecords) ? data.timeRecords : [],
           };
-          _dttrFetchCache = { data: out, expiresAt: Date.now() + 6000, inflight: null };
+          _dttrFetchCache = { data: out, expiresAt: Date.now() + 25000, inflight: null };
           return out;
         }
       }
@@ -5030,6 +5178,7 @@ export async function saveDttrStoreToStorage(payload: {
   timeRecords?: TimeRecord[];
 }): Promise<boolean> {
   // Immediately broadcast delta to all open Instructor, HTE, and Trainee browsers (<80ms latency!)
+  _storesBootstrapCache = { data: null, expiresAt: 0 };
   _dttrFetchCache = { data: null, expiresAt: 0, inflight: null };
   _allTimeRecordsCache = { data: null, expiresAt: 0, inflight: null };
   _empTimeRecordsCache.clear();
@@ -5081,7 +5230,7 @@ export async function saveDttrStoreToStorage(payload: {
       );
       const { error } = await supabase.storage.from('face-photos').upload('settings/dttr_store.json', blob, {
         contentType: 'application/json',
-        cacheControl: '0',
+        cacheControl: '60',
         upsert: true,
       });
       return !error;

@@ -348,6 +348,7 @@ const HOST_LIGHT_COLS =
   'id, name, email, company_name, position, active, is_approved, created_at';
 
 let _employeesListCache = { data: null, expiresAt: 0 };
+let _bootstrapMetaCache = { data: null, expiresAt: 0 };
 
 async function readStorageAccountsIndex() {
   try {
@@ -404,7 +405,7 @@ function syncStorageAccountsIndexAsync() {
       const buf = Buffer.from(JSON.stringify(payload), 'utf8');
       await supabase.storage.from('face-photos').upload('settings/accounts_index.json', buf, {
         contentType: 'application/json',
-        cacheControl: '0',
+        cacheControl: '60',
         upsert: true,
       });
     })
@@ -424,12 +425,56 @@ export default async function handler(req, res) {
   try {
     const query = parseQuery(req);
 
-    // GET: Fetch employees
+    // GET: Fetch employees (supports ?includeMeta=1 to batch employees + hosts + zones + settings in 1 cached call!)
     if (req.method === 'GET') {
       const id = query?.id;
       const email = query?.email;
+      const includeMeta = query?.includeMeta === '1' || query?.includeMeta === 'true';
+
+      if (includeMeta && !id && !email) {
+        res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=45');
+        if (_bootstrapMetaCache.data && _bootstrapMetaCache.expiresAt > Date.now()) {
+          return sendJson(res, 200, _bootstrapMetaCache.data);
+        }
+        try {
+          const [empRes, hostRes, zoneRes, setRes] = await withTimeout(
+            Promise.all([
+              supabase.from('employees').select(EMP_LIGHT_COLS).order('created_at', { ascending: false }).limit(1000),
+              supabase.from('host_supervisors').select(HOST_LIGHT_COLS).limit(200),
+              supabase.from('geofence_zones').select('id, name, address, lat, lng, radius, active, employee_id, user_type, created_at').limit(300),
+              supabase.from('app_settings').select('*').limit(1).maybeSingle(),
+            ]),
+            5500
+          );
+          if (!empRes?.error && Array.isArray(empRes?.data)) {
+            const payload = {
+              employees: empRes.data,
+              hostSupervisors: hostRes?.data || [],
+              geofenceZones: zoneRes?.data || [],
+              settings: setRes?.data || null,
+            };
+            _employeesListCache = { data: empRes.data, expiresAt: Date.now() + 30000 };
+            _bootstrapMetaCache = { data: payload, expiresAt: Date.now() + 30000 };
+            return sendJson(res, 200, payload);
+          }
+        } catch (metaErr) {
+          console.warn('api/employees includeMeta fallback notice:', metaErr?.message || metaErr);
+        }
+        // Serve stale memory cache or Storage accounts_index.json if DB is temporarily busy
+        if (_bootstrapMetaCache.data) {
+          return sendJson(res, 200, _bootstrapMetaCache.data);
+        }
+        const idx = await readStorageAccountsIndex();
+        return sendJson(res, 200, {
+          employees: idx?.employees || [],
+          hostSupervisors: idx?.hostSupervisors || [],
+          geofenceZones: [],
+          settings: null,
+        });
+      }
 
       if (!id && !email && _employeesListCache.data && _employeesListCache.expiresAt > Date.now()) {
+        res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=45');
         return sendJson(res, 200, _employeesListCache.data);
       }
 
@@ -535,7 +580,7 @@ export default async function handler(req, res) {
       }
 
       if (!id && !email && Array.isArray(data) && data.length > 0) {
-        _employeesListCache = { data, expiresAt: Date.now() + 4000 };
+        _employeesListCache = { data, expiresAt: Date.now() + 30000 };
       }
 
       return sendJson(res, 200, data || []);
@@ -543,6 +588,7 @@ export default async function handler(req, res) {
 
     // POST / PUT: Update or Upsert employee
     if (req.method === 'POST' || req.method === 'PUT') {
+      _bootstrapMetaCache = { data: null, expiresAt: 0 };
       const body = await parseBody(req);
       const targetId = body.id || query?.id;
       const updates = body.updates || body;

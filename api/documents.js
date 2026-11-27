@@ -130,36 +130,45 @@ function parseQuery(req) {
 
 const _settingsStoreCache = new Map(); // storeFile -> { data, expiresAt }
 
+function setSettingsCache(fileName, data, ttlMs = 45000) {
+  _settingsStoreCache.set(fileName, { data, expiresAt: Date.now() + ttlMs });
+}
+
 async function readSettingsJsonFast(fileName, fallbackValue) {
   const cached = _settingsStoreCache.get(fileName);
   if (cached && cached.expiresAt > Date.now()) {
     return cached.data;
   }
   const base = SUPABASE_URL.replace(/\/$/, '');
-  // 1. Public Storage CDN URL first (0 Postgres connections on public bucket!)
+  // 1. Public Storage CDN URL WITHOUT cache-busting query string so Cloudflare Edge serves from RAM (0 Postgres storage.objects IOPS!)
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 4000);
+    const timer = setTimeout(() => controller.abort(), 3500);
     const pubRes = await fetch(
-      `${base}/storage/v1/object/public/face-photos/settings/${fileName}?t=${Math.floor(Date.now() / 5000)}`,
-      { cache: 'no-store', signal: controller.signal }
+      `${base}/storage/v1/object/public/face-photos/settings/${fileName}`,
+      { signal: controller.signal }
     );
     clearTimeout(timer);
     if (pubRes.ok) {
       const parsed = await pubRes.json();
       if (parsed !== null && parsed !== undefined) {
-        _settingsStoreCache.set(fileName, { data: parsed, expiresAt: Date.now() + 8000 });
+        setSettingsCache(fileName, parsed, 45000);
         return parsed;
       }
     }
   } catch { }
 
-  // 2. Fallback to service-role download only if public URL missed
+  // 2. Stale cache fallback before hitting Storage API if CDN timed out
+  if (cached?.data !== undefined) {
+    return cached.data;
+  }
+
+  // 3. Fallback to service-role download only if public CDN missed completely
   try {
     const { data, error } = await supabase.storage.from('face-photos').download(`settings/${fileName}`);
     if (!error && data) {
       const parsed = JSON.parse(await data.text());
-      _settingsStoreCache.set(fileName, { data: parsed, expiresAt: Date.now() + 8000 });
+      setSettingsCache(fileName, parsed, 45000);
       return parsed;
     }
   } catch { }
@@ -196,11 +205,11 @@ async function mirrorTraineeDocsToStore(emp, docs, documentsPassed, documentsSta
       updatedAt: new Date().toISOString(),
     };
 
-    _settingsStoreCache.delete('trainee_documents_store.json');
+    setSettingsCache('trainee_documents_store.json', existingMap, 60000);
     const buf = Buffer.from(JSON.stringify(existingMap), 'utf8');
     await supabase.storage.from('face-photos').upload('settings/trainee_documents_store.json', buf, {
       contentType: 'application/json',
-      cacheControl: '0',
+      cacheControl: '60',
       upsert: true,
     });
   } catch (e) {
@@ -224,6 +233,27 @@ export default async function handler(req, res) {
     // GET: Query documents & document pass status OR generate signed upload URL
     if (req.method === 'GET') {
       const action = query.action;
+
+      // Action: Consolidated single-request bootstrap of all 6 zero-DB JSON stores (cuts 6 requests -> 1!)
+      if (action === 'get-bootstrap-stores') {
+        res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=45');
+        const [traineeDocuments, requirements, monitoringReports, evaluations, announcements, dttr] = await Promise.all([
+          readSettingsJsonFast('trainee_documents_store.json', {}),
+          readSettingsJsonFast('requirements_store.json', []),
+          readSettingsJsonFast('monitoring_reports_store.json', []),
+          readSettingsJsonFast('evaluations_store.json', []),
+          readSettingsJsonFast('announcements_store.json', []),
+          readSettingsJsonFast('dttr_store.json', { monthlyDttrs: [], timeRecords: [] }),
+        ]);
+        return sendJson(res, 200, {
+          traineeDocuments: traineeDocuments && typeof traineeDocuments === 'object' && !Array.isArray(traineeDocuments) ? traineeDocuments : {},
+          requirements: Array.isArray(requirements) ? requirements : [],
+          monitoringReports: Array.isArray(monitoringReports) ? monitoringReports : [],
+          evaluations: Array.isArray(evaluations) ? evaluations : [],
+          announcements: Array.isArray(announcements) ? announcements : [],
+          dttr: dttr && typeof dttr === 'object' ? dttr : { monthlyDttrs: [], timeRecords: [] },
+        });
+      }
 
       // Action: Retrieve institutional and departmental required documents
       if (action === 'get-requirements') {
@@ -642,17 +672,18 @@ export default async function handler(req, res) {
 
     // POST / PUT: Save document upload, update document pass status
     if (req.method === 'POST' || req.method === 'PUT') {
-      _settingsStoreCache.clear();
       const body = await parseBody(req);
 
       // Support server-side save of institutional/departmental requirements
       if (body.action === 'save-requirements') {
         try {
           const docs = body.docs || [];
+          setSettingsCache('requirements_store.json', docs, 60000);
           const jsonStr = JSON.stringify(docs);
           const buffer = Buffer.from(jsonStr, 'utf8');
           const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/requirements_store.json', buffer, {
             contentType: 'application/json',
+            cacheControl: '60',
             upsert: true,
           });
           if (upErr) {
@@ -690,11 +721,12 @@ export default async function handler(req, res) {
               }))
               : r.submissions,
           }));
+          setSettingsCache('monitoring_reports_store.json', reports, 60000);
           const jsonStr = JSON.stringify(reports);
           const buffer = Buffer.from(jsonStr, 'utf8');
           const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/monitoring_reports_store.json', buffer, {
             contentType: 'application/json',
-            cacheControl: '0',
+            cacheControl: '60',
             upsert: true,
           });
           if (upErr) {
@@ -710,11 +742,12 @@ export default async function handler(req, res) {
       if (body.action === 'save-evaluations') {
         try {
           const evaluations = Array.isArray(body.evaluations) ? body.evaluations : [];
+          setSettingsCache('evaluations_store.json', evaluations, 60000);
           const jsonStr = JSON.stringify(evaluations);
           const buffer = Buffer.from(jsonStr, 'utf8');
           const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/evaluations_store.json', buffer, {
             contentType: 'application/json',
-            cacheControl: '0',
+            cacheControl: '60',
             upsert: true,
           });
           if (upErr) {
@@ -857,18 +890,19 @@ export default async function handler(req, res) {
             timeRecords: slimTimeRecords,
             updatedAt: new Date().toISOString(),
           };
+          setSettingsCache('dttr_store.json', payload, 60000);
           const jsonStr = JSON.stringify(payload);
           const buffer = Buffer.from(jsonStr, 'utf8');
           let { error: upErr } = await supabase.storage.from('face-photos').upload('settings/dttr_store.json', buffer, {
             contentType: 'application/json',
-            cacheControl: '0',
+            cacheControl: '60',
             upsert: true,
           });
           if (upErr) {
             await new Promise((r) => setTimeout(r, 600));
             const retry = await supabase.storage.from('face-photos').upload('settings/dttr_store.json', buffer, {
               contentType: 'application/json',
-              cacheControl: '0',
+              cacheControl: '60',
               upsert: true,
             });
             upErr = retry.error;
@@ -917,11 +951,12 @@ export default async function handler(req, res) {
             }
           }
 
+          setSettingsCache('announcements_store.json', merged, 60000);
           const jsonStr = JSON.stringify(merged);
           const buffer = Buffer.from(jsonStr, 'utf8');
           const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/announcements_store.json', buffer, {
             contentType: 'application/json',
-            cacheControl: '0',
+            cacheControl: '60',
             upsert: true,
           });
           if (upErr) {

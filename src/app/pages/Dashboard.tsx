@@ -548,7 +548,7 @@ export function Dashboard() {
 
     try {
       const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(queryTerm);
-      let query = supabase.from('employees').select('*');
+      let query = supabase.from('employees').select('id, name, employee_id, email');
       if (isUuid) {
         query = query.or(`id.eq.${queryTerm},employee_id.ilike.%${queryTerm}%`);
       } else {
@@ -589,18 +589,10 @@ export function Dashboard() {
     }
   };
 
-  // Fetch pending apps and HTE requests for non-HTE display
+  // Derive pending apps directly from AppContext `employees` (avoids redundant SELECT * FROM employees on mount!)
   useEffect(() => {
     if (isAdmin) {
-      const fetchPending = async () => {
-        try {
-          const { data } = await supabase
-            .from('employees')
-            .select('*')
-            .eq('application_status', 'pending');
-          if (data) setPendingApps(data.map(transformSupabaseEmployee));
-        } catch {}
-      };
+      setPendingApps(employees.filter((e) => e.applicationStatus === 'pending' || e.approvalStatus === 'pending'));
 
       const fetchHteRequests = async () => {
         // Table hte_student_access is unmigrated in this Supabase instance
@@ -622,10 +614,9 @@ export function Dashboard() {
         }
       };
 
-      fetchPending();
       fetchHteRequests();
     }
-  }, [isAdmin]);
+  }, [isAdmin, employees]);
 
   const handleApproveHte = async (request: any) => {
     setProcessingId(request.id);

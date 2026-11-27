@@ -140,32 +140,19 @@ export function AdminLayout() {
     }
   }, [employee, isInstructor, employees]);
 
+  // Derive pending trainee requests directly from synced `employees` state (0 extra DB queries, 0 WAL listeners, 0 intervals!)
   useEffect(() => {
     if (!isInstructor) return;
-
-    const instrId = employee?.id || (() => {
-      try {
-        const u = localStorage.getItem('user');
-        if (u) return JSON.parse(u).id;
-      } catch { }
-      return null;
-    })();
-
-    void fetchPendingCount();
-
-    // In Supabase mode, subscribe to real-time postgres changes (zero polling load on Postgres)
-    if (isSupabaseConfigured() && instrId) {
-      const unsub = subscribeToPendingRequests(instrId, () => {
-        void fetchPendingCount();
-      });
-      return () => {
-        unsub?.();
-      };
-    }
-
-    const pollId = setInterval(() => void fetchPendingCount(), 120000);
-    return () => clearInterval(pollId);
-  }, [fetchPendingCount, isInstructor, employee]);
+    const instrId = employee?.id || null;
+    const localPending = employees.filter(
+      (e) =>
+        (e.instructorId === instrId || !e.instructorId) &&
+        (e.applicationStatus === 'pending' || e.approvalStatus === 'pending') &&
+        !(e.position || '').toLowerCase().includes('instructor') &&
+        !(e.position || '').toLowerCase().includes('hte')
+    ).length;
+    setPendingCount(localPending);
+  }, [isInstructor, employee, employees]);
 
   const handleLogout = () => {
     setShowLogoutModal(true);

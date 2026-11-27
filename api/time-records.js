@@ -387,7 +387,7 @@ async function mirrorSavedRecordsToDttrStore(savedRecords) {
     );
     await supabase.storage.from('face-photos').upload('settings/dttr_store.json', storeBuf, {
       contentType: 'application/json',
-      cacheControl: '0',
+      cacheControl: '60',
       upsert: true,
     });
   } catch (e) {
