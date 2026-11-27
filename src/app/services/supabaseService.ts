@@ -3785,13 +3785,15 @@ export function transformSupabaseTimeRecord(data: any): TimeRecord {
     }
   }
 
-  if (!amDeparture && !pmDeparture && data.time_out) {
-    const mins = parseTimeToMinutes(data.time_out);
+  const safeTimeOut = data.time_out && data.time_out !== data.time_in ? data.time_out : undefined;
+
+  if (!amDeparture && !pmDeparture && safeTimeOut) {
+    const mins = parseTimeToMinutes(safeTimeOut);
     if (mins !== null) {
-      if (mins < 13 * 60 && !amDeparture && amArrival) {
-        amDeparture = data.time_out;
-      } else {
-        pmDeparture = data.time_out;
+      if (mins < 13 * 60 && !amDeparture && amArrival && !pmArrival) {
+        amDeparture = safeTimeOut;
+      } else if (mins >= 13 * 60 || (mins >= 12 * 60 && pmArrival)) {
+        pmDeparture = safeTimeOut;
         if (amArrival && !amDeparture) {
           amDeparture = '12:00:00';
         }

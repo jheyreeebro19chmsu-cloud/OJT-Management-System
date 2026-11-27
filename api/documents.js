@@ -152,7 +152,7 @@ async function readSettingsJsonFast(fileName, fallbackValue) {
         return parsed;
       }
     }
-  } catch {}
+  } catch { }
 
   // 2. Fallback to service-role download only if public URL missed
   try {
@@ -162,7 +162,7 @@ async function readSettingsJsonFast(fileName, fallbackValue) {
       _settingsStoreCache.set(fileName, { data: parsed, expiresAt: Date.now() + 8000 });
       return parsed;
     }
-  } catch {}
+  } catch { }
 
   return fallbackValue;
 }
@@ -276,7 +276,7 @@ export default async function handler(req, res) {
               fileBlob = data;
               break;
             }
-          } catch {}
+          } catch { }
         }
 
         if (!fileBlob) {
@@ -287,7 +287,7 @@ export default async function handler(req, res) {
               res.setHeader('Location', signData.signedUrl);
               return res.end();
             }
-          } catch {}
+          } catch { }
           return sendJson(res, 404, { error: 'Document file not found in storage' });
         }
 
@@ -330,7 +330,7 @@ export default async function handler(req, res) {
             } else {
               storagePath = decoded;
             }
-          } catch {}
+          } catch { }
         }
         if (!storagePath) {
           return sendJson(res, 400, { error: 'Missing path or url parameter' });
@@ -466,10 +466,10 @@ export default async function handler(req, res) {
                     (['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp'].includes(ext)
                       ? `image/${ext === 'jpg' ? 'jpeg' : ext}`
                       : ext === 'pdf'
-                      ? 'application/pdf'
-                      : ext === 'docx'
-                      ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-                      : 'application/octet-stream');
+                        ? 'application/pdf'
+                        : ext === 'docx'
+                          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                          : 'application/octet-stream');
                   const displayFileName =
                     i === 0 && firstOriginalName
                       ? firstOriginalName
@@ -547,9 +547,9 @@ export default async function handler(req, res) {
             traineeFiles: Array.isArray(r.traineeFiles) ? r.traineeFiles.map(slimFile) : r.traineeFiles,
             submissions: Array.isArray(r.submissions)
               ? r.submissions.map((s) => ({
-                  ...s,
-                  files: Array.isArray(s.files) ? s.files.map(slimFile) : s.files,
-                }))
+                ...s,
+                files: Array.isArray(s.files) ? s.files.map(slimFile) : s.files,
+              }))
               : r.submissions,
           }));
           const jsonStr = JSON.stringify(reports);
@@ -600,7 +600,7 @@ export default async function handler(req, res) {
               const parsed = JSON.parse(await dlBlob.text());
               if (parsed && typeof parsed === 'object') existingStore = parsed;
             }
-          } catch {}
+          } catch { }
 
           // Merge monthlyDttrs by canonical employeeId_year_month key so single-record task sends never clobber other trainees
           const dttrMap = new Map();
@@ -616,13 +616,35 @@ export default async function handler(req, res) {
             const pTime = new Date(prev.updatedAt || 0).getTime();
             const newer = rTime >= pTime ? rec : prev;
             const older = rTime >= pTime ? prev : rec;
+            const olderEntries = older.customEntries || {};
+            const newerEntries = newer.customEntries || {};
+            const mergedEntries = { ...olderEntries };
+            for (const dayKey of Object.keys(newerEntries)) {
+              const nDay = newerEntries[dayKey];
+              const oDay = olderEntries[dayKey];
+              if (!oDay) {
+                mergedEntries[dayKey] = nDay;
+              } else {
+                const pickSlot = (nv, ov, bridge) => {
+                  if (ov && ov !== bridge && (!nv || nv === bridge)) return ov;
+                  return nv || ov || '';
+                };
+                mergedEntries[dayKey] = {
+                  ...oDay,
+                  ...nDay,
+                  amArrival: pickSlot(nDay?.amArrival, oDay?.amArrival),
+                  amDeparture: pickSlot(nDay?.amDeparture, oDay?.amDeparture, '12:00 PM'),
+                  pmArrival: pickSlot(nDay?.pmArrival, oDay?.pmArrival, '1:00 PM'),
+                  pmDeparture: pickSlot(nDay?.pmDeparture, oDay?.pmDeparture),
+                  hours: Math.max(Number(nDay?.hours) || 0, Number(oDay?.hours) || 0),
+                  tasks: (nDay?.tasks && String(nDay.tasks).trim()) || (oDay?.tasks && String(oDay.tasks).trim()) || '',
+                };
+              }
+            }
             dttrMap.set(key, {
               ...older,
               ...newer,
-              customEntries: {
-                ...(older.customEntries || {}),
-                ...(newer.customEntries || {}),
-              },
+              customEntries: mergedEntries,
             });
           };
 
@@ -639,23 +661,29 @@ export default async function handler(req, res) {
             const dateKey = String(r.date).split('T')[0].trim();
             const key = `${String(empId).toLowerCase()}_${dateKey}`;
             const prev = recMap.get(key);
+            const pickSlot = (nv, ov, bridge) => {
+              if (ov && ov !== bridge && (!nv || nv === bridge)) return ov;
+              return nv || ov;
+            };
+            const rSafeOut = r.timeOut && r.timeOut !== (prev?.timeIn || r.timeIn) ? r.timeOut : undefined;
+            const prevSafeOut = prev?.timeOut && prev.timeOut !== prev.timeIn ? prev.timeOut : undefined;
             recMap.set(
               key,
               prev
                 ? {
-                    ...prev,
-                    ...r,
-                    employeeId: empId,
-                    timeIn: r.timeIn || prev.timeIn,
-                    timeOut: r.timeOut || prev.timeOut,
-                    amArrival: r.amArrival || prev.amArrival,
-                    amDeparture: r.amDeparture || prev.amDeparture,
-                    pmArrival: r.pmArrival || prev.pmArrival,
-                    pmDeparture: r.pmDeparture || prev.pmDeparture,
-                    totalHours: Math.max(Number(r.totalHours) || 0, Number(prev.totalHours) || 0),
-                    notes: r.notes !== undefined ? r.notes : prev.notes,
-                  }
-                : { ...r, employeeId: empId }
+                  ...prev,
+                  ...r,
+                  employeeId: empId,
+                  timeIn: prev.timeIn || r.timeIn,
+                  timeOut: rSafeOut || prevSafeOut,
+                  amArrival: pickSlot(r.amArrival, prev.amArrival),
+                  amDeparture: pickSlot(r.amDeparture, prev.amDeparture, '12:00:00'),
+                  pmArrival: pickSlot(r.pmArrival, prev.pmArrival, '13:00:00'),
+                  pmDeparture: pickSlot(r.pmDeparture, prev.pmDeparture),
+                  totalHours: Math.max(Number(r.totalHours) || 0, Number(prev.totalHours) || 0),
+                  notes: r.notes !== undefined ? r.notes : prev.notes,
+                }
+                : { ...r, employeeId: empId, timeOut: rSafeOut }
             );
           };
 
@@ -741,7 +769,7 @@ export default async function handler(req, res) {
                 if (Array.isArray(parsed)) existingList = parsed;
               }
             }
-          } catch {}
+          } catch { }
 
           const incoming = Array.isArray(body.announcements) ? body.announcements : (body.announcement ? [body.announcement] : []);
           const merged = [...incoming];

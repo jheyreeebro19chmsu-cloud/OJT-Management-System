@@ -91,16 +91,43 @@ function parseTimeToMinutes(t) {
   return null;
 }
 
+function format12h(t) {
+  if (!t || typeof t !== 'string') return '';
+  const trimmed = t.trim();
+  if (!trimmed) return '';
+  if (/\b(AM|PM)\b/i.test(trimmed)) return trimmed.toUpperCase();
+  const parts = trimmed.split(':').map((p) => parseInt(p, 10));
+  if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return trimmed;
+  const h = parts[0];
+  const m = parts[1];
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  const hh = h % 12 === 0 ? 12 : h % 12;
+  return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
+}
+
 function enrichRecordWithSlots(row) {
   if (!row) return row;
   const slots = extractSlotNotes(row.notes);
-  const timeInMins = parseTimeToMinutes(row.time_in);
-  const timeOutMins = parseTimeToMinutes(row.time_out);
+  const rawTimeIn = row.time_in || row.timeIn;
+  const rawTimeOut = row.time_out || row.timeOut;
+  const safeTimeOut = rawTimeOut && rawTimeOut !== rawTimeIn ? rawTimeOut : undefined;
+  const timeInMins = parseTimeToMinutes(rawTimeIn);
+  const timeOutMins = parseTimeToMinutes(safeTimeOut);
 
-  const amArrival = slots.amArrival || row.amArrival || row.am_arrival || (timeInMins !== null && timeInMins < 12 * 60 ? row.time_in : undefined);
+  const amArrival = slots.amArrival || row.amArrival || row.am_arrival || (timeInMins !== null && timeInMins < 12 * 60 ? rawTimeIn : undefined);
   let amDeparture = slots.amDeparture || row.amDeparture || row.am_departure || undefined;
-  const pmArrival = slots.pmArrival || row.pmArrival || row.pm_arrival || (timeInMins !== null && timeInMins >= 12 * 60 ? row.time_in : undefined);
-  let pmDeparture = slots.pmDeparture || row.pmDeparture || row.pm_departure || (timeOutMins !== null && timeOutMins >= 12 * 60 ? row.time_out : undefined);
+  const pmArrival = slots.pmArrival || row.pmArrival || row.pm_arrival || (timeInMins !== null && timeInMins >= 12 * 60 && !amArrival ? rawTimeIn : undefined);
+  let pmDeparture =
+    slots.pmDeparture ||
+    row.pmDeparture ||
+    row.pm_departure ||
+    (timeOutMins !== null && safeTimeOut !== amDeparture && (timeOutMins >= 13 * 60 || (timeOutMins >= 12 * 60 && Boolean(pmArrival)))
+      ? safeTimeOut
+      : undefined);
+
+  if (!amDeparture && !pmDeparture && timeOutMins !== null && timeOutMins < 13 * 60 && amArrival && !pmArrival) {
+    amDeparture = safeTimeOut;
+  }
 
   // If amDeparture was erroneously recorded during afternoon / evening, shift it to pmDeparture
   const amOutMins = parseTimeToMinutes(amDeparture);
@@ -132,13 +159,13 @@ function enrichRecordWithSlots(row) {
   const resolvedTotalHours =
     rawStoredHours > 16 || (slotHours > 0 && rawStoredHours === 0)
       ? slotHours
-      : rawStoredHours;
+      : Math.max(rawStoredHours, slotHours);
 
   return {
     ...row,
     employeeId: row.employee_id || row.employeeId,
-    timeIn: row.time_in || row.timeIn,
-    timeOut: row.time_out || row.timeOut,
+    timeIn: rawTimeIn,
+    timeOut: safeTimeOut || (pmDeparture || amDeparture || undefined),
     totalHours: resolvedTotalHours,
     amArrival,
     amDeparture,
@@ -231,6 +258,141 @@ function transformToDbPayload(r) {
     payload.time_out_face_verified = Boolean(r.time_out_face_verified ?? r.timeOutFaceVerified);
   }
   return payload;
+}
+
+async function mirrorSavedRecordsToDttrStore(savedRecords) {
+  if (!Array.isArray(savedRecords) || savedRecords.length === 0) return;
+  try {
+    let existingStore = { monthlyDttrs: [], timeRecords: [] };
+    try {
+      const { data: dlBlob, error: dlErr } = await supabase.storage
+        .from('face-photos')
+        .download('settings/dttr_store.json');
+      if (!dlErr && dlBlob) {
+        const parsed = JSON.parse(await dlBlob.text());
+        if (parsed && typeof parsed === 'object') existingStore = parsed;
+      }
+    } catch {}
+
+    const pickSlot = (nv, ov, bridge) => {
+      if (ov && ov !== bridge && (!nv || nv === bridge)) return ov;
+      return nv || ov;
+    };
+
+    // 1. Merge timeRecords
+    const recMap = new Map();
+    const putRec = (r) => {
+      if (!r || typeof r !== 'object') return;
+      const empId = r.employeeId || r.employee_id;
+      if (!empId || !r.date) return;
+      const dateKey = String(r.date).split('T')[0].trim();
+      const key = `${String(empId).toLowerCase()}_${dateKey}`;
+      const prev = recMap.get(key);
+      const rSafeOut = (r.timeOut || r.time_out) && (r.timeOut || r.time_out) !== (prev?.timeIn || prev?.time_in || r.timeIn || r.time_in) ? (r.timeOut || r.time_out) : undefined;
+      const prevSafeOut = (prev?.timeOut || prev?.time_out) && (prev?.timeOut || prev?.time_out) !== (prev?.timeIn || prev?.time_in) ? (prev?.timeOut || prev?.time_out) : undefined;
+      recMap.set(
+        key,
+        prev
+          ? {
+              ...prev,
+              ...r,
+              employeeId: empId,
+              timeIn: prev.timeIn || prev.time_in || r.timeIn || r.time_in,
+              timeOut: rSafeOut || prevSafeOut,
+              amArrival: pickSlot(r.amArrival, prev.amArrival),
+              amDeparture: pickSlot(r.amDeparture, prev.amDeparture, '12:00:00'),
+              pmArrival: pickSlot(r.pmArrival, prev.pmArrival, '13:00:00'),
+              pmDeparture: pickSlot(r.pmDeparture, prev.pmDeparture),
+              totalHours: Math.max(Number(r.totalHours ?? r.total_hours) || 0, Number(prev.totalHours ?? prev.total_hours) || 0),
+              notes: r.notes !== undefined ? r.notes : prev.notes,
+            }
+          : { ...r, employeeId: empId, timeIn: r.timeIn || r.time_in, timeOut: rSafeOut }
+      );
+    };
+
+    for (const r of Array.isArray(existingStore.timeRecords) ? existingStore.timeRecords : []) putRec(r);
+    for (const r of savedRecords) putRec(r);
+
+    // 2. Also mirror each saved record's slots directly into monthlyDttrs so DTTR sheets always reflect punches immediately
+    const dttrMap = new Map();
+    for (const m of Array.isArray(existingStore.monthlyDttrs) ? existingStore.monthlyDttrs : []) {
+      if (m && m.employeeId) {
+        dttrMap.set(`${String(m.employeeId).toLowerCase()}_${Number(m.year)}_${Number(m.month)}`, m);
+      }
+    }
+
+    for (const rec of savedRecords) {
+      const empId = rec.employeeId || rec.employee_id;
+      const cleanDate = String(rec.date || '').split('T')[0].trim();
+      const parts = cleanDate.split('-').map((p) => parseInt(p, 10));
+      if (!empId || parts.length !== 3 || parts.some((n) => isNaN(n))) continue;
+      const [yearNum, monthNum, dayNum] = parts;
+      const dKey = `${String(empId).toLowerCase()}_${yearNum}_${monthNum}`;
+      const prevDttr = dttrMap.get(dKey);
+      const prevCustom = prevDttr?.customEntries || {};
+      const prevDay = prevCustom[dayNum];
+
+      const amIn12 = format12h(rec.amArrival);
+      const amOut12 = format12h(rec.amDeparture);
+      const pmIn12 = format12h(rec.pmArrival);
+      const pmOut12 = format12h(rec.pmDeparture);
+      const cleanTasks = String(rec.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+
+      const nextDay = {
+        ...(prevDay || {}),
+        day: dayNum,
+        amArrival: pickSlot(amIn12, prevDay?.amArrival) || '',
+        amDeparture: pickSlot(amOut12, prevDay?.amDeparture, '12:00 PM') || '',
+        pmArrival: pickSlot(pmIn12, prevDay?.pmArrival, '1:00 PM') || '',
+        pmDeparture: pickSlot(pmOut12, prevDay?.pmDeparture) || '',
+        hours: Math.max(Number(rec.totalHours ?? rec.total_hours) || 0, Number(prevDay?.hours) || 0),
+        tasks: cleanTasks || prevDay?.tasks || '',
+      };
+
+      dttrMap.set(dKey, {
+        ...(prevDttr || {}),
+        id: prevDttr?.id || `${empId}_${yearNum}_${monthNum}`,
+        employeeId: empId,
+        year: yearNum,
+        month: monthNum,
+        customEntries: {
+          ...prevCustom,
+          [dayNum]: nextDay,
+        },
+        hteSignatureStatus: prevDttr?.hteSignatureStatus || 'pending',
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    const slimTimeRecords = Array.from(recMap.values())
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+      .filter((r) => !String(r?.id || '').startsWith('demo-') && !String(r?.employeeId || '').startsWith('demo-'))
+      .slice(0, 400)
+      .map((r) => {
+        const copy = { ...r };
+        if (typeof copy.timeInPhoto === 'string' && copy.timeInPhoto.startsWith('data:')) delete copy.timeInPhoto;
+        if (typeof copy.timeOutPhoto === 'string' && copy.timeOutPhoto.startsWith('data:')) delete copy.timeOutPhoto;
+        if (typeof copy.time_in_photo === 'string' && copy.time_in_photo.startsWith('data:')) delete copy.time_in_photo;
+        if (typeof copy.time_out_photo === 'string' && copy.time_out_photo.startsWith('data:')) delete copy.time_out_photo;
+        return copy;
+      });
+
+    const storeBuf = Buffer.from(
+      JSON.stringify({
+        monthlyDttrs: Array.from(dttrMap.values()),
+        timeRecords: slimTimeRecords,
+        updatedAt: new Date().toISOString(),
+      }),
+      'utf8'
+    );
+    await supabase.storage.from('face-photos').upload('settings/dttr_store.json', storeBuf, {
+      contentType: 'application/json',
+      cacheControl: '0',
+      upsert: true,
+    });
+  } catch (e) {
+    console.warn('api/time-records dttr_store mirror notice:', e?.message || e);
+  }
 }
 
 let _unfilteredTimeRecordsCache = { data: null, expiresAt: 0 };
@@ -418,7 +580,7 @@ export default async function handler(req, res) {
           }
 
           if (existing?.id) {
-            // Merge & Update existing record while preserving and merging slot notes
+            // Merge & Update existing record while permanently locking verified slot timestamps
             const existingSlots = extractSlotNotes(existing.notes);
             const payloadSlots = extractSlotNotes(payload.notes);
             const rawSlots = {
@@ -428,6 +590,16 @@ export default async function handler(req, res) {
               ...(payload.pmDeparture ? { pmDeparture: payload.pmDeparture } : {}),
             };
             const mergedSlots = { ...existingSlots, ...payloadSlots, ...rawSlots };
+            // Lock already-recorded authentic slot timestamps so later punches never overwrite earlier ones
+            if (existingSlots.amArrival) mergedSlots.amArrival = existingSlots.amArrival;
+            if (existingSlots.amDeparture && existingSlots.amDeparture !== '12:00:00') {
+              mergedSlots.amDeparture = existingSlots.amDeparture;
+            }
+            if (existingSlots.pmArrival && existingSlots.pmArrival !== '13:00:00') {
+              mergedSlots.pmArrival = existingSlots.pmArrival;
+            }
+            if (existingSlots.pmDeparture) mergedSlots.pmDeparture = existingSlots.pmDeparture;
+
             const stripSlots = (s) => (s || '').replace(/\s*\[slots:.*?\]/g, '').trim();
             const incomingClean = payload.notes !== undefined && payload.notes !== null ? stripSlots(payload.notes) : '';
             const existingClean = stripSlots(existing.notes);
@@ -436,8 +608,9 @@ export default async function handler(req, res) {
               ? `${baseNote} [slots:${JSON.stringify(mergedSlots)}]`.trim()
               : (baseNote || null);
 
-            const effectiveTimeIn = payload.time_in || mergedSlots.amArrival || mergedSlots.pmArrival || existing.time_in || null;
-            const effectiveTimeOut = payload.time_out || mergedSlots.pmDeparture || mergedSlots.amDeparture || existing.time_out || null;
+            const effectiveTimeIn = existing.time_in || mergedSlots.amArrival || mergedSlots.pmArrival || payload.time_in || null;
+            const rawCandidateOut = payload.time_out || mergedSlots.pmDeparture || mergedSlots.amDeparture || existing.time_out || null;
+            const effectiveTimeOut = rawCandidateOut && rawCandidateOut !== effectiveTimeIn ? rawCandidateOut : null;
 
             const prevSafeHours = Number(existing.total_hours) > 16 ? 0 : (Number(existing.total_hours) || 0);
             const nextSafeHours = Number(payload.total_hours) > 16 ? 0 : (Number(payload.total_hours) || 0);
@@ -445,7 +618,7 @@ export default async function handler(req, res) {
               ...payload,
               time_in: effectiveTimeIn,
               time_out: effectiveTimeOut,
-              total_hours: nextSafeHours > 0 ? nextSafeHours : prevSafeHours,
+              total_hours: Math.max(nextSafeHours, prevSafeHours),
               notes: mergedNotes,
             };
             delete mergedPayload.id;
@@ -464,12 +637,16 @@ export default async function handler(req, res) {
 
             if (!updateErr && updated) {
               savedResults.push(enrichRecordWithSlots(updated));
-            } else if (updateErr) {
-              console.warn('api/time-records update error:', updateErr.message);
+            } else {
+              if (updateErr) console.warn('api/time-records update error:', updateErr.message);
+              savedResults.push(enrichRecordWithSlots({ id: existing.id, ...mergedPayload }));
             }
           } else {
-            // Insert new record (strip virtual slot fields not in SQL schema)
+            // Insert new record (strip virtual slot fields not in SQL schema; guard time_out !== time_in)
             const insertPayload = { ...payload };
+            if (insertPayload.time_out && insertPayload.time_out === insertPayload.time_in) {
+              insertPayload.time_out = null;
+            }
             delete insertPayload.id;
             delete insertPayload.amArrival;
             delete insertPayload.amDeparture;
@@ -485,13 +662,18 @@ export default async function handler(req, res) {
 
             if (!insertErr && inserted) {
               savedResults.push(enrichRecordWithSlots(inserted));
-            } else if (insertErr) {
-              console.warn('api/time-records insert error:', insertErr.message);
+            } else {
+              if (insertErr) console.warn('api/time-records insert error:', insertErr.message);
+              savedResults.push(enrichRecordWithSlots({ id: payload.id || `rec-${Date.now()}`, ...insertPayload }));
             }
           }
         } catch (recordErr) {
           console.warn('Error processing time record upsert:', recordErr);
         }
+      }
+
+      if (savedResults.length > 0) {
+        await mirrorSavedRecordsToDttrStore(savedResults);
       }
 
       return sendJson(res, 200, {

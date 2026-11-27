@@ -27,11 +27,12 @@ import {
   TraineeDocumentItem,
   TraineeDocumentFile,
   MonthlyDttrRecord,
+  MonthlyDttrDayEntry,
   EvaluationQuestionnaire,
   MonitoringReport,
   TraineeSelfMonitoringReport,
 } from '../types';
-import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours } from '../utils/geo';
+import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours, calculate4SlotHours } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
 import { resolveHteLocation, isInvalidHteCompany, isTraineeRole, getTraineeGeofenceOverride } from '../utils/hteLocation';
 import { TRAINEE_REQUIRED_HOURS, normalizeTraineeRequiredHours } from '../data/ojtConstants';
@@ -1065,10 +1066,33 @@ function mergeTimeRecords(
       const key = `${rawEmp}_${datePart}`;
       const remoteMatch = remoteEmpDateMap.get(key);
 
-      // The cloud database is the single source of truth for every past day so that all devices
-      // (phone, laptop, desktop) display exactly the same DTTR. Only today's live punches that may
-      // not have reached the server yet are allowed to fill in missing slots.
+      // Preserve any face-verified biometric punches recorded locally even if datePart < todayStr
+      // (e.g. an evening clock-out recorded during a transient network dip and opened the next morning)
       if (remoteMatch && datePart !== todayStr) {
+        let localVerifiedExtra = false;
+        if (!remoteMatch.amArrival && localR.amArrival && localR.amArrivalFaceVerified) {
+          remoteMatch.amArrival = localR.amArrival;
+          remoteMatch.amArrivalFaceVerified = true;
+          localVerifiedExtra = true;
+        }
+        if (!remoteMatch.amDeparture && localR.amDeparture && localR.amDepartureFaceVerified) {
+          remoteMatch.amDeparture = localR.amDeparture;
+          remoteMatch.amDepartureFaceVerified = true;
+          localVerifiedExtra = true;
+        }
+        if (!remoteMatch.pmArrival && localR.pmArrival && localR.pmArrivalFaceVerified) {
+          remoteMatch.pmArrival = localR.pmArrival;
+          remoteMatch.pmArrivalFaceVerified = true;
+          localVerifiedExtra = true;
+        }
+        if (!remoteMatch.pmDeparture && localR.pmDeparture && localR.pmDepartureFaceVerified) {
+          remoteMatch.pmDeparture = localR.pmDeparture;
+          remoteMatch.pmDepartureFaceVerified = true;
+          if (!remoteMatch.timeOut && localR.timeOut) remoteMatch.timeOut = localR.timeOut;
+          if ((localR.totalHours || 0) > (remoteMatch.totalHours || 0)) remoteMatch.totalHours = localR.totalHours;
+          localVerifiedExtra = true;
+        }
+        if (localVerifiedExtra) queueCloudResync(remoteMatch.id, remoteMatch);
         return false;
       }
 
@@ -4696,6 +4720,141 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  const formatTimeForDttr12h = (raw?: string): string => {
+    if (!raw || typeof raw !== 'string') return '';
+    const trimmed = raw.trim();
+    if (!trimmed) return '';
+    if (/\b(AM|PM)\b/i.test(trimmed)) return trimmed.toUpperCase();
+    const parts = trimmed.split(':').map((p) => parseInt(p, 10));
+    if (parts.length < 2 || isNaN(parts[0]) || isNaN(parts[1])) return trimmed;
+    const h = parts[0];
+    const m = parts[1];
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const hh = h % 12 === 0 ? 12 : h % 12;
+    return `${hh}:${String(m).padStart(2, '0')} ${ampm}`;
+  };
+
+  const syncTimeRecordToMonthlyDttr = (rec: TimeRecord) => {
+    if (!rec || !rec.employeeId || !rec.date) return;
+    const cleanDate = String(rec.date).split('T')[0].split(' ')[0].trim();
+    const dateParts = cleanDate.split('-').map((p) => parseInt(p, 10));
+    if (dateParts.length !== 3 || dateParts.some((n) => isNaN(n))) return;
+    const [yearNum, monthNum, dayNum] = dateParts;
+
+    const safeTimeOut = rec.timeOut && rec.timeOut !== rec.timeIn ? rec.timeOut : undefined;
+    const inH = rec.timeIn ? parseInt(rec.timeIn, 10) : NaN;
+    const outH = safeTimeOut ? parseInt(safeTimeOut, 10) : NaN;
+    const isInPm = Boolean(rec.timeIn && (/pm/i.test(rec.timeIn) || (inH >= 12 && !/am/i.test(rec.timeIn))));
+    const isOutAfternoon = Boolean(safeTimeOut && ((/pm/i.test(safeTimeOut) && outH !== 12) || (!/am/i.test(safeTimeOut) && outH >= 13)));
+
+    let rawAmIn = rec.amArrival || (!rec.pmArrival && rec.timeIn && !isInPm ? rec.timeIn : undefined);
+    let rawAmOut = rec.amDeparture || (!rec.pmArrival && safeTimeOut && !isOutAfternoon && rawAmIn && safeTimeOut !== rec.pmDeparture ? safeTimeOut : undefined);
+    let rawPmIn = rec.pmArrival || (!rawAmIn && rec.timeIn && isInPm ? rec.timeIn : undefined);
+    let rawPmOut = rec.pmDeparture || (safeTimeOut && safeTimeOut !== rawAmOut && (isOutAfternoon || Boolean(rawPmIn)) ? safeTimeOut : undefined);
+
+    if (rawAmIn && rawPmOut) {
+      if (!rawAmOut) rawAmOut = '12:00:00';
+      if (!rawPmIn) rawPmIn = '13:00:00';
+    }
+
+    const dttrAmIn = formatTimeForDttr12h(rawAmIn);
+    const dttrAmOut = formatTimeForDttr12h(rawAmOut);
+    const dttrPmIn = formatTimeForDttr12h(rawPmIn);
+    const dttrPmOut = formatTimeForDttr12h(rawPmOut);
+    const cleanTasks = (rec.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+
+    if (!dttrAmIn && !dttrAmOut && !dttrPmIn && !dttrPmOut && !cleanTasks && !(rec.totalHours && rec.totalHours > 0)) {
+      supabaseService.saveDttrStoreToStorage({ timeRecords: [rec] }).catch(() => {});
+      return;
+    }
+
+    const targetEmpRaw = String(rec.employeeId).trim();
+    const matchedEmp = employees.find(
+      (e) =>
+        e.id.toLowerCase() === targetEmpRaw.toLowerCase() ||
+        (e.employeeId && e.employeeId.toLowerCase() === targetEmpRaw.toLowerCase()) ||
+        (e.email && normalizeEmail(e.email) === normalizeEmail(targetEmpRaw))
+    );
+    const canonicalEmpId = matchedEmp?.id || targetEmpRaw;
+    const validIds = new Set<string>([targetEmpRaw.toLowerCase(), canonicalEmpId.toLowerCase()]);
+    if (matchedEmp?.employeeId) validIds.add(matchedEmp.employeeId.toLowerCase());
+
+    setMonthlyDttrs((prev) => {
+      const existingIdx = prev.findIndex(
+        (r) =>
+          validIds.has(String(r.employeeId || '').toLowerCase()) &&
+          Number(r.year) === yearNum &&
+          Number(r.month) === monthNum
+      );
+      const prevDttr = existingIdx >= 0 ? prev[existingIdx] : null;
+      const prevCustom = prevDttr?.customEntries || {};
+      const prevDay = prevCustom[dayNum];
+
+      const pickPermanentSlot = (incoming: string, prevVal?: string, bridgeVal?: string) => {
+        if (prevVal && prevVal !== bridgeVal && (!incoming || incoming === bridgeVal)) return prevVal;
+        return incoming || prevVal || '';
+      };
+
+      const mergedDayAmIn = pickPermanentSlot(dttrAmIn, prevDay?.amArrival);
+      const mergedDayAmOut = pickPermanentSlot(dttrAmOut, prevDay?.amDeparture, '12:00 PM');
+      const mergedDayPmIn = pickPermanentSlot(dttrPmIn, prevDay?.pmArrival, '1:00 PM');
+      const mergedDayPmOut = pickPermanentSlot(dttrPmOut, prevDay?.pmDeparture);
+      const computedHrs = calculate4SlotHours(
+        rawAmIn || mergedDayAmIn || undefined,
+        rawAmOut || mergedDayAmOut || undefined,
+        rawPmIn || mergedDayPmIn || undefined,
+        rawPmOut || mergedDayPmOut || undefined,
+        rec.timeIn,
+        safeTimeOut
+      );
+      const mergedHours =
+        (rec.totalHours && rec.totalHours > 0 && rec.totalHours <= 16 ? rec.totalHours : 0) ||
+        computedHrs ||
+        (prevDay?.hours && prevDay.hours > 0 ? prevDay.hours : 0);
+      const mergedTasks = cleanTasks || prevDay?.tasks || '';
+
+      const nextDayEntry: MonthlyDttrDayEntry = {
+        day: dayNum,
+        amArrival: mergedDayAmIn,
+        amDeparture: mergedDayAmOut,
+        pmArrival: mergedDayPmIn,
+        pmDeparture: mergedDayPmOut,
+        hours: mergedHours,
+        tasks: mergedTasks,
+      };
+
+      const updatedDttr: MonthlyDttrRecord = {
+        ...(prevDttr || {}),
+        id: prevDttr?.id || `${canonicalEmpId}_${yearNum}_${monthNum}`,
+        employeeId: canonicalEmpId,
+        year: yearNum,
+        month: monthNum,
+        customEntries: {
+          ...prevCustom,
+          [dayNum]: nextDayEntry,
+        },
+        hteSignatureStatus: prevDttr?.hteSignatureStatus || 'pending',
+        updatedAt: new Date().toISOString(),
+      };
+
+      let nextList: MonthlyDttrRecord[];
+      if (existingIdx >= 0) {
+        nextList = [...prev];
+        nextList[existingIdx] = updatedDttr;
+      } else {
+        nextList = [...prev, updatedDttr];
+      }
+      saveToStorage(STORAGE_KEYS.MONTHLY_DTTR, nextList);
+      supabaseService
+        .saveDttrStoreToStorage({
+          timeRecords: [rec],
+          monthlyDttrs: [updatedDttr],
+        })
+        .catch(() => {});
+      return nextList;
+    });
+  };
+
   const addTimeRecord = (record: Omit<TimeRecord, 'id'>): TimeRecord => {
     const recordWithAY = { ...record, academicYear: record.academicYear || settings.activeAcademicYear };
     const cleanRecordDate = (recordWithAY.date || getDTRSessionDate(new Date())).split('T')[0].split(' ')[0].trim();
@@ -4752,27 +4911,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
 
     if (existing) {
-      // If an existing record exists, keep permanent timeIn and merge punches across AM/PM shifts
+      const existingSafeOut = existing.timeOut && existing.timeOut !== existing.timeIn ? existing.timeOut : undefined;
+      const incomingSafeOut = recordWithAY.timeOut && recordWithAY.timeOut !== (existing.timeIn || recordWithAY.timeIn) ? recordWithAY.timeOut : undefined;
+      // If an existing record exists, keep permanent timeIn and lock face-verified slots across AM/PM shifts
       const updated: TimeRecord = {
         ...existing,
         ...recordWithAY,
         timeIn: existing.timeIn || recordWithAY.timeIn,
-        timeOut: recordWithAY.timeOut || existing.timeOut,
-        amArrival: recordWithAY.amArrival || existing.amArrival,
-        amDeparture: recordWithAY.amDeparture || existing.amDeparture,
-        pmArrival: recordWithAY.pmArrival || existing.pmArrival,
-        pmDeparture: recordWithAY.pmDeparture || existing.pmDeparture,
-        amArrivalFaceVerified: recordWithAY.amArrivalFaceVerified ?? existing.amArrivalFaceVerified,
-        amDepartureFaceVerified: recordWithAY.amDepartureFaceVerified ?? existing.amDepartureFaceVerified,
-        pmArrivalFaceVerified: recordWithAY.pmArrivalFaceVerified ?? existing.pmArrivalFaceVerified,
-        pmDepartureFaceVerified: recordWithAY.pmDepartureFaceVerified ?? existing.pmDepartureFaceVerified,
-        amArrivalGeofenced: recordWithAY.amArrivalGeofenced ?? existing.amArrivalGeofenced,
-        amDepartureGeofenced: recordWithAY.amDepartureGeofenced ?? existing.amDepartureGeofenced,
-        pmArrivalGeofenced: recordWithAY.pmArrivalGeofenced ?? existing.pmArrivalGeofenced,
-        pmDepartureGeofenced: recordWithAY.pmDepartureGeofenced ?? existing.pmDepartureGeofenced,
-        timeInFaceVerified: existing.timeInFaceVerified || recordWithAY.timeInFaceVerified,
-        timeInGeofenced: existing.timeInGeofenced || recordWithAY.timeInGeofenced,
+        timeOut: incomingSafeOut || existingSafeOut,
+        amArrival: (existing.amArrivalFaceVerified && existing.amArrival) ? existing.amArrival : (recordWithAY.amArrival || existing.amArrival),
+        amDeparture: (existing.amDepartureFaceVerified && existing.amDeparture) ? existing.amDeparture : (recordWithAY.amDeparture || existing.amDeparture),
+        pmArrival: (existing.pmArrivalFaceVerified && existing.pmArrival) ? existing.pmArrival : (recordWithAY.pmArrival || existing.pmArrival),
+        pmDeparture: (existing.pmDepartureFaceVerified && existing.pmDeparture) ? existing.pmDeparture : (recordWithAY.pmDeparture || existing.pmDeparture),
+        amArrivalFaceVerified: Boolean(existing.amArrivalFaceVerified || recordWithAY.amArrivalFaceVerified),
+        amDepartureFaceVerified: Boolean(existing.amDepartureFaceVerified || recordWithAY.amDepartureFaceVerified),
+        pmArrivalFaceVerified: Boolean(existing.pmArrivalFaceVerified || recordWithAY.pmArrivalFaceVerified),
+        pmDepartureFaceVerified: Boolean(existing.pmDepartureFaceVerified || recordWithAY.pmDepartureFaceVerified),
+        amArrivalGeofenced: Boolean(existing.amArrivalGeofenced || recordWithAY.amArrivalGeofenced),
+        amDepartureGeofenced: Boolean(existing.amDepartureGeofenced || recordWithAY.amDepartureGeofenced),
+        pmArrivalGeofenced: Boolean(existing.pmArrivalGeofenced || recordWithAY.pmArrivalGeofenced),
+        pmDepartureGeofenced: Boolean(existing.pmDepartureGeofenced || recordWithAY.pmDepartureGeofenced),
+        timeInFaceVerified: Boolean(existing.timeInFaceVerified || recordWithAY.timeInFaceVerified),
+        timeInGeofenced: Boolean(existing.timeInGeofenced || recordWithAY.timeInGeofenced),
+        timeOutFaceVerified: Boolean(existing.timeOutFaceVerified || recordWithAY.timeOutFaceVerified),
+        timeOutGeofenced: Boolean(existing.timeOutGeofenced || recordWithAY.timeOutGeofenced),
         timeInPhoto: existing.timeInPhoto || recordWithAY.timeInPhoto,
+        timeOutPhoto: recordWithAY.timeOutPhoto || existing.timeOutPhoto,
+        totalHours: Math.max(recordWithAY.totalHours || 0, existing.totalHours || 0),
+        notes: recordWithAY.notes !== undefined ? recordWithAY.notes : existing.notes,
         academicYear: existing.academicYear || recordWithAY.academicYear,
       };
       updateTimeRecord(existing.id, updated);
@@ -4785,9 +4951,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setTimeRecords((prev) => {
       const updated = [newRecord, ...prev.filter((r) => r.id !== newRecord.id)];
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
-      supabaseService.saveDttrStoreToStorage({ timeRecords: [newRecord] }).catch(() => {});
       return updated;
     });
+    syncTimeRecordToMonthlyDttr(newRecord);
 
     if (useSupabase) {
       supabaseService
@@ -4796,13 +4962,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
           if (created) {
             // Replace temporary local record with database UUID record while keeping all slot timestamps intact
             setTimeRecords((prev) => {
+              const latestLocal = prev.find((r) => r.id === newRecord.id || r.id === created.id) || newRecord;
               const mergedCreated: TimeRecord = {
-                ...newRecord,
+                ...latestLocal,
                 ...created,
-                amArrival: created.amArrival || newRecord.amArrival,
-                amDeparture: created.amDeparture || newRecord.amDeparture,
-                pmArrival: created.pmArrival || newRecord.pmArrival,
-                pmDeparture: created.pmDeparture || newRecord.pmDeparture,
+                timeIn: latestLocal.timeIn || created.timeIn,
+                timeOut: (created.timeOut && created.timeOut !== created.timeIn ? created.timeOut : undefined) || (latestLocal.timeOut && latestLocal.timeOut !== latestLocal.timeIn ? latestLocal.timeOut : undefined),
+                amArrival: latestLocal.amArrival || created.amArrival,
+                amDeparture: latestLocal.amDeparture || created.amDeparture,
+                pmArrival: latestLocal.pmArrival || created.pmArrival,
+                pmDeparture: latestLocal.pmDeparture || created.pmDeparture,
                 amArrivalFaceVerified: created.amArrivalFaceVerified ?? newRecord.amArrivalFaceVerified,
                 amDepartureFaceVerified: created.amDepartureFaceVerified ?? newRecord.amDepartureFaceVerified,
                 pmArrivalFaceVerified: created.pmArrivalFaceVerified ?? newRecord.pmArrivalFaceVerified,
@@ -4814,7 +4983,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               };
               const updated = [mergedCreated, ...prev.filter((r) => r.id !== newRecord.id && r.id !== created.id)];
               saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
-              supabaseService.saveDttrStoreToStorage({ timeRecords: [mergedCreated] }).catch(() => {});
+              syncTimeRecordToMonthlyDttr(mergedCreated);
               return updated;
             });
           }
@@ -4828,8 +4997,36 @@ export function AppProvider({ children }: { children: ReactNode }) {
   };
 
   const updateTimeRecord = (id: string, data: Partial<TimeRecord>) => {
-    // Look up existing record to enrich employeeId and date if missing in partial updates
-    const existing = timeRecords.find((r) => r.id === id);
+    const cleanInputDate = data.date ? String(data.date).split('T')[0].split(' ')[0].trim() : '';
+    const rawLookupEmp = String(data.employeeId || '').trim();
+    const lookupEmpObj = rawLookupEmp
+      ? employees.find(
+          (e) =>
+            e.id === rawLookupEmp ||
+            e.employeeId === rawLookupEmp ||
+            (e.email && normalizeEmail(e.email) === normalizeEmail(rawLookupEmp))
+        )
+      : undefined;
+    const lookupValidIds = new Set<string>();
+    if (rawLookupEmp) {
+      lookupValidIds.add(rawLookupEmp);
+      lookupValidIds.add(rawLookupEmp.toLowerCase());
+    }
+    if (lookupEmpObj) {
+      if (lookupEmpObj.id) { lookupValidIds.add(lookupEmpObj.id); lookupValidIds.add(lookupEmpObj.id.toLowerCase()); }
+      if (lookupEmpObj.employeeId) { lookupValidIds.add(lookupEmpObj.employeeId); lookupValidIds.add(lookupEmpObj.employeeId.toLowerCase()); }
+    }
+
+    // Look up existing record by ID, falling back to (employeeId, date) if rec-<ts> already converted to a DB UUID
+    const existing =
+      timeRecords.find((r) => r.id === id) ||
+      (cleanInputDate && lookupValidIds.size > 0
+        ? timeRecords.find((r) => {
+            const rDate = String(r.date || '').split('T')[0].split(' ')[0].trim();
+            const rEmp = String(r.employeeId || '').trim().toLowerCase();
+            return rDate === cleanInputDate && lookupValidIds.has(rEmp);
+          })
+        : undefined);
 
     // Safety guard: never move an existing day's record to another date (e.g. a stale tab punching
     // today's time into yesterday's record). Save it as that date's own record instead.
@@ -4872,17 +5069,49 @@ export function AppProvider({ children }: { children: ReactNode }) {
       ? matchedCanonicalEmp.id
       : enrichedEmpId;
 
-    const enrichedData = {
+    const enrichedData: Partial<TimeRecord> = {
       ...(existing ? { employeeId: existing.employeeId, date: existing.date } : {}),
       ...data,
       ...(finalEmpId ? { employeeId: finalEmpId } : {}),
     };
 
+    let syncedSnapshot: TimeRecord | null = null;
+
     setTimeRecords((prev) => {
       let modifiedRec: TimeRecord | null = null;
       const updated = prev.map((r) => {
-        if (r.id === id) {
-          const next = { ...r, ...enrichedData };
+        const rDate = String(r.date || '').split('T')[0].split(' ')[0].trim();
+        const rEmp = String(r.employeeId || '').trim().toLowerCase();
+        const matchesFallback =
+          !modifiedRec &&
+          !prev.some((x) => x.id === id) &&
+          Boolean(cleanInputDate && rDate === cleanInputDate && lookupValidIds.has(rEmp));
+
+        if (r.id === id || (existing && r.id === existing.id) || matchesFallback) {
+          const prevSafeOut = r.timeOut && r.timeOut !== r.timeIn ? r.timeOut : undefined;
+          const nextSafeOut =
+            enrichedData.timeOut && enrichedData.timeOut !== (r.timeIn || enrichedData.timeIn)
+              ? enrichedData.timeOut
+              : undefined;
+          const next: TimeRecord = {
+            ...r,
+            ...enrichedData,
+            timeIn: r.timeIn || enrichedData.timeIn,
+            timeOut: nextSafeOut || prevSafeOut,
+            amArrival: (r.amArrivalFaceVerified && r.amArrival) ? r.amArrival : (enrichedData.amArrival || r.amArrival),
+            amDeparture: (r.amDepartureFaceVerified && r.amDeparture) ? r.amDeparture : (enrichedData.amDeparture || r.amDeparture),
+            pmArrival: (r.pmArrivalFaceVerified && r.pmArrival) ? r.pmArrival : (enrichedData.pmArrival || r.pmArrival),
+            pmDeparture: (r.pmDepartureFaceVerified && r.pmDeparture) ? r.pmDeparture : (enrichedData.pmDeparture || r.pmDeparture),
+            amArrivalFaceVerified: Boolean(r.amArrivalFaceVerified || enrichedData.amArrivalFaceVerified),
+            amDepartureFaceVerified: Boolean(r.amDepartureFaceVerified || enrichedData.amDepartureFaceVerified),
+            pmArrivalFaceVerified: Boolean(r.pmArrivalFaceVerified || enrichedData.pmArrivalFaceVerified),
+            pmDepartureFaceVerified: Boolean(r.pmDepartureFaceVerified || enrichedData.pmDepartureFaceVerified),
+            amArrivalGeofenced: Boolean(r.amArrivalGeofenced || enrichedData.amArrivalGeofenced),
+            amDepartureGeofenced: Boolean(r.amDepartureGeofenced || enrichedData.amDepartureGeofenced),
+            pmArrivalGeofenced: Boolean(r.pmArrivalGeofenced || enrichedData.pmArrivalGeofenced),
+            pmDepartureGeofenced: Boolean(r.pmDepartureGeofenced || enrichedData.pmDepartureGeofenced),
+            totalHours: Math.max(enrichedData.totalHours || 0, r.totalHours || 0),
+          };
           if ('timeInPhoto' in data && !data.timeInPhoto) {
             delete (next as any).timeInPhoto;
           }
@@ -4890,20 +5119,59 @@ export function AppProvider({ children }: { children: ReactNode }) {
             delete (next as any).timeOutPhoto;
           }
           modifiedRec = next;
+          syncedSnapshot = next;
           return next;
         }
         return r;
       });
       saveToStorage(STORAGE_KEYS.TIME_RECORDS, updated);
-      if (modifiedRec) {
-        supabaseService.saveDttrStoreToStorage({ timeRecords: [modifiedRec] }).catch(() => {});
-      }
       return updated;
     });
 
+    const effectiveSnapshot: TimeRecord | null =
+      syncedSnapshot ||
+      (existing
+        ? ({
+            ...existing,
+            ...enrichedData,
+            timeIn: existing.timeIn || enrichedData.timeIn,
+            amArrival: (existing.amArrivalFaceVerified && existing.amArrival) ? existing.amArrival : (enrichedData.amArrival || existing.amArrival),
+            amDeparture: (existing.amDepartureFaceVerified && existing.amDeparture) ? existing.amDeparture : (enrichedData.amDeparture || existing.amDeparture),
+            pmArrival: (existing.pmArrivalFaceVerified && existing.pmArrival) ? existing.pmArrival : (enrichedData.pmArrival || existing.pmArrival),
+            pmDeparture: (existing.pmDepartureFaceVerified && existing.pmDeparture) ? existing.pmDeparture : (enrichedData.pmDeparture || existing.pmDeparture),
+          } as TimeRecord)
+        : null);
+
+    if (effectiveSnapshot) {
+      syncTimeRecordToMonthlyDttr(effectiveSnapshot);
+    }
+
     if (useSupabase) {
-      const targetId = existing?.id || id;
-      supabaseService.updateTimeRecord(targetId, enrichedData).catch((err) => {
+      const targetId = effectiveSnapshot?.id || existing?.id || id;
+      const cloudUpdatePayload: Partial<TimeRecord> = effectiveSnapshot
+        ? {
+            ...enrichedData,
+            employeeId: effectiveSnapshot.employeeId,
+            date: effectiveSnapshot.date,
+            timeIn: effectiveSnapshot.timeIn,
+            timeOut: effectiveSnapshot.timeOut,
+            amArrival: effectiveSnapshot.amArrival,
+            amDeparture: effectiveSnapshot.amDeparture,
+            pmArrival: effectiveSnapshot.pmArrival,
+            pmDeparture: effectiveSnapshot.pmDeparture,
+            amArrivalFaceVerified: effectiveSnapshot.amArrivalFaceVerified,
+            amDepartureFaceVerified: effectiveSnapshot.amDepartureFaceVerified,
+            pmArrivalFaceVerified: effectiveSnapshot.pmArrivalFaceVerified,
+            pmDepartureFaceVerified: effectiveSnapshot.pmDepartureFaceVerified,
+            amArrivalGeofenced: effectiveSnapshot.amArrivalGeofenced,
+            amDepartureGeofenced: effectiveSnapshot.amDepartureGeofenced,
+            pmArrivalGeofenced: effectiveSnapshot.pmArrivalGeofenced,
+            pmDepartureGeofenced: effectiveSnapshot.pmDepartureGeofenced,
+            totalHours: effectiveSnapshot.totalHours,
+            status: effectiveSnapshot.status,
+          }
+        : enrichedData;
+      supabaseService.updateTimeRecord(targetId, cloudUpdatePayload).catch((err) => {
         console.error('[AppContext] Failed to update time record in Supabase:', err);
       });
     }
@@ -5069,14 +5337,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
           const cachedRaw = localStorage.getItem(key);
           if (cachedRaw) {
             const cached = JSON.parse(cachedRaw);
-            // The fast punch cache is only a short-lived bridge until the punch is in timeRecords / cloud.
-            // Stale or legacy (un-timestamped) caches are device-only data that made phones show
-            // different timestamps than laptops – discard them so the cloud stays the single source of truth.
+            // Keep today's session-scoped punch cache alive for the full current DTR day (up to 18 hours)
+            // so a facial-recognition punch never disappears on reload during transient network delays.
             const savedAt = Number(cached?.savedAt || 0);
-            if (!savedAt || Date.now() - savedAt > 5 * 60 * 1000) {
+            if (!savedAt || Date.now() - savedAt > 18 * 60 * 60 * 1000) {
               try { localStorage.removeItem(key); } catch {}
               continue;
             }
+            const cachedSafeOut = cached.timeOut && cached.timeOut !== cached.timeIn ? cached.timeOut : undefined;
             if (!baseRecord) {
               baseRecord = {
                 id: `local-${cleanEmpId}-${today}`,
@@ -5084,6 +5352,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
                 date: today,
                 status: 'present',
                 ...cached,
+                timeOut: cachedSafeOut,
               };
             } else {
               if (!baseRecord.amArrival && cached.amArrival) baseRecord.amArrival = cached.amArrival;
@@ -5091,7 +5360,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
               if (!baseRecord.pmArrival && cached.pmArrival) baseRecord.pmArrival = cached.pmArrival;
               if (!baseRecord.pmDeparture && cached.pmDeparture) baseRecord.pmDeparture = cached.pmDeparture;
               if (!baseRecord.timeIn && cached.timeIn) baseRecord.timeIn = cached.timeIn;
-              if (!baseRecord.timeOut && cached.timeOut) baseRecord.timeOut = cached.timeOut;
+              if (!baseRecord.timeOut && cachedSafeOut) baseRecord.timeOut = cachedSafeOut;
               if (cached.amArrivalFaceVerified) baseRecord.amArrivalFaceVerified = true;
               if (cached.amDepartureFaceVerified) baseRecord.amDepartureFaceVerified = true;
               if (cached.pmArrivalFaceVerified) baseRecord.pmArrivalFaceVerified = true;
@@ -5103,8 +5372,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
       } catch {}
     }
 
-    // Auto-infer slots if record has timeIn or timeOut but slots are missing
+    // Auto-infer slots if record has timeIn or timeOut but slots are missing (never infer from a duplicate timeOut === timeIn)
     if (baseRecord) {
+      if (baseRecord.timeOut && baseRecord.timeOut === baseRecord.timeIn && !baseRecord.amDeparture && !baseRecord.pmDeparture) {
+        baseRecord.timeOut = undefined;
+      }
       if (!baseRecord.amArrival && !baseRecord.pmArrival && baseRecord.timeIn) {
         const match = baseRecord.timeIn.match(/^(\d{1,2}):(\d{2})/);
         if (match) {
@@ -5117,14 +5389,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
           }
         }
       }
-      if (!baseRecord.amDeparture && !baseRecord.pmDeparture && baseRecord.timeOut) {
+      if (!baseRecord.amDeparture && !baseRecord.pmDeparture && baseRecord.timeOut && baseRecord.timeOut !== baseRecord.timeIn) {
         const match = baseRecord.timeOut.match(/^(\d{1,2}):(\d{2})/);
         if (match) {
           let h = parseInt(match[1], 10);
           if (/pm/i.test(baseRecord.timeOut) && h !== 12) h += 12;
-          if (h < 13 && !baseRecord.amDeparture && baseRecord.amArrival) {
+          if (/am/i.test(baseRecord.timeOut) && h === 12) h = 0;
+          if (h < 13 && !baseRecord.amDeparture && baseRecord.amArrival && !baseRecord.pmArrival) {
             baseRecord.amDeparture = baseRecord.timeOut;
-          } else {
+          } else if (h >= 13 || (h >= 12 && baseRecord.pmArrival)) {
             baseRecord.pmDeparture = baseRecord.timeOut;
             if (baseRecord.amArrival && !baseRecord.amDeparture) {
               baseRecord.amDeparture = '12:00:00';

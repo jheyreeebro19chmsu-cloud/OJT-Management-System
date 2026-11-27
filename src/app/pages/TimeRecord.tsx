@@ -183,24 +183,26 @@ export function TimeRecord() {
       }
     }
     if (slotField === 'amDeparture') {
-      if (currentRecord?.timeOut) {
+      if (currentRecord?.timeOut && currentRecord.timeOut !== currentRecord.timeIn) {
         const t = currentRecord.timeOut;
         const match = t.match(/^(\d{1,2}):(\d{2})/);
         if (match) {
           let h = parseInt(match[1], 10);
           if (/pm/i.test(t) && h !== 12) h += 12;
-          if (h < 13 && currentRecord.amArrival) return t;
+          if (/am/i.test(t) && h === 12) h = 0;
+          if (h < 13 && currentRecord.amArrival && t !== currentRecord.pmDeparture) return t;
         }
       }
     }
     if (slotField === 'pmDeparture') {
-      if (currentRecord?.timeOut) {
+      if (currentRecord?.timeOut && currentRecord.timeOut !== currentRecord.timeIn && currentRecord.timeOut !== currentRecord.amDeparture) {
         const t = currentRecord.timeOut;
         const match = t.match(/^(\d{1,2}):(\d{2})/);
         if (match) {
           let h = parseInt(match[1], 10);
           if (/pm/i.test(t) && h !== 12) h += 12;
-          if (h >= 12) return t;
+          if (/am/i.test(t) && h === 12) h = 0;
+          if (h >= 13 || (h >= 12 && currentRecord.pmArrival)) return t;
         }
       }
     }
@@ -464,6 +466,17 @@ export function TimeRecord() {
       return;
     }
 
+    // Prevent re-punching a slot whose facial-recognition timestamp is already permanently recorded
+    const existingSlotVal = getSlotTime(currentSlotConfig.field);
+    const isAutoBridgePlaceholder =
+      (currentSlotConfig.field === 'amDeparture' && (existingSlotVal === '12:00:00' || existingSlotVal === '12:00 PM') && !currentRecord?.amDepartureFaceVerified) ||
+      (currentSlotConfig.field === 'pmArrival' && (existingSlotVal === '13:00:00' || existingSlotVal === '1:00 PM' || existingSlotVal === '01:00 PM') && !currentRecord?.pmArrivalFaceVerified);
+    if (existingSlotVal && !isAutoBridgePlaceholder) {
+      toast.info(`${currentSlotConfig.title} is already permanently recorded at ${formatTime(existingSlotVal)}.`);
+      setSelectedSlot(getRecommendedSlot(currentRecord, new Date().getHours()));
+      return;
+    }
+
     if (!registeredPhotoSource && !registeredImageDataUrl) {
       toast.error(
         'No registered face biometrics found on your account. Please enroll your face photo in Profile or Registration before recording attendance.'
@@ -522,19 +535,43 @@ export function TimeRecord() {
       const dateStr = getDTRSessionDate(now);
       const nowMins = now.getHours() * 60 + now.getMinutes();
 
-      const baseRec = currentRecord && isSameSessionDay(currentRecord, dateStr) ? currentRecord : null;
+      const liveTodayRec = getTodayRecord(targetEmpId);
+      const baseRec =
+        (liveTodayRec && isSameSessionDay(liveTodayRec, dateStr) ? liveTodayRec : null) ||
+        (currentRecord && isSameSessionDay(currentRecord, dateStr) ? currentRecord : null);
+      const baseSafeTimeOut = baseRec?.timeOut && baseRec.timeOut !== baseRec.timeIn ? baseRec.timeOut : undefined;
       const baseInMins = baseRec?.timeIn ? parseTimeToMinutes(baseRec.timeIn) : null;
-      const baseOutMins = baseRec?.timeOut ? parseTimeToMinutes(baseRec.timeOut) : null;
+      const baseOutMins = baseSafeTimeOut ? parseTimeToMinutes(baseSafeTimeOut) : null;
 
-      let newAmArrival = slot === 'am_arrival' ? timeStr : (baseRec?.amArrival || (baseInMins !== null && baseInMins < 12 * 60 ? baseRec?.timeIn : undefined));
-      let newAmDeparture = slot === 'am_departure' ? timeStr : baseRec?.amDeparture;
-      let newPmArrival = slot === 'pm_arrival' ? timeStr : (baseRec?.pmArrival || (baseInMins !== null && baseInMins >= 12 * 60 ? baseRec?.timeIn : undefined));
-      let newPmDeparture = slot === 'pm_departure' ? timeStr : (baseRec?.pmDeparture || (baseOutMins !== null && baseOutMins >= 12 * 60 ? baseRec?.timeOut : undefined));
+      const isBridgeAmOut = Boolean(baseRec?.amDeparture === '12:00:00' && !baseRec?.amDepartureFaceVerified);
+      const isBridgePmIn = Boolean(baseRec?.pmArrival === '13:00:00' && !baseRec?.pmArrivalFaceVerified);
+
+      // Permanently lock already-recorded biometric slot timestamps so later punches never overwrite earlier ones
+      let newAmArrival =
+        baseRec?.amArrival ||
+        (slot === 'am_arrival' ? timeStr : (baseInMins !== null && baseInMins < 12 * 60 ? baseRec?.timeIn : undefined));
+      let newAmDeparture =
+        baseRec?.amDeparture && !isBridgeAmOut
+          ? baseRec.amDeparture
+          : slot === 'am_departure'
+            ? timeStr
+            : baseRec?.amDeparture;
+      let newPmArrival =
+        baseRec?.pmArrival && !isBridgePmIn
+          ? baseRec.pmArrival
+          : slot === 'pm_arrival'
+            ? timeStr
+            : (baseRec?.pmArrival || (baseInMins !== null && baseInMins >= 12 * 60 && !baseRec?.amArrival ? baseRec?.timeIn : undefined));
+      let newPmDeparture =
+        baseRec?.pmDeparture ||
+        (slot === 'pm_departure'
+          ? timeStr
+          : (baseOutMins !== null && baseOutMins >= 13 * 60 && baseSafeTimeOut !== baseRec?.amDeparture ? baseSafeTimeOut : undefined));
 
       // Auto-correct: If am_departure was clicked in the afternoon/evening (>= 1:00 PM / 13:00), treat as pm_departure
-      if (slot === 'am_departure' && nowMins >= 13 * 60) {
+      if (slot === 'am_departure' && nowMins >= 13 * 60 && !baseRec?.pmDeparture) {
         newPmDeparture = timeStr;
-        newAmDeparture = baseRec?.amDeparture || (newAmArrival ? '12:00:00' : undefined);
+        newAmDeparture = (baseRec?.amDeparture && !isBridgeAmOut) ? baseRec.amDeparture : (newAmArrival ? '12:00:00' : undefined);
         if (newAmArrival && !newPmArrival) {
           newPmArrival = '13:00:00';
         }
@@ -547,9 +584,9 @@ export function TimeRecord() {
         if (!newPmArrival) newPmArrival = '13:00:00';
       }
 
-      // Legacy mirror for backward compatibility
+      // Legacy mirror for backward compatibility: NEVER mirror an arrival timestamp into timeOut!
       const primaryTimeIn = newAmArrival || newPmArrival || baseRec?.timeIn || timeStr;
-      const primaryTimeOut = newPmDeparture || newAmDeparture || baseRec?.timeOut || timeStr;
+      const primaryTimeOut = newPmDeparture || newAmDeparture || (slot.includes('departure') ? timeStr : baseSafeTimeOut);
 
       const totalHours = calculate4SlotHours(
         newAmArrival,
@@ -575,18 +612,22 @@ export function TimeRecord() {
         timeInGeofenced: Boolean(baseRec?.timeInGeofenced || (slot.includes('arrival') && geofencePassed)),
         timeOutFaceVerified: Boolean(baseRec?.timeOutFaceVerified || slot.includes('departure')),
         timeOutGeofenced: Boolean(baseRec?.timeOutGeofenced || (slot.includes('departure') && geofencePassed)),
-        timeInLocation: geofenceCoords || (currentEmp as any)?.registrationLocation || baseRec?.timeInLocation,
+        timeInLocation: baseRec?.timeInLocation || geofenceCoords || (currentEmp as any)?.registrationLocation,
         timeOutLocation: slot.includes('departure') ? (geofenceCoords || (currentEmp as any)?.registrationLocation || baseRec?.timeOutLocation) : baseRec?.timeOutLocation,
-        ...(slot === 'am_arrival' ? { amArrivalFaceVerified: true, amArrivalGeofenced: geofencePassed } : {}),
-        ...(slot === 'am_departure' ? { amDepartureFaceVerified: true, amDepartureGeofenced: geofencePassed } : {}),
-        ...(slot === 'pm_arrival' ? { pmArrivalFaceVerified: true, pmArrivalGeofenced: geofencePassed } : {}),
-        ...(slot === 'pm_departure' ? { pmDepartureFaceVerified: true, pmDepartureGeofenced: geofencePassed } : {}),
+        amArrivalFaceVerified: Boolean(baseRec?.amArrivalFaceVerified || slot === 'am_arrival'),
+        amArrivalGeofenced: Boolean(baseRec?.amArrivalGeofenced || (slot === 'am_arrival' && geofencePassed)),
+        amDepartureFaceVerified: Boolean(baseRec?.amDepartureFaceVerified || (slot === 'am_departure' && nowMins < 13 * 60)),
+        amDepartureGeofenced: Boolean(baseRec?.amDepartureGeofenced || (slot === 'am_departure' && nowMins < 13 * 60 && geofencePassed)),
+        pmArrivalFaceVerified: Boolean(baseRec?.pmArrivalFaceVerified || slot === 'pm_arrival'),
+        pmArrivalGeofenced: Boolean(baseRec?.pmArrivalGeofenced || (slot === 'pm_arrival' && geofencePassed)),
+        pmDepartureFaceVerified: Boolean(baseRec?.pmDepartureFaceVerified || slot === 'pm_departure' || (slot === 'am_departure' && nowMins >= 13 * 60)),
+        pmDepartureGeofenced: Boolean(baseRec?.pmDepartureGeofenced || ((slot === 'pm_departure' || (slot === 'am_departure' && nowMins >= 13 * 60)) && geofencePassed)),
         ...(imageData ? (slot.includes('arrival') ? { timeInPhoto: imageData } : { timeOutPhoto: imageData }) : {}),
       };
 
       let createdRecordId: string | null = null;
 
-      if (baseRec?.id) {
+      if (baseRec?.id && !baseRec.id.startsWith('local-')) {
         const updatedData: Partial<TimeRecordType> = {
           ...slotPayload,
           employeeId: targetEmpId,
@@ -604,19 +645,20 @@ export function TimeRecord() {
           ...slotPayload,
           totalHours,
           status,
-          timeInGeofenced: geofencePassed,
-          timeOutGeofenced: slot.includes('departure') ? geofencePassed : false,
+          timeInGeofenced: Boolean(baseRec?.timeInGeofenced || geofencePassed),
+          timeOutGeofenced: slot.includes('departure') ? geofencePassed : Boolean(baseRec?.timeOutGeofenced),
           timeInFaceVerified: true,
-          timeOutFaceVerified: slot.includes('departure'),
+          timeOutFaceVerified: Boolean(baseRec?.timeOutFaceVerified || slot.includes('departure')),
         });
         createdRecordId = newRecord.id;
         setCurrentRecord(newRecord);
       }
 
-      // Fast local punch backup persistence
+      // Fast local punch backup persistence (retains all cumulative slots for the day)
       try {
         const cachePunch = {
           savedAt: Date.now(),
+          date: dateStr,
           amArrival: newAmArrival,
           amDeparture: newAmDeparture,
           pmArrival: newPmArrival,
@@ -625,10 +667,14 @@ export function TimeRecord() {
           timeOut: primaryTimeOut,
           totalHours,
           status: (baseRec?.status || status),
-          ...(slot === 'am_arrival' ? { amArrivalFaceVerified: true, amArrivalGeofenced: geofencePassed } : {}),
-          ...(slot === 'am_departure' ? { amDepartureFaceVerified: true, amDepartureGeofenced: geofencePassed } : {}),
-          ...(slot === 'pm_arrival' ? { pmArrivalFaceVerified: true, pmArrivalGeofenced: geofencePassed } : {}),
-          ...(slot === 'pm_departure' ? { pmDepartureFaceVerified: true, pmDepartureGeofenced: geofencePassed } : {}),
+          amArrivalFaceVerified: slotPayload.amArrivalFaceVerified,
+          amArrivalGeofenced: slotPayload.amArrivalGeofenced,
+          amDepartureFaceVerified: slotPayload.amDepartureFaceVerified,
+          amDepartureGeofenced: slotPayload.amDepartureGeofenced,
+          pmArrivalFaceVerified: slotPayload.pmArrivalFaceVerified,
+          pmArrivalGeofenced: slotPayload.pmArrivalGeofenced,
+          pmDepartureFaceVerified: slotPayload.pmDepartureFaceVerified,
+          pmDepartureGeofenced: slotPayload.pmDepartureGeofenced,
         };
         localStorage.setItem(`ojt_today_punch_${targetEmpId}_${dateStr}`, JSON.stringify(cachePunch));
         if (currentEmp?.id && currentEmp.id !== targetEmpId) {
@@ -655,7 +701,7 @@ export function TimeRecord() {
         userRole: 'employee',
       });
 
-      // Asynchronously upload photo and sync to backend
+      // Asynchronously upload photo and sync to backend (include employeeId + date so rec-<ts> -> UUID transitions never fail)
       if (imageData) {
         uploadFacePhoto(
           targetEmpId,
@@ -664,9 +710,9 @@ export function TimeRecord() {
         ).then((uploadedUrl) => {
           if (uploadedUrl && createdRecordId) {
             if (slot.includes('arrival')) {
-              updateTimeRecord(createdRecordId, { timeInPhoto: uploadedUrl });
+              updateTimeRecord(createdRecordId, { employeeId: targetEmpId, date: dateStr, timeInPhoto: uploadedUrl });
             } else {
-              updateTimeRecord(createdRecordId, { timeOutPhoto: uploadedUrl });
+              updateTimeRecord(createdRecordId, { employeeId: targetEmpId, date: dateStr, timeOutPhoto: uploadedUrl });
             }
           }
         }).catch((uploadErr) => {

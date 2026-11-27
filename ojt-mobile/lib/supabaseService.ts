@@ -81,6 +81,18 @@ export interface TimeRecord {
   date: string;
   timeIn?: string;
   timeOut?: string;
+  amArrival?: string;
+  amDeparture?: string;
+  pmArrival?: string;
+  pmDeparture?: string;
+  amArrivalFaceVerified?: boolean;
+  amDepartureFaceVerified?: boolean;
+  pmArrivalFaceVerified?: boolean;
+  pmDepartureFaceVerified?: boolean;
+  amArrivalGeofenced?: boolean;
+  amDepartureGeofenced?: boolean;
+  pmArrivalGeofenced?: boolean;
+  pmDepartureGeofenced?: boolean;
   timeInLocation?: { lat: number; lng: number };
   timeOutLocation?: { lat: number; lng: number };
   timeInGeofenced: boolean;
@@ -224,13 +236,90 @@ function transformEmployee(data: any): Employee {
   };
 }
 
+function parseMobileTimeMins(t?: string | null): number | null {
+  if (!t || typeof t !== 'string') return null;
+  const trimmed = t.trim();
+  const m12 = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?\s*(AM|PM)$/i);
+  if (m12) {
+    let h = parseInt(m12[1], 10);
+    const m = parseInt(m12[2], 10);
+    const ap = m12[3].toUpperCase();
+    if (ap === 'PM' && h !== 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+    return h * 60 + m;
+  }
+  const m24 = trimmed.match(/^(\d{1,2}):(\d{2})(?::\d{2})?$/);
+  if (m24) return parseInt(m24[1], 10) * 60 + parseInt(m24[2], 10);
+  return null;
+}
+
+function extractMobileSlots(notes?: string | null): Record<string, any> {
+  if (!notes || typeof notes !== 'string') return {};
+  const m = notes.match(/\[slots:(.*?)\]/);
+  if (m) {
+    try {
+      return JSON.parse(m[1]);
+    } catch {}
+  }
+  return {};
+}
+
+function encodeMobileSlots(existingNotes: string | undefined | null, slotsObj: Record<string, any>): string | undefined {
+  const clean = (existingNotes || '').replace(/\s*\[slots:.*?\]/g, '').trim();
+  const filtered: Record<string, any> = {};
+  Object.entries(slotsObj).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') filtered[k] = v;
+  });
+  if (Object.keys(filtered).length === 0) return clean || undefined;
+  const tag = `[slots:${JSON.stringify(filtered)}]`;
+  return clean ? `${clean} ${tag}` : tag;
+}
+
 function transformTimeRecord(data: any): TimeRecord {
+  const slots = extractMobileSlots(data.notes);
+  const cleanNotes = (data.notes || '').replace(/\s*\[slots:.*?\]/g, '').trim() || undefined;
+  const rawIn = data.time_in || data.timeIn;
+  const rawOut = data.time_out || data.timeOut;
+  const safeOut = rawOut && rawOut !== rawIn ? rawOut : undefined;
+  const inMins = parseMobileTimeMins(rawIn);
+  const outMins = parseMobileTimeMins(safeOut);
+
+  const amArrival = slots.amArrival || data.amArrival || (inMins !== null && inMins < 12 * 60 ? rawIn : undefined);
+  let amDeparture = slots.amDeparture || data.amDeparture || undefined;
+  let pmArrival = slots.pmArrival || data.pmArrival || (inMins !== null && inMins >= 12 * 60 && !amArrival ? rawIn : undefined);
+  let pmDeparture =
+    slots.pmDeparture ||
+    data.pmDeparture ||
+    (outMins !== null && safeOut !== amDeparture && (outMins >= 13 * 60 || (outMins >= 12 * 60 && Boolean(pmArrival)))
+      ? safeOut
+      : undefined);
+
+  if (!amDeparture && !pmDeparture && outMins !== null && outMins < 13 * 60 && amArrival && !pmArrival) {
+    amDeparture = safeOut;
+  }
+  if (amArrival && pmDeparture) {
+    const aIn = parseMobileTimeMins(amArrival);
+    const pOut = parseMobileTimeMins(pmDeparture);
+    if (aIn !== null && pOut !== null && aIn < 12 * 60 && pOut >= 13 * 60) {
+      if (!amDeparture) amDeparture = '12:00:00';
+      if (!pmArrival) pmArrival = '13:00:00';
+    }
+  }
+
   return {
     id: data.id,
-    employeeId: data.employee_id,
+    employeeId: data.employee_id || data.employeeId,
     date: data.date,
-    timeIn: data.time_in,
-    timeOut: data.time_out,
+    timeIn: rawIn,
+    timeOut: safeOut,
+    amArrival,
+    amDeparture,
+    pmArrival,
+    pmDeparture,
+    amArrivalFaceVerified: slots.amArrivalFaceVerified ?? (amArrival ? Boolean(data.time_in_face_verified) : undefined),
+    amDepartureFaceVerified: slots.amDepartureFaceVerified ?? (amDeparture ? Boolean(data.time_out_face_verified) : undefined),
+    pmArrivalFaceVerified: slots.pmArrivalFaceVerified ?? (pmArrival ? Boolean(data.time_in_face_verified) : undefined),
+    pmDepartureFaceVerified: slots.pmDepartureFaceVerified ?? (pmDeparture ? Boolean(data.time_out_face_verified) : undefined),
     timeInLocation:
       data.time_in_lat && data.time_in_lng
         ? { lat: Number(data.time_in_lat), lng: Number(data.time_in_lng) }
@@ -239,16 +328,16 @@ function transformTimeRecord(data: any): TimeRecord {
       data.time_out_lat && data.time_out_lng
         ? { lat: Number(data.time_out_lat), lng: Number(data.time_out_lng) }
         : undefined,
-    timeInGeofenced: Boolean(data.time_in_geofenced),
-    timeOutGeofenced: Boolean(data.time_out_geofenced),
-    timeInFaceVerified: Boolean(data.time_in_face_verified),
-    timeOutFaceVerified: Boolean(data.time_out_face_verified),
-    timeInPhoto: data.time_in_photo,
-    timeOutPhoto: data.time_out_photo,
-    totalHours: Math.round((Number(data.total_hours) || 0) * 100) / 100,
+    timeInGeofenced: Boolean(data.time_in_geofenced ?? data.timeInGeofenced),
+    timeOutGeofenced: Boolean(data.time_out_geofenced ?? data.timeOutGeofenced),
+    timeInFaceVerified: Boolean(data.time_in_face_verified ?? data.timeInFaceVerified),
+    timeOutFaceVerified: Boolean(data.time_out_face_verified ?? data.timeOutFaceVerified),
+    timeInPhoto: data.time_in_photo ?? data.timeInPhoto,
+    timeOutPhoto: data.time_out_photo ?? data.timeOutPhoto,
+    totalHours: Math.round((Number(data.total_hours ?? data.totalHours) || 0) * 100) / 100,
     status: data.status || 'present',
-    notes: data.notes,
-    academicYear: data.academic_year,
+    notes: cleanNotes,
+    academicYear: data.academic_year || slots.academicYear,
     approvalStatus: data.approval_status || 'pending',
     approvalNote: data.approval_note,
     approvedBy: data.approved_by,
@@ -431,24 +520,105 @@ export const mobileDb = {
     const initialInPhoto = rawInPhoto?.startsWith('http') ? rawInPhoto : undefined;
     const initialOutPhoto = rawOutPhoto?.startsWith('http') ? rawOutPhoto : undefined;
 
+    // Look up existing day record if id was omitted so morning timestamps are permanently preserved across AM/PM punches
+    let existingRow: any = null;
+    try {
+      if (record.id) {
+        const { data } = await supabase
+          .from('time_records')
+          .select('id, time_in, time_out, total_hours, notes')
+          .eq('id', record.id)
+          .maybeSingle();
+        existingRow = data;
+      } else if (record.employeeId && record.date) {
+        const { data } = await supabase
+          .from('time_records')
+          .select('id, time_in, time_out, total_hours, notes')
+          .eq('employee_id', record.employeeId)
+          .eq('date', record.date)
+          .limit(1)
+          .maybeSingle();
+        existingRow = data;
+      }
+    } catch {}
+
+    const prevSlots = extractMobileSlots(existingRow?.notes || record.notes);
+    const inMins = parseMobileTimeMins(record.timeIn);
+    const outMins = parseMobileTimeMins(record.timeOut);
+
+    let amArrival = prevSlots.amArrival || record.amArrival;
+    let amDeparture = prevSlots.amDeparture || record.amDeparture;
+    let pmArrival = prevSlots.pmArrival || record.pmArrival;
+    let pmDeparture = prevSlots.pmDeparture || record.pmDeparture;
+
+    if (record.timeIn && !record.timeOut) {
+      // Clock-In punch via facial recognition
+      if (!amArrival && inMins !== null && inMins < 12 * 60) {
+        amArrival = record.timeIn;
+        prevSlots.amArrivalFaceVerified = true;
+      } else if (!pmArrival && (inMins === null || inMins >= 12 * 60 || Boolean(amArrival))) {
+        pmArrival = record.timeIn;
+        prevSlots.pmArrivalFaceVerified = true;
+      }
+    } else if (record.timeOut) {
+      // Clock-Out punch via facial recognition
+      if (!amArrival && existingRow?.time_in) {
+        const exInM = parseMobileTimeMins(existingRow.time_in);
+        if (exInM !== null && exInM < 12 * 60) amArrival = existingRow.time_in;
+      }
+      if (outMins !== null && outMins < 13 * 60 && amArrival && !pmArrival && !amDeparture) {
+        amDeparture = record.timeOut;
+        prevSlots.amDepartureFaceVerified = true;
+      } else if (!pmDeparture) {
+        pmDeparture = record.timeOut;
+        prevSlots.pmDepartureFaceVerified = true;
+        if (amArrival && !amDeparture) amDeparture = '12:00:00';
+        if (amArrival && !pmArrival) pmArrival = '13:00:00';
+      }
+    }
+
+    // Recompute accurate 4-slot rendered hours
+    let calcMins = 0;
+    const aInM = parseMobileTimeMins(amArrival);
+    const aOutM = parseMobileTimeMins(amDeparture);
+    const pInM = parseMobileTimeMins(pmArrival);
+    const pOutM = parseMobileTimeMins(pmDeparture);
+    if (aInM !== null && aOutM !== null && aOutM > aInM) calcMins += aOutM - aInM;
+    if (pInM !== null && pOutM !== null && pOutM > pInM) calcMins += pOutM - pInM;
+    const slotHours = calcMins > 0 ? Math.round((calcMins / 60) * 100) / 100 : (record.totalHours || 0);
+
+    const encodedNotes = encodeMobileSlots(record.notes ?? existingRow?.notes, {
+      ...prevSlots,
+      amArrival,
+      amDeparture,
+      pmArrival,
+      pmDeparture,
+      academicYear: record.academicYear || prevSlots.academicYear,
+    });
+
+    const effectiveId = record.id || existingRow?.id;
+    const permanentTimeIn = existingRow?.time_in || amArrival || pmArrival || record.timeIn;
+    const rawCandidateOut = pmDeparture || amDeparture || record.timeOut || existingRow?.time_out;
+    const permanentTimeOut = rawCandidateOut && rawCandidateOut !== permanentTimeIn ? rawCandidateOut : undefined;
+
     const payload: any = {
       employee_id: record.employeeId,
       date: record.date,
-      time_in: record.timeIn,
-      time_out: record.timeOut,
+      time_in: permanentTimeIn,
+      time_out: permanentTimeOut,
       time_in_lat: record.timeInLocation?.lat,
       time_in_lng: record.timeInLocation?.lng,
       time_out_lat: record.timeOutLocation?.lat,
       time_out_lng: record.timeOutLocation?.lng,
-      time_in_geofenced: record.timeInGeofenced,
-      time_out_geofenced: record.timeOutGeofenced,
-      time_in_face_verified: record.timeInFaceVerified,
-      time_out_face_verified: record.timeOutFaceVerified,
+      time_in_geofenced: Boolean(existingRow?.time_in_geofenced || record.timeInGeofenced),
+      time_out_geofenced: Boolean(record.timeOutGeofenced),
+      time_in_face_verified: Boolean(existingRow?.time_in_face_verified || record.timeInFaceVerified),
+      time_out_face_verified: Boolean(record.timeOutFaceVerified),
       ...(initialInPhoto ? { time_in_photo: initialInPhoto } : {}),
       ...(initialOutPhoto ? { time_out_photo: initialOutPhoto } : {}),
-      total_hours: record.totalHours,
+      total_hours: slotHours,
       status: record.status,
-      notes: record.notes,
+      notes: encodedNotes,
       ...(record.approvalStatus ? { approval_status: record.approvalStatus } : {}),
       ...(record.approvalNote ? { approval_note: record.approvalNote } : {}),
       ...(record.approvedBy ? { approved_by: record.approvedBy } : {}),
@@ -457,25 +627,50 @@ export const mobileDb = {
 
     let savedData: any = null;
 
-    if (record.id) {
-      const { data, error } = await supabase
-        .from('time_records')
-        .update(payload)
-        .eq('id', record.id)
-        .select()
-        .single();
-      if (error) {
-        console.error('Error updating time record:', error);
-        return null;
+    // 1. Primary path: sync via /api/time-records so mobile punches immediately mirror to DTTR store too
+    try {
+      const apiRes = await fetch('https://chmsuojtmis.site/api/time-records', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...payload,
+          id: effectiveId,
+          amArrival,
+          amDeparture,
+          pmArrival,
+          pmDeparture,
+        }),
+      });
+      if (apiRes.ok) {
+        const parsed = await apiRes.json().catch(() => null);
+        if (Array.isArray(parsed?.records) && parsed.records[0]) {
+          savedData = parsed.records[0];
+        }
       }
-      savedData = data;
-    } else {
-      const { data, error } = await supabase.from('time_records').insert([payload]).select().single();
-      if (error) {
-        console.error('Error inserting time record:', error);
-        return null;
+    } catch {}
+
+    // 2. Direct Supabase fallback if API endpoint was unreachable
+    if (!savedData) {
+      if (effectiveId) {
+        const { data, error } = await supabase
+          .from('time_records')
+          .update(payload)
+          .eq('id', effectiveId)
+          .select()
+          .single();
+        if (error) {
+          console.error('Error updating time record:', error);
+          return null;
+        }
+        savedData = data;
+      } else {
+        const { data, error } = await supabase.from('time_records').insert([payload]).select().single();
+        if (error) {
+          console.error('Error inserting time record:', error);
+          return null;
+        }
+        savedData = data;
       }
-      savedData = data;
     }
 
     const savedRecord = {

@@ -368,8 +368,9 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           recPmOut = undefined;
         }
 
+        const safeRecTimeOut = r.timeOut && r.timeOut !== r.timeIn ? r.timeOut : undefined;
         const inMins = r.timeIn ? parseTimeToMinutes(r.timeIn) : null;
-        const outMins = r.timeOut ? parseTimeToMinutes(r.timeOut) : null;
+        const outMins = safeRecTimeOut ? parseTimeToMinutes(safeRecTimeOut) : null;
 
         if (!recAmIn && !recPmIn && inMins !== null) {
           if (inMins < 12 * 60) recAmIn = r.timeIn;
@@ -382,8 +383,11 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           recAmOut = undefined;
         }
 
-        if (!recPmOut && outMins !== null && outMins >= 12 * 60) {
-          recPmOut = r.timeOut;
+        if (!recPmOut && outMins !== null && safeRecTimeOut !== recAmOut && (outMins >= 13 * 60 || (outMins >= 12 * 60 && Boolean(recPmIn)))) {
+          recPmOut = safeRecTimeOut;
+        }
+        if (!recAmOut && outMins !== null && outMins < 13 * 60 && Boolean(recAmIn) && !recPmIn && safeRecTimeOut !== recPmOut) {
+          recAmOut = safeRecTimeOut;
         }
 
         const existing = map.get(dayNum);
@@ -458,6 +462,8 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           return `${hh}:${mm} ${ampm}`;
         };
 
+        const safeAutoTimeOut = autoRec.timeOut && autoRec.timeOut !== autoRec.timeIn ? autoRec.timeOut : undefined;
+
         // If explicit 4-slot attendance was recorded, use it directly
         if (autoRec.amArrival || autoRec.amDeparture || autoRec.pmArrival || autoRec.pmDeparture) {
           autoAmIn = format12Str(autoRec.amArrival);
@@ -465,11 +471,15 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
           autoPmIn = format12Str(autoRec.pmArrival);
           autoPmOut = format12Str(autoRec.pmDeparture);
 
-          // For days spanning morning and afternoon, official DTTR requires both Time In and Time Out in AM (12:00 PM) and PM (1:00 PM)
-          const effOut = autoPmOut || format12Str(autoRec.timeOut);
+          // For days spanning morning and afternoon (actual PM departure >= 1:00 PM), fill standard 12:00 PM / 1:00 PM bridge only if lunch punches were omitted
+          const fallbackAfternoonOut =
+            !autoPmOut && safeAutoTimeOut && safeAutoTimeOut !== autoRec.amDeparture
+              ? format12Str(safeAutoTimeOut)
+              : '';
+          const effOut = autoPmOut || fallbackAfternoonOut;
           const inMins = parseTimeToMinutes(autoAmIn);
           const outMins = parseTimeToMinutes(effOut);
-          if (inMins !== null && outMins !== null && inMins < 12 * 60 && outMins >= 12 * 60) {
+          if (inMins !== null && outMins !== null && inMins < 12 * 60 && outMins >= 13 * 60) {
             if (!autoAmOut) autoAmOut = '12:00 PM';
             if (!autoPmIn) autoPmIn = '1:00 PM';
             if (!autoPmOut) autoPmOut = effOut;
@@ -488,23 +498,23 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
         } else {
           // Accurate 2-slot auto-split respecting AM/PM
           const tInMins = autoRec.timeIn ? parseTimeToMinutes(autoRec.timeIn) : null;
-          const tOutMins = autoRec.timeOut ? parseTimeToMinutes(autoRec.timeOut) : null;
+          const tOutMins = safeAutoTimeOut ? parseTimeToMinutes(safeAutoTimeOut) : null;
 
           if (tInMins !== null && tOutMins !== null) {
-            if (tInMins < 12 * 60 && tOutMins >= 12 * 60) {
+            if (tInMins < 12 * 60 && tOutMins >= 13 * 60) {
               // Full day spanning morning and afternoon
               autoAmIn = format12Str(autoRec.timeIn);
               autoAmOut = '12:00 PM';
               autoPmIn = '1:00 PM';
-              autoPmOut = format12Str(autoRec.timeOut);
-            } else if (tInMins < 12 * 60 && tOutMins < 12 * 60) {
-              // Morning only
+              autoPmOut = format12Str(safeAutoTimeOut);
+            } else if (tInMins < 12 * 60 && tOutMins < 13 * 60) {
+              // Morning shift (including 12:00 PM - 12:59 PM lunch clock-out)
               autoAmIn = format12Str(autoRec.timeIn);
-              autoAmOut = format12Str(autoRec.timeOut);
+              autoAmOut = format12Str(safeAutoTimeOut);
             } else {
-              // Afternoon / evening only (e.g. 9:42 PM - 10:11 PM)
+              // Afternoon / evening only (e.g. 1:00 PM - 5:00 PM)
               autoPmIn = format12Str(autoRec.timeIn);
-              autoPmOut = format12Str(autoRec.timeOut);
+              autoPmOut = format12Str(safeAutoTimeOut);
             }
           } else if (tInMins !== null) {
             if (tInMins < 12 * 60) {
@@ -513,10 +523,10 @@ export const MonthlyDTTRView: React.FC<MonthlyDTTRViewProps> = ({
               autoPmIn = format12Str(autoRec.timeIn);
             }
           } else if (tOutMins !== null) {
-            if (tOutMins < 12 * 60) {
-              autoAmOut = format12Str(autoRec.timeOut);
+            if (tOutMins < 13 * 60) {
+              autoAmOut = format12Str(safeAutoTimeOut);
             } else {
-              autoPmOut = format12Str(autoRec.timeOut);
+              autoPmOut = format12Str(safeAutoTimeOut);
             }
           }
 

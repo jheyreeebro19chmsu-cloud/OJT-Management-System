@@ -2185,6 +2185,11 @@ export function Dashboard() {
         {/* 4-Slot Daily Attendance Cards (Civil Service Form 48 / DTTR Standard) */}
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-2">
           {(() => {
+            const safeTimeOut =
+              todayRecord?.timeOut && todayRecord.timeOut !== todayRecord.timeIn
+                ? todayRecord.timeOut
+                : '';
+
             const displayAmIn =
               todayRecord?.amArrival ||
               (todayRecord?.timeIn && (!todayRecord.pmArrival || parseInt(todayRecord.timeIn, 10) < 12 || /am/i.test(todayRecord.timeIn))
@@ -2193,10 +2198,10 @@ export function Dashboard() {
 
             const displayAmOut =
               todayRecord?.amDeparture ||
-              (todayRecord?.timeOut &&
-              (!todayRecord.pmArrival || parseInt(todayRecord.timeOut, 10) === 12 || parseInt(todayRecord.timeOut, 10) < 12 || (/am/i.test(todayRecord.timeOut) && !/pm/i.test(todayRecord.timeOut))) &&
-              todayRecord.timeOut !== todayRecord?.pmDeparture
-                ? todayRecord.timeOut
+              (safeTimeOut &&
+              (!todayRecord?.pmArrival || parseInt(safeTimeOut, 10) === 12 || parseInt(safeTimeOut, 10) < 12 || (/am/i.test(safeTimeOut) && !/pm/i.test(safeTimeOut))) &&
+              safeTimeOut !== todayRecord?.pmDeparture
+                ? safeTimeOut
                 : '');
 
             const displayPmIn =
@@ -2207,8 +2212,8 @@ export function Dashboard() {
 
             const displayPmOut =
               todayRecord?.pmDeparture ||
-              (todayRecord?.timeOut && todayRecord.timeOut !== displayAmOut && (todayRecord.pmArrival || parseInt(todayRecord.timeOut, 10) >= 13 || (/pm/i.test(todayRecord.timeOut) && parseInt(todayRecord.timeOut, 10) !== 12))
-                ? todayRecord.timeOut
+              (safeTimeOut && safeTimeOut !== displayAmOut && (todayRecord?.pmArrival || parseInt(safeTimeOut, 10) >= 13 || (/pm/i.test(safeTimeOut) && parseInt(safeTimeOut, 10) !== 12))
+                ? safeTimeOut
                 : '');
 
             const hasAmIn = Boolean(displayAmIn);
@@ -2333,6 +2338,11 @@ export function Dashboard() {
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         {(() => {
           const h = currentTime.getHours();
+          const safeTimeOut =
+            todayRecord?.timeOut && todayRecord.timeOut !== todayRecord.timeIn
+              ? todayRecord.timeOut
+              : '';
+
           const displayAmIn =
             todayRecord?.amArrival ||
             (todayRecord?.timeIn && (!todayRecord.pmArrival || parseInt(todayRecord.timeIn, 10) < 12 || /am/i.test(todayRecord.timeIn))
@@ -2341,10 +2351,10 @@ export function Dashboard() {
 
           const displayAmOut =
             todayRecord?.amDeparture ||
-            (todayRecord?.timeOut &&
-            (!todayRecord.pmArrival || parseInt(todayRecord.timeOut, 10) === 12 || parseInt(todayRecord.timeOut, 10) < 12 || (/am/i.test(todayRecord.timeOut) && !/pm/i.test(todayRecord.timeOut))) &&
-            todayRecord.timeOut !== todayRecord?.pmDeparture
-              ? todayRecord.timeOut
+            (safeTimeOut &&
+            (!todayRecord?.pmArrival || parseInt(safeTimeOut, 10) === 12 || parseInt(safeTimeOut, 10) < 12 || (/am/i.test(safeTimeOut) && !/pm/i.test(safeTimeOut))) &&
+            safeTimeOut !== todayRecord?.pmDeparture
+              ? safeTimeOut
               : '');
 
           const displayPmIn =
@@ -2355,8 +2365,8 @@ export function Dashboard() {
 
           const displayPmOut =
             todayRecord?.pmDeparture ||
-            (todayRecord?.timeOut && todayRecord.timeOut !== displayAmOut && (todayRecord.pmArrival || parseInt(todayRecord.timeOut, 10) >= 13 || (/pm/i.test(todayRecord.timeOut) && parseInt(todayRecord.timeOut, 10) !== 12))
-              ? todayRecord.timeOut
+            (safeTimeOut && safeTimeOut !== displayAmOut && (todayRecord?.pmArrival || parseInt(safeTimeOut, 10) >= 13 || (/pm/i.test(safeTimeOut) && parseInt(safeTimeOut, 10) !== 12))
+              ? safeTimeOut
               : '');
 
           const hasAmIn = Boolean(displayAmIn);
