@@ -1212,7 +1212,7 @@ export async function updateEmployee(id: string, updates: Partial<Employee>): Pr
   }
 }
 
-export async function fetchAllTraineeDocumentsStore(): Promise<Record<string, {
+export async function fetchAllTraineeDocumentsStore(forceFresh: boolean = false): Promise<Record<string, {
   id?: string;
   employeeId?: string;
   email?: string;
@@ -1222,15 +1222,18 @@ export async function fetchAllTraineeDocumentsStore(): Promise<Record<string, {
   documentsStatus?: 'passed' | 'pending' | 'submitted' | 'incomplete' | 'partial';
   updatedAt?: string;
 }>> {
-  if (_storesBootstrapCache.data?.traineeDocuments) {
+  if (!forceFresh && _storesBootstrapCache.data?.traineeDocuments && _storesBootstrapCache.expiresAt > Date.now()) {
     return _storesBootstrapCache.data.traineeDocuments;
   }
-  // 1. Fast zero-DB CDN / API read (no cache-busting query string so CDN edge serves from RAM!)
+  // 1. Fast zero-DB API read (/api/documents serves write-through server memory cache with Cache-Control: no-store!)
   try {
     const res = await fetch('/api/documents?action=get-all-trainee-documents');
     if (res.ok) {
       const parsed = await res.json();
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        if (_storesBootstrapCache.data) {
+          _storesBootstrapCache.data.traineeDocuments = parsed;
+        }
         return parsed;
       }
     }
@@ -1306,6 +1309,8 @@ export async function saveDocumentPassStatus(
   payload: {
     docKey?: string;
     removeDocKey?: string;
+    isEdit?: boolean;
+    replaceSubmittedDocuments?: boolean;
     status?: 'passed' | 'pending' | 'submitted' | 'rejected';
     allPassed?: boolean;
     documentsStatus?: 'passed' | 'pending' | 'submitted' | 'partial' | 'incomplete';
@@ -1322,21 +1327,36 @@ export async function saveDocumentPassStatus(
     ? sanitizeDocumentsForDb({ item: payload.documentItem })?.item
     : undefined;
 
+  const shouldReplaceDocs = Boolean(
+    payload.replaceSubmittedDocuments ||
+    payload.removeDocKey ||
+    payload.isEdit ||
+    payload.submittedDocuments !== undefined
+  );
+
   const cleanPayload = {
     ...payload,
+    replaceSubmittedDocuments: shouldReplaceDocs,
     submittedDocuments: sanitizedSubmittedDocs,
     documentItem: sanitizedDocItem,
   };
 
+  // Invalidate bootstrap caches immediately so subsequent reads reflect edits/deletions
+  _coreBootstrapCache = { data: null, expiresAt: 0 };
+  _storesBootstrapCache = { data: null, expiresAt: 0 };
+
   const emitLiveDocBroadcast = () => {
     broadcastLiveEvent('document_uploaded', {
       employeeId,
+      action: payload.removeDocKey ? 'deleted' : payload.isEdit ? 'edited' : 'uploaded',
       docKey: payload.docKey,
       removeDocKey: payload.removeDocKey,
+      replaceSubmittedDocuments: shouldReplaceDocs,
       documentItem: cleanPayload.documentItem,
       submittedDocuments: cleanPayload.submittedDocuments,
       documentsPassed: payload.allPassed,
       documentsStatus: payload.documentsStatus,
+      updatedAt: new Date().toISOString(),
     });
   };
 

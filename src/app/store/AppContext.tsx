@@ -1235,34 +1235,28 @@ function mergeEmployees(
     const hasRemoteHte = remote.companyName && !isInvalidHteCompany(remote.companyName);
     const hasLocalHte = local.companyName && !isInvalidHteCompany(local.companyName);
 
-    const mergedDocs: TraineeDocuments = { ...(local.submittedDocuments || {}) };
-    if (remote.submittedDocuments) {
-      Object.entries(remote.submittedDocuments).forEach(([docKey, remoteDocItem]) => {
+    // Remote submittedDocuments (hydrated from cloud trainee_documents_store / DB) is authoritative
+    // so documents deleted or edited by a trainee are never resurrected from stale localStorage!
+    let mergedDocs: TraineeDocuments = {};
+    if (remote.submittedDocuments !== undefined) {
+      Object.entries(remote.submittedDocuments || {}).forEach(([docKey, remoteDocItem]) => {
         if (!remoteDocItem) return;
-        const localDocItem = mergedDocs[docKey];
-        if (!localDocItem) {
-          mergedDocs[docKey] = remoteDocItem;
-        } else {
-          mergedDocs[docKey] = {
-            ...localDocItem,
-            ...remoteDocItem,
-            dataUrl: remoteDocItem.dataUrl || localDocItem.dataUrl,
-            fileUrl: remoteDocItem.fileUrl || localDocItem.fileUrl,
-            files:
-              remoteDocItem.files && remoteDocItem.files.length > 0
-                ? remoteDocItem.files
-                : localDocItem.files && localDocItem.files.length > 0
-                ? localDocItem.files
-                : undefined,
-            description: remoteDocItem.description || localDocItem.description,
-            notes: remoteDocItem.notes || localDocItem.notes,
-            status:
-              remoteDocItem.status === 'passed' || localDocItem.status === 'passed'
-                ? 'passed'
-                : remoteDocItem.status || localDocItem.status,
-          };
-        }
+        const localDocItem = local.submittedDocuments?.[docKey];
+        mergedDocs[docKey] = {
+          ...(localDocItem || {}),
+          ...remoteDocItem,
+          dataUrl: remoteDocItem.dataUrl || remoteDocItem.fileUrl || localDocItem?.dataUrl,
+          fileUrl: remoteDocItem.fileUrl || remoteDocItem.dataUrl || localDocItem?.fileUrl,
+          files: Array.isArray(remoteDocItem.files)
+            ? remoteDocItem.files
+            : undefined,
+          description: remoteDocItem.description !== undefined ? remoteDocItem.description : localDocItem?.description,
+          notes: remoteDocItem.notes !== undefined ? remoteDocItem.notes : localDocItem?.notes,
+          status: remoteDocItem.status || localDocItem?.status,
+        };
       });
+    } else if (local.submittedDocuments) {
+      mergedDocs = { ...local.submittedDocuments };
     }
 
     // If local has valid HTE assignment but remote does not yet, preserve the assigned HTE
@@ -1976,13 +1970,28 @@ export function AppProvider({ children }: { children: ReactNode }) {
         setEmployees((prev) => {
           const next = prev.map((emp) => {
             if (emp.id !== payload.employeeId && emp.employeeId !== payload.employeeId) return emp;
-            const mergedDocs: Record<string, any> = {
-              ...(emp.submittedDocuments || {}),
-              ...(payload.submittedDocuments || {}),
-              ...(payload.docKey && payload.documentItem ? { [payload.docKey]: payload.documentItem } : {}),
-            };
+            const mergedDocs: Record<string, any> =
+              payload.replaceSubmittedDocuments && payload.submittedDocuments && typeof payload.submittedDocuments === 'object'
+                ? { ...payload.submittedDocuments }
+                : {
+                    ...(emp.submittedDocuments || {}),
+                    ...(payload.submittedDocuments || {}),
+                  };
+            if (payload.docKey && payload.documentItem && !payload.removeDocKey) {
+              mergedDocs[payload.docKey] = payload.documentItem;
+            }
             if (payload.removeDocKey) {
               delete mergedDocs[payload.removeDocKey];
+              if (payload.removeDocKey === 'consent') delete mergedDocs.parent_consent;
+              if (payload.removeDocKey === 'moa') {
+                delete mergedDocs.memorandum;
+                delete mergedDocs.endorsement;
+              }
+              if (payload.removeDocKey === 'medical') delete mergedDocs.clearance;
+              const remLower = String(payload.removeDocKey).toLowerCase();
+              for (const k of Object.keys(mergedDocs)) {
+                if (k.toLowerCase() === remLower) delete mergedDocs[k];
+              }
             }
             return {
               ...emp,
@@ -1994,6 +2003,45 @@ export function AppProvider({ children }: { children: ReactNode }) {
           saveToStorage(STORAGE_KEYS.EMPLOYEES, next);
           return next;
         });
+
+        // Also keep requiredDocumentSubmissions + shared file cache in sync on delete or edit so stale files never reappear
+        if (payload.removeDocKey) {
+          setRequiredDocumentSubmissions((prev) => {
+            const remLower = String(payload.removeDocKey).toLowerCase();
+            const next = prev.filter(
+              (s) =>
+                !(
+                  (s.employeeId === payload.employeeId) &&
+                  (s.documentId === payload.removeDocKey || String(s.documentId || '').toLowerCase() === remLower)
+                )
+            );
+            saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, next);
+            return next;
+          });
+          try {
+            localStorage.removeItem(`ojt_shared_doc_files_${payload.employeeId}_${payload.removeDocKey}`);
+            localStorage.removeItem(`ojt_shared_doc_files_${payload.removeDocKey}`);
+          } catch {}
+        } else if (payload.docKey && payload.documentItem && Array.isArray(payload.documentItem.files)) {
+          setRequiredDocumentSubmissions((prev) => {
+            const next = prev.map((s) =>
+              s.employeeId === payload.employeeId && s.documentId === payload.docKey
+                ? {
+                    ...s,
+                    fileName: payload.documentItem.name || s.fileName,
+                    fileUrl: payload.documentItem.fileUrl || payload.documentItem.dataUrl || s.fileUrl,
+                    files: payload.documentItem.files,
+                    note: payload.documentItem.notes ?? s.note,
+                    status: payload.documentItem.status === 'passed' ? ('approved' as const) : ('submitted' as const),
+                    verificationStatus: payload.documentItem.status === 'passed' ? ('passed' as const) : ('pending' as const),
+                  }
+                : s
+            );
+            saveToStorage(STORAGE_KEYS.REQUIRED_DOCUMENT_SUBMISSIONS, next);
+            return next;
+          });
+        }
+
         try {
           window.dispatchEvent(new CustomEvent('ojt_employee_documents_updated', { detail: payload }));
         } catch {}
@@ -2089,20 +2137,21 @@ export function AppProvider({ children }: { children: ReactNode }) {
                     (emp.employeeId && s.employeeId && String(s.employeeId).toLowerCase() === emp.employeeId.toLowerCase()) ||
                     (emp.email && s.email && String(s.email).toLowerCase() === emp.email.toLowerCase()))
               );
-            if (!storeHit?.documents || Object.keys(storeHit.documents).length === 0) return emp;
-            const combinedDocs: TraineeDocuments = { ...(emp.submittedDocuments || {}) };
-            for (const [dk, dv] of Object.entries(storeHit.documents as Record<string, any>)) {
+            if (!storeHit || typeof storeHit.documents !== 'object') return emp;
+            // Authoritative sync from trainee_documents_store.json (supports empty {} when last doc is deleted, and reflects edited file counts/notes/status)
+            const combinedDocs: TraineeDocuments = {};
+            for (const [dk, dv] of Object.entries((storeHit.documents || {}) as Record<string, any>)) {
               if (!dv || typeof dv !== 'object') continue;
-              const prev = combinedDocs[dk];
-              const incFiles = Array.isArray(dv.files) ? dv.files : [];
-              const prevFiles = Array.isArray(prev?.files) ? prev.files : [];
+              const prev = emp.submittedDocuments?.[dk];
               combinedDocs[dk] = {
                 ...(prev || {}),
                 ...dv,
-                dataUrl: dv.dataUrl || prev?.dataUrl,
-                fileUrl: dv.fileUrl || prev?.fileUrl,
-                files: incFiles.length >= prevFiles.length && incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
-                status: prev?.status === 'passed' || dv.status === 'passed' ? 'passed' : dv.status || prev?.status,
+                dataUrl: dv.dataUrl || dv.fileUrl || prev?.dataUrl,
+                fileUrl: dv.fileUrl || dv.dataUrl || prev?.fileUrl,
+                files: Array.isArray(dv.files) ? dv.files : undefined,
+                description: dv.description !== undefined ? dv.description : prev?.description,
+                notes: dv.notes !== undefined ? dv.notes : prev?.notes,
+                status: dv.status || prev?.status,
               };
             }
             return {

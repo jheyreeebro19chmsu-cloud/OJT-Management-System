@@ -529,19 +529,13 @@ export function Documents() {
     const sub = empId ? getRequiredDocumentSubmission?.(docKey, empId) : null;
     const subFiles = sub?.files && Array.isArray(sub.files) && sub.files.length > 0 ? sub.files : null;
 
-    const candidates = [
-      Array.isArray(docItem.files) && docItem.files.length > 0 ? docItem.files : null,
-      cachedFiles,
-      subFiles,
-    ].filter(Boolean) as TraineeDocumentFile[][];
-
-    // Pick the richest file list (most items)
-    let baseFiles: TraineeDocumentFile[] | null = null;
-    for (const c of candidates) {
-      if (!baseFiles || c.length > baseFiles.length) {
-        baseFiles = c;
-      }
-    }
+    // `docItem.files` (from authoritative submittedDocuments) always takes precedence so edited/removed files reflect immediately!
+    let baseFiles: TraineeDocumentFile[] | null =
+      Array.isArray(docItem.files) && docItem.files.length > 0
+        ? docItem.files
+        : cachedFiles && cachedFiles.length > 0
+        ? cachedFiles
+        : subFiles;
 
     if (!baseFiles || baseFiles.length === 0) {
       const fallbackUrl = resolveDocDataUrl(docKey, docItem);
@@ -1145,12 +1139,25 @@ export function Documents() {
 
     const empId = employee?.id || employee?.employeeId || currentUser?.employeeId || '';
     try {
-      localStorage.removeItem(`ojt_doc_${empId}_${docKey}`);
-      localStorage.removeItem(`ojt_doc_${docKey}`);
-      localStorage.removeItem(`ojt_doc_base64_${empId}_${docKey}`);
-      localStorage.removeItem(`ojt_doc_base64_${docKey}`);
-      localStorage.removeItem(`ojt_doc_url_${empId}_${docKey}`);
-      localStorage.removeItem(`ojt_doc_current_${docKey}`);
+      const keysToClear = [
+        `ojt_doc_${empId}_${docKey}`,
+        `ojt_doc_${docKey}`,
+        `ojt_doc_base64_${empId}_${docKey}`,
+        `ojt_doc_base64_${docKey}`,
+        `ojt_doc_url_${empId}_${docKey}`,
+        `ojt_doc_current_${docKey}`,
+        `ojt_shared_doc_files_${empId}_${docKey}`,
+        `ojt_shared_doc_files_${docKey}`,
+        ...(employee?.employeeId ? [`ojt_shared_doc_files_${employee.employeeId}_${docKey}`] : []),
+      ];
+      for (const k of keysToClear) {
+        localStorage.removeItem(k);
+        sessionStorage.removeItem(k);
+      }
+      for (let idx = 0; idx < 10; idx++) {
+        localStorage.removeItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`);
+        sessionStorage.removeItem(`ojt_doc_base64_${empId}_${docKey}_${idx}`);
+      }
     } catch {}
 
     const remainingCount = allDocRequirements.filter((req) => {
@@ -1164,28 +1171,40 @@ export function Documents() {
     }).length;
 
     const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
+    const removalStatus = remainingCount > 0 ? 'partial' : 'pending';
     if (employee) {
-      const removalStatus = remainingCount > 0 ? 'partial' : 'incomplete';
       updateEmployee(employee.id, {
         submittedDocuments: updatedDocs,
         documentsPassed: false,
         documentsStatus: removalStatus,
       });
-      if (targetEmpId) {
-        saveDocumentPassStatus(targetEmpId, {
-          removeDocKey: docKey,
-          allPassed: false,
-          documentsStatus: remainingCount > 0 ? 'partial' : 'pending',
-          submittedDocuments: updatedDocs,
-        }).catch(console.warn);
-      }
-    } else if (targetEmpId) {
+    }
+    if (targetEmpId) {
       saveDocumentPassStatus(targetEmpId, {
         removeDocKey: docKey,
+        replaceSubmittedDocuments: true,
         allPassed: false,
-        documentsStatus: remainingCount > 0 ? 'partial' : 'pending',
+        documentsStatus: removalStatus,
         submittedDocuments: updatedDocs,
       }).catch(console.warn);
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent('ojt_document_submitted', {
+            detail: {
+              employeeId: targetEmpId,
+              studentName: employee?.name || currentUser?.name || '',
+              action: 'deleted',
+              removeDocKey: docKey,
+              docTitle: meta?.title || docKey,
+              replaceSubmittedDocuments: true,
+              submittedDocuments: updatedDocs,
+              documentsPassed: false,
+              documentsStatus: removalStatus,
+            },
+          })
+        );
+      } catch {}
     }
 
     if (isCustom && deleteRequiredDocument) {
@@ -1371,10 +1390,21 @@ export function Documents() {
       return;
     }
 
+    // If the trainee removed all attached files in the Edit dialog, delete the document cleanly so Instructor sees it removed!
+    if (files.length === 0) {
+      setIsSavingEdit(false);
+      setEditDocDialog(null);
+      handleRemoveDoc(docKey);
+      return;
+    }
+
     const targetEmpId = employee?.id || employee?.employeeId || currentUser?.employeeId || currentUser?.id || '';
     const uploadedAtIso = new Date().toISOString();
     const existingDoc = submittedDocs[docKey];
     const baseSubmittedDocs = { ...submittedDocs };
+    const hasNewFiles = files.some((f) => Boolean(f.file));
+    const prevFileCount = Array.isArray(existingDoc?.files) ? existingDoc.files.length : existingDoc?.name ? 1 : 0;
+    const filesWereChanged = hasNewFiles || files.length !== prevFileCount;
 
     // 1. Instant optimistic UI update (< 15ms) + immediate modal close
     const optimisticFiles: TraineeDocumentFile[] = files.map((item, idx) => {
@@ -1400,6 +1430,10 @@ export function Documents() {
           : primaryFile.name
         : existingDoc?.name || '';
       const totalBytes = filesToApply.reduce((sum, f) => sum + (Number(f.size) || 0), 0);
+      // If files changed, reset status to 'submitted' so Instructor re-reviews the edited/replaced attachment
+      const nextItemStatus = filesWereChanged
+        ? 'submitted'
+        : existingDoc?.status || (hasFiles ? 'submitted' : 'pending');
 
       const updatedDocItem: TraineeDocumentItem = {
         name: displayName,
@@ -1407,8 +1441,8 @@ export function Documents() {
         dataUrl: primaryFile?.dataUrl || existingDoc?.dataUrl,
         fileUrl: primaryFile?.fileUrl || existingDoc?.fileUrl,
         fileType: primaryFile?.fileType || existingDoc?.fileType,
-        uploadedAt: existingDoc?.uploadedAt || uploadedAtIso,
-        status: existingDoc?.status || (hasFiles ? 'submitted' : 'pending'),
+        uploadedAt: uploadedAtIso,
+        status: nextItemStatus,
         description: description.trim(),
         notes: notes.trim(),
         source: 'portal',
@@ -1421,6 +1455,24 @@ export function Documents() {
         [docKey]: updatedDocItem,
       };
 
+      const newUploadedCount = allDocRequirements.filter((k) => {
+        const item = k.key === docKey ? updatedDocItem : updatedDocs[k.key];
+        return Boolean(item?.dataUrl || item?.name || item?.fileUrl);
+      }).length;
+      const allDocsPassed =
+        newUploadedCount === totalRequired &&
+        allDocRequirements.every((k) => (k.key === docKey ? updatedDocItem : updatedDocs[k.key])?.status === 'passed');
+      const finalDocStatus = allDocsPassed ? 'passed' : 'submitted';
+
+      try {
+        const serializedFiles = JSON.stringify(filesToApply);
+        localStorage.setItem(`ojt_shared_doc_files_${targetEmpId}_${docKey}`, serializedFiles);
+        localStorage.setItem(`ojt_shared_doc_files_${docKey}`, serializedFiles);
+        if (employee?.employeeId) {
+          localStorage.setItem(`ojt_shared_doc_files_${employee.employeeId}_${docKey}`, serializedFiles);
+        }
+      } catch {}
+
       setDatabaseDocs((prev) => ({ ...(prev || {}), [docKey]: updatedDocItem }));
 
       if (persistRemote) {
@@ -1428,15 +1480,40 @@ export function Documents() {
         if (employee) {
           updateEmployee(employee.id, {
             submittedDocuments: updatedDocs,
+            documentsPassed: allDocsPassed,
+            documentsStatus: finalDocStatus,
           });
         }
         if (canonicalEmpId) {
           saveDocumentPassStatus(canonicalEmpId, {
             docKey,
-            status: updatedDocItem.status || 'submitted',
+            isEdit: true,
+            replaceSubmittedDocuments: true,
+            status: nextItemStatus,
+            allPassed: allDocsPassed,
+            documentsStatus: finalDocStatus,
             submittedDocuments: updatedDocs,
             documentItem: updatedDocItem,
           }).catch(console.warn);
+
+          try {
+            window.dispatchEvent(
+              new CustomEvent('ojt_document_submitted', {
+                detail: {
+                  employeeId: canonicalEmpId,
+                  studentName: employee?.name || currentUser?.name || '',
+                  action: 'edited',
+                  docKey,
+                  docTitle: cleanTitle,
+                  replaceSubmittedDocuments: true,
+                  documentItem: updatedDocItem,
+                  submittedDocuments: updatedDocs,
+                  documentsPassed: allDocsPassed,
+                  documentsStatus: finalDocStatus,
+                },
+              })
+            );
+          } catch {}
         }
 
         if (canonicalEmpId && hasFiles) {
@@ -1455,7 +1532,6 @@ export function Documents() {
       }
     };
 
-    const hasNewFiles = files.some((f) => Boolean(f.file));
     applyEditedState(optimisticFiles, !hasNewFiles);
 
     if (isCustom && updateRequiredDocument) {

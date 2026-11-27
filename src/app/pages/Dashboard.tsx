@@ -601,13 +601,23 @@ export function Dashboard() {
 
   useEffect(() => {
     if (!isAdmin) return;
-    fetchAllTraineeDocumentsStore()
-      .then((storeMap) => {
-        if (storeMap && typeof storeMap === 'object') {
-          setCloudPendingDocsMap(storeMap);
-        }
-      })
-      .catch(() => {});
+    const syncDocs = (force = false) => {
+      fetchAllTraineeDocumentsStore(force)
+        .then((storeMap) => {
+          if (storeMap && typeof storeMap === 'object') {
+            setCloudPendingDocsMap(storeMap);
+          }
+        })
+        .catch(() => {});
+    };
+    syncDocs(false);
+    const onDocUpdate = () => syncDocs(true);
+    window.addEventListener('ojt_document_submitted', onDocUpdate);
+    window.addEventListener('ojt_employee_documents_updated', onDocUpdate);
+    return () => {
+      window.removeEventListener('ojt_document_submitted', onDocUpdate);
+      window.removeEventListener('ojt_employee_documents_updated', onDocUpdate);
+    };
   }, [isAdmin]);
 
   useEffect(() => {
@@ -629,13 +639,10 @@ export function Dashboard() {
                 (emp.employeeId && s.employeeId && String(s.employeeId).toLowerCase() === emp.employeeId.toLowerCase()) ||
                 (emp.email && s.email && String(s.email).toLowerCase() === emp.email.toLowerCase()))
           );
-        if (!hit?.documents) return emp;
+        if (!hit || typeof hit.documents !== 'object') return emp;
         return {
           ...emp,
-          submittedDocuments: {
-            ...(emp.submittedDocuments || {}),
-            ...hit.documents,
-          },
+          submittedDocuments: { ...hit.documents },
           documentsPassed: hit.documentsPassed ?? emp.documentsPassed,
           documentsStatus: hit.documentsStatus || emp.documentsStatus,
         };

@@ -144,6 +144,12 @@ export function AdminEmployees() {
   const [isSavingDoc, setIsSavingDoc] = useState(false);
 
   const resolveTraineeDocFiles = (empId: string, docKey: string, doc?: any): TraineeDocumentFile[] => {
+    // If `doc` is undefined/null (e.g. trainee deleted the document or never uploaded it), return [] immediately
+    // so stale localStorage or old requiredDocumentSubmissions never resurrect a deleted document!
+    if (!doc || typeof doc !== 'object') {
+      return [];
+    }
+
     let cachedFiles: TraineeDocumentFile[] | null = null;
     try {
       const empObj = employees.find((e) => e.id === empId || e.employeeId === empId);
@@ -159,22 +165,18 @@ export function AdminEmployees() {
 
     const sub = getRequiredDocumentSubmission?.(docKey, empId);
     const subFiles = sub?.files && Array.isArray(sub.files) && sub.files.length > 0 ? sub.files : null;
-    const candidates = [
-      doc?.files && Array.isArray(doc.files) && doc.files.length > 0 ? doc.files : null,
-      cachedFiles && cachedFiles.length > 0 ? cachedFiles : null,
-      subFiles,
-    ].filter(Boolean) as TraineeDocumentFile[][];
 
-    let bestList: TraineeDocumentFile[] | null = null;
-    for (const c of candidates) {
-      if (!bestList || c.length > bestList.length) {
-        bestList = c;
-      }
-    }
+    // `doc.files` (from authoritative submittedDocuments) always takes precedence so edited/removed files reflect immediately!
+    const authoritativeFiles =
+      Array.isArray(doc.files) && doc.files.length > 0
+        ? doc.files
+        : cachedFiles && cachedFiles.length > 0
+        ? cachedFiles
+        : subFiles;
 
     const baseFiles: TraineeDocumentFile[] =
-      bestList && bestList.length > 0
-        ? bestList
+      authoritativeFiles && authoritativeFiles.length > 0
+        ? authoritativeFiles
         : doc?.name || doc?.fileUrl || doc?.dataUrl
         ? [
             {
@@ -307,8 +309,15 @@ export function AdminEmployees() {
       }
     }
 
-    // 3. Fallback: Check getRequiredDocumentSubmission
-    const sub = getRequiredDocumentSubmission(req.id, empId) || (req.targetRequirementKey ? getRequiredDocumentSubmission(req.targetRequirementKey, empId) : null);
+    // 3. Fallback: Check getRequiredDocumentSubmission ONLY when cloud store doesn't have an authoritative entry for this trainee
+    const hasAuthoritativeCloudEntry = Boolean(
+      cloudTraineeDocsMap[emp.id] ||
+      (emp.employeeId && cloudTraineeDocsMap[emp.employeeId])
+    );
+    const sub = !hasAuthoritativeCloudEntry
+      ? (getRequiredDocumentSubmission(req.id, empId) ||
+         (req.targetRequirementKey ? getRequiredDocumentSubmission(req.targetRequirementKey, empId) : null))
+      : null;
     if (sub && (!docItem || (!docItem.fileUrl && !docItem.dataUrl && !docItem.name))) {
       const isSubPassed = sub.status === 'approved' || sub.verificationStatus === 'passed';
       docItem = {
@@ -326,11 +335,11 @@ export function AdminEmployees() {
 
     // 4. Resolve files with resolveTraineeDocFiles
     const files = resolveTraineeDocFiles(empId, req.id, docItem);
-    const isPassed = docItem?.status === 'passed' || sub?.status === 'approved' || sub?.verificationStatus === 'passed';
-    const hasFile = files.length > 0 || Boolean(docItem?.name || docItem?.fileUrl || docItem?.dataUrl || sub?.fileName || sub?.fileUrl);
+    const isPassed = docItem?.status === 'passed' || Boolean(sub && (sub.status === 'approved' || sub.verificationStatus === 'passed'));
+    const hasFile = files.length > 0 || Boolean(docItem?.name || docItem?.fileUrl || docItem?.dataUrl);
     const primaryFile = files[0];
-    const fileName = primaryFile?.name || docItem?.name || sub?.fileName;
-    const fileUrl = primaryFile?.fileUrl || primaryFile?.dataUrl || docItem?.fileUrl || docItem?.dataUrl || sub?.fileUrl || sub?.fileDataUrl;
+    const fileName = primaryFile?.name || docItem?.name;
+    const fileUrl = primaryFile?.fileUrl || primaryFile?.dataUrl || docItem?.fileUrl || docItem?.dataUrl;
 
     return {
       doc: docItem,
@@ -630,37 +639,74 @@ export function AdminEmployees() {
       .catch(() => {});
   }, [activeCategoryTab]);
 
-  // Keep open Review/View modal in sync when `employees` state receives live document updates
-  useEffect(() => {
-    if (!selectedEmp) return;
-    const latest = employees.find(
-      (e) => e.id === selectedEmp.id || (e.employeeId && e.employeeId === selectedEmp.employeeId)
-    );
-    if (latest && latest.submittedDocuments !== selectedEmp.submittedDocuments) {
-      setSelectedEmp((cur) =>
-        cur
-          ? {
-              ...cur,
-              submittedDocuments: {
-                ...(cur.submittedDocuments || {}),
-                ...(latest.submittedDocuments || {}),
-              },
-              documentsPassed: latest.documentsPassed ?? cur.documentsPassed,
-              documentsStatus: latest.documentsStatus ?? cur.documentsStatus,
-            }
-          : cur
-      );
-    }
-  }, [employees]);
-
   useEffect(() => {
     const handleDocSubmitted = (e: any) => {
       const detail = e?.detail;
-      if (detail?.studentName) {
-        toast.info(`📄 ${detail.studentName} submitted "${detail.docTitle}" for instructor review!`, {
-          duration: 6000,
+      if (detail?.employeeId) {
+        // Immediately update cloudTraineeDocsMap in memory from the broadcast/event payload so UI updates in <20ms!
+        setCloudTraineeDocsMap((prevMap) => {
+          const nextMap = { ...prevMap };
+          const matchKey =
+            Object.keys(nextMap).find(
+              (k) =>
+                k === detail.employeeId ||
+                nextMap[k]?.id === detail.employeeId ||
+                nextMap[k]?.employeeId === detail.employeeId
+            ) || detail.employeeId;
+          const prevEntry = nextMap[matchKey] || { id: detail.employeeId, documents: {} };
+          const nextDocs: Record<string, any> =
+            detail.replaceSubmittedDocuments && detail.submittedDocuments && typeof detail.submittedDocuments === 'object'
+              ? { ...detail.submittedDocuments }
+              : {
+                  ...(prevEntry.documents || {}),
+                  ...(detail.submittedDocuments || {}),
+                };
+          if (detail.docKey && detail.documentItem && !detail.removeDocKey) {
+            nextDocs[detail.docKey] = detail.documentItem;
+          }
+          if (detail.removeDocKey) {
+            delete nextDocs[detail.removeDocKey];
+            if (detail.removeDocKey === 'consent') delete nextDocs.parent_consent;
+            if (detail.removeDocKey === 'moa') {
+              delete nextDocs.memorandum;
+              delete nextDocs.endorsement;
+            }
+            if (detail.removeDocKey === 'medical') delete nextDocs.clearance;
+            const remLower = String(detail.removeDocKey).toLowerCase();
+            for (const k of Object.keys(nextDocs)) {
+              if (k.toLowerCase() === remLower) delete nextDocs[k];
+            }
+          }
+          nextMap[matchKey] = {
+            ...prevEntry,
+            documents: nextDocs,
+            documentsPassed: detail.documentsPassed ?? prevEntry.documentsPassed,
+            documentsStatus: detail.documentsStatus ?? prevEntry.documentsStatus,
+            updatedAt: new Date().toISOString(),
+          };
+          return nextMap;
         });
       }
+
+      if (detail?.studentName) {
+        if (detail.action === 'deleted' || detail.removeDocKey) {
+          toast.info(`🗑️ ${detail.studentName} removed "${detail.docTitle || detail.removeDocKey}".`, { duration: 5000 });
+        } else if (detail.action === 'edited') {
+          toast.info(`✏️ ${detail.studentName} updated "${detail.docTitle || detail.docKey}"!`, { duration: 5000 });
+        } else {
+          toast.info(`📄 ${detail.studentName} submitted "${detail.docTitle || detail.docKey}" for instructor review!`, {
+            duration: 6000,
+          });
+        }
+      }
+
+      fetchAllTraineeDocumentsStore(true)
+        .then((storeMap) => {
+          if (storeMap && typeof storeMap === 'object') {
+            setCloudTraineeDocsMap(storeMap);
+          }
+        })
+        .catch(() => {});
       refreshData?.({ force: true } as any)?.catch?.(() => {});
     };
 
@@ -701,7 +747,7 @@ export function AdminEmployees() {
     );
   }, [currentUser, currentEmp]);
 
-  // Enrich employees with live zero-DB cloudTraineeDocsMap so both Documents Hub and Trainees tabs show instant uploads
+  // Enrich employees with live zero-DB cloudTraineeDocsMap so uploads, edits, and deletions reflect authoritatively
   const enrichedEmployees = useMemo(() => {
     if (!cloudTraineeDocsMap || Object.keys(cloudTraineeDocsMap).length === 0) return employees;
     return employees.map((emp) => {
@@ -715,20 +761,20 @@ export function AdminEmployees() {
               (emp.employeeId && s.employeeId && String(s.employeeId).toLowerCase() === emp.employeeId.toLowerCase()) ||
               (emp.email && s.email && String(s.email).toLowerCase() === emp.email.toLowerCase()))
         );
-      if (!hit?.documents || Object.keys(hit.documents).length === 0) return emp;
-      const mergedDocs: TraineeDocuments = { ...(emp.submittedDocuments || {}) };
-      for (const [k, v] of Object.entries(hit.documents as Record<string, any>)) {
+      if (!hit || typeof hit.documents !== 'object') return emp;
+      const mergedDocs: TraineeDocuments = {};
+      for (const [k, v] of Object.entries((hit.documents || {}) as Record<string, any>)) {
         if (!v || typeof v !== 'object') continue;
-        const prev = mergedDocs[k];
-        const incFiles = Array.isArray(v.files) ? v.files : [];
-        const prevFiles = Array.isArray(prev?.files) ? prev.files : [];
+        const prev = emp.submittedDocuments?.[k];
         mergedDocs[k] = {
           ...(prev || {}),
           ...v,
-          dataUrl: v.dataUrl || prev?.dataUrl,
-          fileUrl: v.fileUrl || prev?.fileUrl,
-          files: incFiles.length >= prevFiles.length && incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
-          status: prev?.status === 'passed' || v.status === 'passed' ? 'passed' : v.status || prev?.status || 'submitted',
+          dataUrl: v.dataUrl || v.fileUrl || prev?.dataUrl,
+          fileUrl: v.fileUrl || v.dataUrl || prev?.fileUrl,
+          files: Array.isArray(v.files) ? v.files : undefined,
+          description: v.description !== undefined ? v.description : prev?.description,
+          notes: v.notes !== undefined ? v.notes : prev?.notes,
+          status: v.status || prev?.status || 'submitted',
         };
       }
       return {
@@ -739,6 +785,26 @@ export function AdminEmployees() {
       };
     });
   }, [employees, cloudTraineeDocsMap]);
+
+  // Keep open Review/View modal in sync when `enrichedEmployees` receives live document uploads, edits, or deletions
+  useEffect(() => {
+    if (!selectedEmp) return;
+    const latest = enrichedEmployees.find(
+      (e) => e.id === selectedEmp.id || (e.employeeId && e.employeeId === selectedEmp.employeeId)
+    );
+    if (latest && latest.submittedDocuments !== selectedEmp.submittedDocuments) {
+      setSelectedEmp((cur) =>
+        cur
+          ? {
+              ...cur,
+              submittedDocuments: latest.submittedDocuments ? { ...latest.submittedDocuments } : {},
+              documentsPassed: latest.documentsPassed ?? cur.documentsPassed,
+              documentsStatus: latest.documentsStatus ?? cur.documentsStatus,
+            }
+          : cur
+      );
+    }
+  }, [enrichedEmployees]);
 
   // All student trainees for document compliance monitoring
   const allTrainees = useMemo(() => {
@@ -1389,53 +1455,46 @@ export function AdminEmployees() {
     if (!targetId) return;
     fetchEmployeeDocuments(targetId)
       .then((res) => {
-        if (!res?.documents || Object.keys(res.documents).length === 0) return;
-        const merged: TraineeDocuments = { ...(emp.submittedDocuments || {}) };
-        let changed = false;
-        for (const [k, rawInc] of Object.entries(res.documents)) {
+        if (!res || typeof res.documents !== 'object') return;
+        const merged: TraineeDocuments = {};
+        for (const [k, rawInc] of Object.entries(res.documents || {})) {
           if (!rawInc || typeof rawInc !== 'object') continue;
           const inc = rawInc as TraineeDocumentItem;
-          const prev = merged[k];
-          const incFiles = Array.isArray(inc.files) ? inc.files : [];
-          const prevFiles = Array.isArray(prev?.files) ? prev.files : [];
-          const isNewer = Boolean(inc.uploadedAt && (!prev?.uploadedAt || inc.uploadedAt > prev.uploadedAt));
-          if (!prev || incFiles.length >= prevFiles.length || isNewer || (!prev.fileUrl && inc.fileUrl)) {
-            merged[k] = {
-              ...(prev || {}),
-              ...inc,
-              name: inc.name || prev?.name || k,
-              dataUrl: inc.dataUrl || prev?.dataUrl,
-              fileUrl: inc.fileUrl || prev?.fileUrl,
-              uploadedAt: inc.uploadedAt || prev?.uploadedAt || new Date().toISOString(),
-              files: incFiles.length >= prevFiles.length && incFiles.length > 0 ? incFiles : prevFiles.length > 0 ? prevFiles : undefined,
-              status: prev?.status === 'passed' || inc.status === 'passed' ? 'passed' : inc.status || prev?.status || 'submitted',
-            };
-            changed = true;
-          }
+          const prev = emp.submittedDocuments?.[k];
+          merged[k] = {
+            ...(prev || {}),
+            ...inc,
+            name: inc.name || prev?.name || k,
+            dataUrl: inc.dataUrl || inc.fileUrl || prev?.dataUrl,
+            fileUrl: inc.fileUrl || inc.dataUrl || prev?.fileUrl,
+            uploadedAt: inc.uploadedAt || prev?.uploadedAt || new Date().toISOString(),
+            files: Array.isArray(inc.files) ? inc.files : undefined,
+            description: inc.description !== undefined ? inc.description : prev?.description,
+            notes: inc.notes !== undefined ? inc.notes : prev?.notes,
+            status: inc.status || prev?.status || 'submitted',
+          };
         }
-        if (changed) {
-          setCloudTraineeDocsMap((prevMap) => ({
-            ...prevMap,
-            [emp.id]: {
-              id: emp.id,
-              employeeId: emp.employeeId,
-              email: emp.email,
-              documents: merged,
-              documentsPassed: res.documentsPassed ?? emp.documentsPassed,
-              documentsStatus: res.documentsStatus || emp.documentsStatus,
-            },
-          }));
-          setSelectedEmp((cur) =>
-            cur && (cur.id === emp.id || cur.employeeId === emp.employeeId)
-              ? {
-                  ...cur,
-                  submittedDocuments: merged,
-                  documentsPassed: res.documentsPassed ?? cur.documentsPassed,
-                  documentsStatus: res.documentsStatus || cur.documentsStatus,
-                }
-              : cur
-          );
-        }
+        setCloudTraineeDocsMap((prevMap) => ({
+          ...prevMap,
+          [emp.id]: {
+            id: emp.id,
+            employeeId: emp.employeeId,
+            email: emp.email,
+            documents: merged,
+            documentsPassed: res.documentsPassed ?? emp.documentsPassed,
+            documentsStatus: res.documentsStatus || emp.documentsStatus,
+          },
+        }));
+        setSelectedEmp((cur) =>
+          cur && (cur.id === emp.id || cur.employeeId === emp.employeeId)
+            ? {
+                ...cur,
+                submittedDocuments: merged,
+                documentsPassed: res.documentsPassed ?? cur.documentsPassed,
+                documentsStatus: res.documentsStatus || cur.documentsStatus,
+              }
+            : cur
+        );
       })
       .catch(() => {});
   };

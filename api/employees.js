@@ -651,13 +651,16 @@ export default async function handler(req, res) {
         const curLoc = typeof existingEmp.registration_location === 'object' && existingEmp.registration_location !== null
           ? existingEmp.registration_location
           : {};
+        const explicitDocsProvided = updates.submittedDocuments !== undefined;
         dbPayload.registration_location = {
           ...curLoc,
           ...dbPayload.registration_location,
-          documents: sanitizeDocuments({
-            ...(curLoc.documents || {}),
-            ...(dbPayload.registration_location.documents || {}),
-          }),
+          documents: explicitDocsProvided
+            ? sanitizeDocuments(dbPayload.registration_location.documents || {})
+            : sanitizeDocuments({
+                ...(curLoc.documents || {}),
+                ...(dbPayload.registration_location.documents || {}),
+              }),
           documentsPassed: dbPayload.registration_location.documentsPassed !== undefined
             ? dbPayload.registration_location.documentsPassed
             : (curLoc.documentsPassed !== undefined ? curLoc.documentsPassed : false),
@@ -749,6 +752,7 @@ export default async function handler(req, res) {
       }
 
       _employeesListCache = { data: null, expiresAt: 0 };
+      _bootstrapMetaCache = { data: null, expiresAt: 0 };
       syncStorageAccountsIndexAsync();
       return sendJson(res, 200, { success: true, data });
     }

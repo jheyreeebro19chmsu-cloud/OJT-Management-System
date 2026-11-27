@@ -190,7 +190,7 @@ async function mirrorTraineeDocsToStore(emp, docs, documentsPassed, documentsSta
           existingMap = parsed;
         }
       }
-    } catch {}
+    } catch { }
 
     const key = String(emp.id || emp.employee_id);
     const cleanDocs = sanitizeDocuments(docs || {});
@@ -476,7 +476,7 @@ export default async function handler(req, res) {
             }
           }
         }
-      } catch {}
+      } catch { }
 
       // Ensure any document recorded in the documents table is present in the documents object
       for (const row of docRows) {
@@ -1034,29 +1034,47 @@ export default async function handler(req, res) {
         : {};
       const currentDocs = { ...(curRegLoc.documents || {}) };
 
-      // 2. Merge single document, full document list, or explicit removal
+      // 2. Merge single document, full document list, or explicit removal / edit replacement
       const docKey = body.docKey;
       const documentItem = body.documentItem;
-      if (body.removeDocKey) {
-        delete currentDocs[body.removeDocKey];
-        if (body.removeDocKey === 'consent') delete currentDocs.parent_consent;
-        if (body.removeDocKey === 'moa') delete currentDocs.memorandum;
-        if (body.removeDocKey === 'medical') delete currentDocs.clearance;
-      }
-      if (body.submittedDocuments && typeof body.submittedDocuments === 'object') {
-        if (body.removeDocKey) {
-          // Replace removed keys cleanly while merging remaining keys
-          for (const k of Object.keys(currentDocs)) {
-            if (!(k in body.submittedDocuments) && k === body.removeDocKey) {
-              delete currentDocs[k];
-            }
+      const prevRemovedName = body.removeDocKey ? currentDocs[body.removeDocKey]?.name : null;
+
+      const deleteKeyAndAliases = (targetObj, keyToRemove) => {
+        if (!targetObj || !keyToRemove) return;
+        delete targetObj[keyToRemove];
+        if (keyToRemove === 'consent') delete targetObj.parent_consent;
+        if (keyToRemove === 'moa') {
+          delete targetObj.memorandum;
+          delete targetObj.endorsement;
+        }
+        if (keyToRemove === 'medical') delete targetObj.clearance;
+        const lower = String(keyToRemove).toLowerCase();
+        for (const k of Object.keys(targetObj)) {
+          if (k.toLowerCase() === lower) {
+            delete targetObj[k];
           }
         }
-        Object.assign(currentDocs, body.submittedDocuments);
+      };
+
+      if (body.submittedDocuments && typeof body.submittedDocuments === 'object') {
+        if (body.replaceSubmittedDocuments || body.removeDocKey || body.isEdit) {
+          // Authoritative replacement so deleted documents and removed sub-files are cleanly removed
+          for (const k of Object.keys(currentDocs)) {
+            delete currentDocs[k];
+          }
+          Object.assign(currentDocs, body.submittedDocuments);
+        } else {
+          Object.assign(currentDocs, body.submittedDocuments);
+        }
       }
+
+      if (body.removeDocKey) {
+        deleteKeyAndAliases(currentDocs, body.removeDocKey);
+      }
+
       if (docKey && documentItem && typeof documentItem === 'object') {
         currentDocs[docKey] = {
-          ...(currentDocs[docKey] || {}),
+          ...(body.isEdit ? {} : (currentDocs[docKey] || {})),
           ...documentItem,
         };
       }
@@ -1104,11 +1122,18 @@ export default async function handler(req, res) {
         console.warn('Notice updating employee registration_location (mirrored to store):', updateErr.message);
       }
 
-      // 5. Store / sync ONLY changed document(s) into dedicated documents table in parallel (instead of 20 sequential queries)
+      // 5. Store / sync ONLY changed or removed document(s) in dedicated documents table
+      if (body.removeDocKey && emp.id) {
+        try {
+          const namesToDelete = [prevRemovedName, `${body.removeDocKey}.pdf`, body.removeDocKey].filter(Boolean);
+          await supabase.from('documents').delete().eq('employee_id', emp.id).in('file_name', namesToDelete);
+        } catch {}
+      }
+
       const syncItems = [];
-      if (docKey && documentItem) {
+      if (!body.removeDocKey && docKey && documentItem) {
         syncItems.push({ key: docKey, item: documentItem });
-      } else if (body.submittedDocuments) {
+      } else if (!body.removeDocKey && body.submittedDocuments) {
         for (const [k, v] of Object.entries(body.submittedDocuments)) {
           if (v && typeof v === 'object') syncItems.push({ key: k, item: v });
         }
