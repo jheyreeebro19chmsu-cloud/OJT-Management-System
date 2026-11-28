@@ -327,16 +327,17 @@ export default async function handler(req, res) {
     if (req.method === 'GET') {
       const action = query.action;
 
-      // Action: Consolidated single-request bootstrap of all 6 zero-DB JSON stores (cuts 6 requests -> 1!)
+      // Action: Consolidated single-request bootstrap of all zero-DB JSON stores
       if (action === 'get-bootstrap-stores') {
         res.setHeader('Cache-Control', 'public, s-maxage=15, stale-while-revalidate=45');
-        const [traineeDocuments, requirements, monitoringReports, evaluations, announcements, dttr] = await Promise.all([
+        const [traineeDocuments, requirements, monitoringReports, evaluations, announcements, dttr, academicSettings] = await Promise.all([
           readSettingsJsonFast('trainee_documents_store.json', {}),
           readSettingsJsonFast('requirements_store.json', []),
           readSettingsJsonFast('monitoring_reports_store.json', []),
           readSettingsJsonFast('evaluations_store.json', []),
           readSettingsJsonFast('announcements_store.json', []),
           readSettingsJsonFast('dttr_store.json', { monthlyDttrs: [], timeRecords: [] }),
+          readSettingsJsonFast('academic_settings_store.json', null),
         ]);
         return sendJson(res, 200, {
           traineeDocuments: traineeDocuments && typeof traineeDocuments === 'object' && !Array.isArray(traineeDocuments) ? traineeDocuments : {},
@@ -345,7 +346,15 @@ export default async function handler(req, res) {
           evaluations: Array.isArray(evaluations) ? evaluations : [],
           announcements: Array.isArray(announcements) ? announcements : [],
           dttr: dttr && typeof dttr === 'object' ? dttr : { monthlyDttrs: [], timeRecords: [] },
+          academicSettings: academicSettings && typeof academicSettings === 'object' && !Array.isArray(academicSettings) ? academicSettings : null,
         });
+      }
+
+      // Action: Retrieve Academic Year configuration & per-AY Required OJT Hours (zero-DB CDN store; supports ?fresh=1)
+      if (action === 'get-academic-settings') {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+        const parsed = await readSettingsJsonFast('academic_settings_store.json', null, query.fresh === '1');
+        return sendJson(res, 200, parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {});
       }
 
       // Action: Retrieve institutional and departmental required documents
@@ -361,10 +370,10 @@ export default async function handler(req, res) {
         return sendJson(res, 200, parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {});
       }
 
-      // Action: Retrieve Monitoring Reports (Mid-Term, End-Term, Monthly) and Trainee File Submissions
+      // Action: Retrieve Monitoring Reports (Mid-Term, End-Term, Monthly) and Trainee File Submissions (supports ?fresh=1)
       if (action === 'get-monitoring-reports') {
         res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-        const parsed = await readSettingsJsonFast('monitoring_reports_store.json', []);
+        const parsed = await readSettingsJsonFast('monitoring_reports_store.json', [], query.fresh === '1');
         return sendJson(res, 200, Array.isArray(parsed) ? parsed : []);
       }
 
@@ -581,6 +590,75 @@ export default async function handler(req, res) {
     if (req.method === 'POST' || req.method === 'PUT') {
       const body = await parseBody(req);
 
+      // Support server-side save of Academic Years, Active Academic Year, and per-AY Required OJT Hours
+      if (body.action === 'save-academic-settings') {
+        try {
+          const existing = (await readSettingsJsonFast('academic_settings_store.json', {}, true)) || {};
+          const mergedYears = Array.from(
+            new Set([
+              ...(Array.isArray(existing.academicYears) ? existing.academicYears : []),
+              ...(Array.isArray(body.academicYears) ? body.academicYears : []),
+              '2025-2026',
+              '2026-2027',
+            ].filter((y) => typeof y === 'string' && /^\d{4}-\d{4}$/.test(y.trim())).map((y) => y.trim()))
+          );
+
+          const cleanHours = {};
+          const sourceHours = {
+            ...(existing.academicYearHours && typeof existing.academicYearHours === 'object' ? existing.academicYearHours : {}),
+            ...(body.academicYearHours && typeof body.academicYearHours === 'object' ? body.academicYearHours : {}),
+          };
+          for (const [yr, hrs] of Object.entries(sourceHours)) {
+            const num = Math.round(Number(hrs));
+            if (/^\d{4}-\d{4}$/.test(yr) && Number.isFinite(num) && num > 0) {
+              cleanHours[yr] = num;
+            }
+          }
+          for (const yr of mergedYears) {
+            if (!cleanHours[yr]) cleanHours[yr] = 600;
+          }
+
+          const payload = {
+            academicYears: mergedYears,
+            activeAcademicYear: body.activeAcademicYear || existing.activeAcademicYear || '2026-2027',
+            academicYearHours: cleanHours,
+            updatedAt: new Date().toISOString(),
+          };
+
+          setSettingsCache('academic_settings_store.json', payload, 60000);
+          const buffer = Buffer.from(JSON.stringify(payload), 'utf8');
+          const { error: upErr } = await supabase.storage
+            .from('face-photos')
+            .upload('settings/academic_settings_store.json', buffer, {
+              contentType: 'application/json',
+              cacheControl: '60',
+              upsert: true,
+            });
+
+          // If Instructor edited hours for a specific Academic Year, sync ONLY trainees in that Academic Year in 1 SQL query
+          const syncYear = typeof body.syncAcademicYear === 'string' ? body.syncAcademicYear.trim() : '';
+          const syncHours = Math.round(Number(body.syncHours));
+          if (/^\d{4}-\d{4}$/.test(syncYear) && Number.isFinite(syncHours) && syncHours > 0) {
+            try {
+              await supabase
+                .from('employees')
+                .update({ required_hours: syncHours })
+                .eq('academic_year', syncYear)
+                .not('position', 'in', '("OJT Instructor","Administrator","HTE Representative","Training Supervisor")');
+            } catch (empSyncErr) {
+              console.warn('save-academic-settings employee hours sync notice:', empSyncErr?.message || empSyncErr);
+            }
+          }
+
+          if (upErr) {
+            return sendJson(res, 500, { error: upErr.message });
+          }
+          return sendJson(res, 200, { success: true, settings: payload });
+        } catch (err) {
+          return sendJson(res, 500, { error: err.message || 'Failed to save academic settings' });
+        }
+      }
+
       // Support server-side save of institutional/departmental requirements
       if (body.action === 'save-requirements') {
         try {
@@ -602,7 +680,7 @@ export default async function handler(req, res) {
         }
       }
 
-      // Support server-side save of Monitoring Reports & Trainee File Submissions
+      // Support server-side save of Monitoring Reports & Trainee File Submissions with strict per-trainee ownership isolation
       if (body.action === 'save-monitoring-reports') {
         try {
           const slimFile = (f) => {
@@ -616,30 +694,222 @@ export default async function handler(req, res) {
               dataUrl: httpUrl || dataUrl,
             };
           };
-          const rawReports = Array.isArray(body.reports) ? body.reports : [];
-          const reports = rawReports.map((r) => ({
+
+          const hasValidSubmissionContent = (s) =>
+            Boolean(
+              s &&
+              typeof s === 'object' &&
+              ((Array.isArray(s.files) && s.files.length > 0) || (typeof s.notes === 'string' && s.notes.trim().length > 0))
+            );
+
+          const slimReport = (r) => ({
             ...r,
             instructorFiles: Array.isArray(r.instructorFiles) ? r.instructorFiles.map(slimFile) : r.instructorFiles,
             traineeFiles: Array.isArray(r.traineeFiles) ? r.traineeFiles.map(slimFile) : r.traineeFiles,
             submissions: Array.isArray(r.submissions)
-              ? r.submissions.map((s) => ({
-                ...s,
-                files: Array.isArray(s.files) ? s.files.map(slimFile) : s.files,
-              }))
+              ? r.submissions
+                  .filter(hasValidSubmissionContent)
+                  .map((s) => ({
+                    ...s,
+                    files: Array.isArray(s.files) ? s.files.map(slimFile) : [],
+                  }))
               : r.submissions,
-          }));
-          setSettingsCache('monitoring_reports_store.json', reports, 60000);
-          const jsonStr = JSON.stringify(reports);
+          });
+
+          const extractStoragePathFromUrl = (url) => {
+            if (typeof url !== 'string' || !url.startsWith('http')) return null;
+            const match = url.match(/\/storage\/v1\/object\/(?:public|sign)\/face-photos\/(.+?)(?:\?|$)/);
+            return match && match[1] ? decodeURIComponent(match[1]) : null;
+          };
+
+          const purgeRemovedStorageUrls = async (removedUrls, stillReferencedUrls = new Set()) => {
+            const paths = Array.from(
+              new Set(
+                (Array.isArray(removedUrls) ? removedUrls : [])
+                  .filter((u) => typeof u === 'string' && !stillReferencedUrls.has(u.split('?')[0]))
+                  .map(extractStoragePathFromUrl)
+                  .filter(Boolean)
+              )
+            );
+            if (paths.length > 0) {
+              try {
+                await supabase.storage.from('face-photos').remove(paths);
+              } catch (rmErr) {
+                console.warn('save-monitoring-reports blob cleanup notice:', rmErr?.message || rmErr);
+              }
+            }
+          };
+
+          const existingRaw = await readSettingsJsonFast('monitoring_reports_store.json', [], true);
+          const existingReports = Array.isArray(existingRaw) ? existingRaw.map(slimReport) : [];
+          const nowIso = new Date().toISOString();
+
+          const actorRole = body.actorRole;
+          const reportId = body.reportId;
+          let finalReports = existingReports;
+          const urlsToPurge = Array.isArray(body.removedFileUrls) ? [...body.removedFileUrls] : [];
+
+          if (actorRole === 'trainee' && reportId) {
+            // STRICT PER-TRAINEE ISOLATION: A trainee can ONLY add/edit/delete their OWN submission(s) on reportId.
+            // Other trainees' submissions on the same report are 100% preserved and can NEVER be deleted or overwritten by another trainee.
+            const actorId = String(body.actorTraineeId || '').trim().toLowerCase();
+            const actorStudentId = String(body.actorStudentId || '').trim().toLowerCase();
+            if (!actorId && !actorStudentId) {
+              return sendJson(res, 400, { error: 'Missing trainee identity for monitoring report submission' });
+            }
+
+            const isOwnedByActor = (s) => {
+              if (!s || typeof s !== 'object') return false;
+              const sTrainee = String(s.traineeId || '').trim().toLowerCase();
+              const sStudent = String(s.studentId || '').trim().toLowerCase();
+              if (actorId && (sTrainee === actorId || sStudent === actorId)) return true;
+              if (actorStudentId && actorStudentId !== 'all' && actorStudentId !== 'trainee' && (sTrainee === actorStudentId || sStudent === actorStudentId)) {
+                return true;
+              }
+              return false;
+            };
+
+            const incomingReports = Array.isArray(body.reports) ? body.reports : [];
+            const incomingTarget = incomingReports.find((r) => r && r.id === reportId);
+            const rawActorSubs = Array.isArray(body.traineeSubmissions)
+              ? body.traineeSubmissions
+              : Array.isArray(incomingTarget?.submissions)
+                ? incomingTarget.submissions.filter(isOwnedByActor)
+                : [];
+
+            const sanitizedActorSubs = rawActorSubs
+              .filter(isOwnedByActor)
+              .filter(hasValidSubmissionContent)
+              .map((s) => ({
+                ...s,
+                files: Array.isArray(s.files) ? s.files.map(slimFile) : [],
+                updatedAt: nowIso,
+              }));
+
+            const keptActorUrls = new Set(
+              sanitizedActorSubs.flatMap((s) => (s.files || []).flatMap((f) => [f?.fileUrl, f?.dataUrl])).filter(Boolean).map((u) => String(u).split('?')[0])
+            );
+
+            finalReports = existingReports.map((r) => {
+              if (r.id !== reportId) return r;
+              const prevSubs = Array.isArray(r.submissions) ? r.submissions : [];
+              const otherTraineesSubs = prevSubs.filter((s) => !isOwnedByActor(s));
+              const prevActorSubs = prevSubs.filter(isOwnedByActor);
+              for (const ps of prevActorSubs) {
+                for (const pf of ps.files || []) {
+                  const u = (pf?.fileUrl || pf?.dataUrl || '').split('?')[0];
+                  if (u && !keptActorUrls.has(u)) urlsToPurge.push(u);
+                }
+              }
+              return slimReport({
+                ...r,
+                submissions: [...sanitizedActorSubs, ...otherTraineesSubs],
+                updatedAt: nowIso,
+              });
+            });
+          } else if (body.deleteReportId) {
+            const delId = String(body.deleteReportId);
+            const targetToDelete = existingReports.find((r) => r.id === delId);
+            if (targetToDelete) {
+              for (const f of targetToDelete.instructorFiles || []) {
+                if (f?.fileUrl) urlsToPurge.push(f.fileUrl);
+              }
+              for (const s of targetToDelete.submissions || []) {
+                for (const f of s.files || []) {
+                  if (f?.fileUrl) urlsToPurge.push(f.fileUrl);
+                }
+              }
+            }
+            finalReports = existingReports.filter((r) => r.id !== delId);
+          } else if (actorRole === 'instructor' && reportId) {
+            // Atomic Instructor update on a single report (reviewing a submission or adding/removing instructorFiles)
+            // Merges onto fresh cloud state so Instructor actions NEVER resurrect a submission deleted by a Trainee.
+            const incomingReports = Array.isArray(body.reports) ? body.reports : [];
+            const incomingTarget = incomingReports.find((r) => r && r.id === reportId);
+            finalReports = existingReports.map((r) => {
+              if (r.id !== reportId) return r;
+              let nextSubs = Array.isArray(r.submissions) ? [...r.submissions] : [];
+              if (body.reviewSubmission && body.reviewSubmission.submissionId) {
+                const rev = body.reviewSubmission;
+                nextSubs = nextSubs.map((s) =>
+                  s.id === rev.submissionId
+                    ? {
+                        ...s,
+                        status: rev.status || 'reviewed',
+                        instructorRemarks: rev.instructorRemarks !== undefined ? rev.instructorRemarks : s.instructorRemarks,
+                        reviewedAt: rev.reviewedAt || nowIso,
+                        updatedAt: nowIso,
+                      }
+                    : s
+                );
+              }
+              let nextInstFiles = r.instructorFiles;
+              if (Array.isArray(body.instructorFiles)) {
+                const keptInst = new Set(body.instructorFiles.map((f) => String(f?.fileUrl || f?.dataUrl || '').split('?')[0]).filter(Boolean));
+                for (const oldF of r.instructorFiles || []) {
+                  const u = String(oldF?.fileUrl || oldF?.dataUrl || '').split('?')[0];
+                  if (u && !keptInst.has(u)) urlsToPurge.push(u);
+                }
+                nextInstFiles = body.instructorFiles.map(slimFile);
+              } else if (incomingTarget && Array.isArray(incomingTarget.instructorFiles)) {
+                nextInstFiles = incomingTarget.instructorFiles.map(slimFile);
+              }
+              return slimReport({
+                ...r,
+                ...(incomingTarget
+                  ? {
+                      title: incomingTarget.title ?? r.title,
+                      description: incomingTarget.description ?? r.description,
+                      status: body.reviewSubmission ? 'reviewed' : (incomingTarget.status ?? r.status),
+                      instructorRemarks: incomingTarget.instructorRemarks ?? r.instructorRemarks,
+                    }
+                  : {}),
+                instructorFiles: nextInstFiles,
+                submissions: nextSubs,
+                updatedAt: nowIso,
+              });
+            });
+          } else if (body.newReport && body.newReport.id) {
+            const cleanNew = slimReport({ ...body.newReport, updatedAt: nowIso });
+            finalReports = [cleanNew, ...existingReports.filter((r) => r.id !== cleanNew.id)];
+          } else {
+            // Fallback full-array save: preserve fresh server submissions for reports whose server updatedAt is newer
+            const rawReports = Array.isArray(body.reports) ? body.reports.map(slimReport) : [];
+            const existingMap = new Map(existingReports.map((r) => [r.id, r]));
+            finalReports = rawReports.map((inc) => {
+              const ex = existingMap.get(inc.id);
+              if (!ex) return inc;
+              const incTime = new Date(inc.updatedAt || inc.createdAt || 0).getTime();
+              const exTime = new Date(ex.updatedAt || ex.createdAt || 0).getTime();
+              return exTime > incTime ? ex : inc;
+            });
+          }
+
+          const allActiveUrls = new Set(
+            finalReports
+              .flatMap((r) => [
+                ...(r.instructorFiles || []).map((f) => f?.fileUrl || f?.dataUrl),
+                ...(r.submissions || []).flatMap((s) => (s.files || []).map((f) => f?.fileUrl || f?.dataUrl)),
+              ])
+              .filter(Boolean)
+              .map((u) => String(u).split('?')[0])
+          );
+          if (urlsToPurge.length > 0) {
+            await purgeRemovedStorageUrls(urlsToPurge, allActiveUrls);
+          }
+
+          setSettingsCache('monitoring_reports_store.json', finalReports, 60000);
+          const jsonStr = JSON.stringify(finalReports);
           const buffer = Buffer.from(jsonStr, 'utf8');
           const { error: upErr } = await supabase.storage.from('face-photos').upload('settings/monitoring_reports_store.json', buffer, {
             contentType: 'application/json',
-            cacheControl: '60',
+            cacheControl: '0',
             upsert: true,
           });
           if (upErr) {
             return sendJson(res, 500, { error: upErr.message });
           }
-          return sendJson(res, 200, { success: true, count: reports.length });
+          return sendJson(res, 200, { success: true, count: finalReports.length, reports: finalReports });
         } catch (err) {
           return sendJson(res, 500, { error: err.message || 'Failed to save monitoring reports' });
         }

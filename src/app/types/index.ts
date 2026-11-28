@@ -179,6 +179,7 @@ export interface AppSettings {
   facialRecognitionEnabled: boolean;
   academicYears: string[];
   activeAcademicYear: string;
+  academicYearHours?: Record<string, number>;
   instructorName?: string;
 }
 

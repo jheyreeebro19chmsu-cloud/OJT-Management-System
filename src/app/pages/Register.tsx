@@ -62,7 +62,8 @@ import {
   resolveFastGoogleOAuthUrl,
   purgeStaleSupabaseAuth,
 } from '../lib/supabase';
-import { createEmployee as createEmployeeDb, uploadFacePhoto } from '../services/supabaseService';
+import { createEmployee as createEmployeeDb, uploadFacePhoto, fetchSettings } from '../services/supabaseService';
+import { getAcademicYearRequiredHours, TRAINEE_REQUIRED_HOURS } from '../data/ojtConstants';
 import { isSecurityApiConfigured, registerFace } from '../services/securityApi';
 import { useApp } from '../store/AppContext';
 import { getCurrentLocation, isGeolocationPositionError, reverseGeocode, isWithinNegrosOccidental } from '../utils/geo';
@@ -266,6 +267,40 @@ export function Register() {
   const [faceCapturing, setFaceCapturing] = useState(false);
   const [showCameraPermissionPrompt, setShowCameraPermissionPrompt] = useState(false);
   const [cameraPermissionDenied, setCameraPermissionDenied] = useState(false);
+  const [liveAcademicSettings, setLiveAcademicSettings] = useState<{
+    activeAcademicYear?: string;
+    academicYearHours?: Record<string, number>;
+  } | null>(null);
+
+  const effectiveAcademicYear = liveAcademicSettings?.activeAcademicYear || settings.activeAcademicYear || '2026-2027';
+  const effectiveAcademicYearHours = useMemo(
+    () => ({
+      ...(settings.academicYearHours || {}),
+      ...(liveAcademicSettings?.academicYearHours || {}),
+    }),
+    [settings.academicYearHours, liveAcademicSettings?.academicYearHours]
+  );
+  const activeAyRequiredHours = getAcademicYearRequiredHours(effectiveAcademicYear, effectiveAcademicYearHours);
+
+  // Hydrate latest per-Academic-Year Required OJT Hours from cloud even when navigating from unauthenticated /login
+  useEffect(() => {
+    let active = true;
+    fetchSettings(true)
+      .then((remote) => {
+        if (!active || !remote) return;
+        setLiveAcademicSettings({
+          activeAcademicYear: remote.activeAcademicYear,
+          academicYearHours: remote.academicYearHours,
+        });
+        try {
+          window.dispatchEvent(new CustomEvent('ojt_local_settings_hydrated', { detail: remote }));
+        } catch {}
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
   const [form, setForm] = useState(() => {
     const verifiedEmail = getVerifiedGoogleEmail();
     const verifiedName = getVerifiedGoogleName();
@@ -313,9 +348,17 @@ export function Register() {
     employeeId: '',
     startDate: '',
     endDate: '',
-    requiredHours: 600 as number | string,
+    requiredHours: getAcademicYearRequiredHours(settings.activeAcademicYear, settings.academicYearHours) as number | string,
     };
   });
+
+  useEffect(() => {
+    setForm((prev) =>
+      Number(prev.requiredHours) === activeAyRequiredHours
+        ? prev
+        : { ...prev, requiredHours: activeAyRequiredHours }
+    );
+  }, [activeAyRequiredHours]);
 
   const selectedProgramOptions = useMemo(() => {
     return getCoursesForDepartment(form.department, form.campus);
@@ -1322,7 +1365,14 @@ export function Register() {
         contactPhone: form.contactPhone || undefined,
         userId: localStorage.getItem('oauth_user_id') || undefined,
         position: role === 'admin' ? 'OJT Instructor' : role === 'hte' ? 'HTE Representative' : 'OJT Trainee',
-        requiredHours: role === 'admin' ? 0 : (role === 'trainee' ? 600 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600)),
+        requiredHours:
+          role === 'admin'
+            ? 0
+            : role === 'trainee'
+              ? activeAyRequiredHours
+              : Number(form.requiredHours) > 0
+                ? Number(form.requiredHours)
+                : TRAINEE_REQUIRED_HOURS,
         faceRegistered,
         ...(faceDescriptor && faceDescriptor.length === 128 ? { faceDescriptor } : {}),
         photo: role === 'trainee' ? uploadedFaceUrl || photo : photo || googleAvatar || undefined,
@@ -1387,7 +1437,14 @@ export function Register() {
             course: form.course,
             startDate: form.startDate,
             endDate: form.endDate,
-            requiredHours: role === 'admin' || role === 'hte' ? 0 : (role === 'trainee' ? 600 : (Number(form.requiredHours) > 0 ? Number(form.requiredHours) : 600)),
+            requiredHours:
+              role === 'admin' || role === 'hte'
+                ? 0
+                : role === 'trainee'
+                  ? getAcademicYearRequiredHours(existing?.academicYear || effectiveAcademicYear, effectiveAcademicYearHours)
+                  : Number(form.requiredHours) > 0
+                    ? Number(form.requiredHours)
+                    : TRAINEE_REQUIRED_HOURS,
             address: residentialAddress,
             residentialAddress: residentialAddress,
             street: form.street || undefined,
@@ -3972,13 +4029,13 @@ export function Register() {
                         <div className="flex items-center justify-between mb-1">
                           <label className="text-xs font-semibold text-gray-600">Required OJT Hours</label>
                           <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200 flex items-center gap-1">
-                            <Lock size={10} /> Fixed Requirement
+                            <Lock size={10} /> AY {effectiveAcademicYear} Requirement
                           </span>
                         </div>
                         <div className="relative">
                           <input
                             type="text"
-                            value="600"
+                            value={String(activeAyRequiredHours)}
                             readOnly
                             disabled
                             className="w-full px-3 py-2.5 pr-9 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 bg-gray-100/90 cursor-not-allowed select-none"
@@ -3987,7 +4044,9 @@ export function Register() {
                             <Lock size={14} />
                           </div>
                         </div>
-                        <p className="text-[10px] text-gray-500 mt-1">Standard academic requirement (fixed at 600 hours)</p>
+                        <p className="text-[10px] text-gray-500 mt-1">
+                          Academic Year {effectiveAcademicYear} requirement ({activeAyRequiredHours} hours • set by OJT Instructor)
+                        </p>
                       </div>
                     </>
                   )}

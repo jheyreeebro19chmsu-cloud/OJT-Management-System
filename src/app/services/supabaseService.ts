@@ -145,6 +145,12 @@ let _storesBootstrapInflight: Promise<{
   evaluations: Evaluation[];
   announcements: Announcement[];
   dttr: { monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] };
+  academicSettings: {
+    academicYears?: string[];
+    activeAcademicYear?: string;
+    academicYearHours?: Record<string, number>;
+    updatedAt?: string;
+  } | null;
 } | null> | null = null;
 let _storesBootstrapCache: {
   data: {
@@ -154,6 +160,12 @@ let _storesBootstrapCache: {
     evaluations: Evaluation[];
     announcements: Announcement[];
     dttr: { monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] };
+    academicSettings: {
+      academicYears?: string[];
+      activeAcademicYear?: string;
+      academicYearHours?: Record<string, number>;
+      updatedAt?: string;
+    } | null;
   } | null;
   expiresAt: number;
 } = { data: null, expiresAt: 0 };
@@ -165,6 +177,12 @@ export async function fetchBootstrapStores(): Promise<{
   evaluations: Evaluation[];
   announcements: Announcement[];
   dttr: { monthlyDttrs: MonthlyDttrRecord[]; timeRecords: TimeRecord[] };
+  academicSettings: {
+    academicYears?: string[];
+    activeAcademicYear?: string;
+    academicYearHours?: Record<string, number>;
+    updatedAt?: string;
+  } | null;
 } | null> {
   if (_storesBootstrapCache.data && _storesBootstrapCache.expiresAt > Date.now()) {
     return _storesBootstrapCache.data;
@@ -194,6 +212,10 @@ export async function fetchBootstrapStores(): Promise<{
               monthlyDttrs: Array.isArray(raw.dttr?.monthlyDttrs) ? mergeMonthlyDttrsList(raw.dttr.monthlyDttrs) : [],
               timeRecords: Array.isArray(raw.dttr?.timeRecords) ? raw.dttr.timeRecords : [],
             },
+            academicSettings:
+              raw.academicSettings && typeof raw.academicSettings === 'object' && !Array.isArray(raw.academicSettings)
+                ? raw.academicSettings
+                : null,
           };
           _storesBootstrapCache = { data: out, expiresAt: Date.now() + 12000 };
           return out;
@@ -390,7 +412,8 @@ export type LiveSyncEventType =
   | 'employee_updated'
   | 'attendance_updated'
   | 'evaluation_updated'
-  | 'geofence_updated';
+  | 'geofence_updated'
+  | 'settings_updated';
 
 type LiveSyncListener = (event: { type: LiveSyncEventType; payload: any; senderId?: string }) => void;
 
@@ -767,7 +790,11 @@ export async function createEmployee(employee: Omit<Employee, 'id' | 'createdAt'
     course: employee.course || 'Information Systems',
     start_date: employee.startDate || new Date().toISOString().split('T')[0],
     end_date: employee.endDate || new Date().toISOString().split('T')[0],
-    required_hours: isInst || isHte ? (employee.requiredHours ?? 0) : TRAINEE_REQUIRED_HOURS,
+    required_hours: isInst || isHte
+      ? (employee.requiredHours ?? 0)
+      : Number(employee.requiredHours) > 0
+        ? Math.round(Number(employee.requiredHours))
+        : TRAINEE_REQUIRED_HOURS,
     photo: photoToStore,
     face_registered: Boolean(employee.faceRegistered),
     ...(Array.isArray(employee.faceDescriptor) && employee.faceDescriptor.length === 128
@@ -2694,65 +2721,168 @@ export async function migrateAdministratorPosition(): Promise<number> {
 
 // ─── Settings ────────────────────────────────────────────────────────────────
 
-export async function fetchSettings(): Promise<AppSettings | null> {
-  if (!isSupabaseConfigured()) return null;
-
-  let data: any = null;
-  try {
-    const result = await supabase.from('app_settings').select('*').maybeSingle();
-    if (result.error) {
-      if (result.error.code !== 'PGRST116') {
-        console.warn('fetchSettings database note:', result.error.message);
-      }
-      return null;
-    }
-    data = result.data;
-  } catch (netErr) {
-    console.warn('fetchSettings network note (using cached settings if available):', netErr);
-    try {
-      const raw = typeof window !== 'undefined' ? localStorage.getItem('ojt_settings') : null;
-      if (raw) return JSON.parse(raw);
-    } catch {}
-    return null;
+export async function fetchAcademicSettingsFromStorage(forceFresh = false): Promise<{
+  academicYears?: string[];
+  activeAcademicYear?: string;
+  academicYearHours?: Record<string, number>;
+  updatedAt?: string;
+} | null> {
+  if (!forceFresh && _storesBootstrapCache.data?.academicSettings && _storesBootstrapCache.expiresAt > Date.now()) {
+    return _storesBootstrapCache.data.academicSettings;
   }
 
-  if (!data) return null;
-
-  let localAcademicYears: string[] = ['2025-2026', '2026-2027'];
-  let localActiveYear: string = '2026-2027';
   try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem('ojt_settings') : null;
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed.academicYears) && parsed.academicYears.length > 0) {
-        localAcademicYears = parsed.academicYears;
-      }
-      if (parsed.activeAcademicYear) {
-        localActiveYear = parsed.activeAcademicYear;
+    const res = await fetch(`/api/documents?action=get-academic-settings${forceFresh ? '&fresh=1' : ''}`, {
+      cache: forceFresh ? 'no-store' : 'default',
+    });
+    if (res.ok) {
+      const parsed = await res.json();
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+        return parsed;
       }
     }
   } catch {}
 
-  const resolvedYears = Array.from(new Set([
-    ...(Array.isArray(data.academic_years) && data.academic_years.length > 0 ? data.academic_years : []),
-    ...localAcademicYears,
-    '2025-2026',
-    '2026-2027',
-  ]));
+  try {
+    const base = (import.meta.env.VITE_SUPABASE_URL || 'https://wooighmdckuoebsuegzz.supabase.co').replace(/\/$/, '');
+    const pubUrl = `${base}/storage/v1/object/public/face-photos/settings/academic_settings_store.json${forceFresh ? `?t=${Date.now()}` : ''}`;
+    const pubRes = await fetch(pubUrl);
+    if (pubRes.ok) {
+      const parsed = await pubRes.json();
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        return parsed;
+      }
+    }
+  } catch {}
+
+  return null;
+}
+
+export async function fetchSettings(forceFresh = false): Promise<AppSettings | null> {
+  if (!isSupabaseConfigured()) return null;
+
+  const [dbSettled, cloudAcademicSettled] = await Promise.allSettled([
+    supabase.from('app_settings').select('*').maybeSingle(),
+    fetchAcademicSettingsFromStorage(forceFresh),
+  ]);
+
+  let data: any = null;
+  if (dbSettled.status === 'fulfilled' && !dbSettled.value.error) {
+    data = dbSettled.value.data;
+  }
+  const cloudAcademic = cloudAcademicSettled.status === 'fulfilled' ? cloudAcademicSettled.value : null;
+
+  let localSettings: Partial<AppSettings> = {};
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('ojt_settings') : null;
+    if (raw) {
+      localSettings = JSON.parse(raw) || {};
+    }
+  } catch {}
+
+  if (!data && !cloudAcademic) {
+    return Object.keys(localSettings).length > 0 ? (localSettings as AppSettings) : null;
+  }
+
+  const localAcademicYears =
+    Array.isArray(localSettings.academicYears) && localSettings.academicYears.length > 0
+      ? localSettings.academicYears
+      : ['2025-2026', '2026-2027'];
+  const localActiveYear = localSettings.activeAcademicYear || '2026-2027';
+
+  const resolvedYears = Array.from(
+    new Set([
+      ...(Array.isArray(cloudAcademic?.academicYears) ? cloudAcademic!.academicYears! : []),
+      ...(Array.isArray(data?.academic_years) ? data.academic_years : []),
+      ...localAcademicYears,
+      '2025-2026',
+      '2026-2027',
+    ])
+  );
+
+  const mergedHours: Record<string, number> = {};
+  const rawHoursSources = [
+    localSettings.academicYearHours,
+    data?.academic_year_hours,
+    cloudAcademic?.academicYearHours,
+  ];
+  for (const src of rawHoursSources) {
+    if (src && typeof src === 'object') {
+      for (const [yr, hrs] of Object.entries(src)) {
+        const n = Math.round(Number(hrs));
+        if (Number.isFinite(n) && n > 0) {
+          mergedHours[yr] = n;
+        }
+      }
+    }
+  }
+  for (const yr of resolvedYears) {
+    if (!mergedHours[yr]) mergedHours[yr] = TRAINEE_REQUIRED_HOURS;
+  }
 
   return {
-    workStartTime: data.work_start_time,
-    workEndTime: data.work_end_time,
-    lateThresholdMinutes: data.late_threshold_minutes,
-    geofenceEnabled: data.geofence_enabled,
-    facialRecognitionEnabled: data.facial_recognition_enabled,
+    workStartTime: data?.work_start_time || localSettings.workStartTime || '08:00',
+    workEndTime: data?.work_end_time || localSettings.workEndTime || '17:00',
+    lateThresholdMinutes: data?.late_threshold_minutes ?? localSettings.lateThresholdMinutes ?? 15,
+    geofenceEnabled: data?.geofence_enabled ?? localSettings.geofenceEnabled ?? true,
+    facialRecognitionEnabled: data?.facial_recognition_enabled ?? localSettings.facialRecognitionEnabled ?? true,
     academicYears: resolvedYears,
-    activeAcademicYear: data.active_academic_year || localActiveYear || '2026-2027',
+    activeAcademicYear: cloudAcademic?.activeAcademicYear || data?.active_academic_year || localActiveYear || '2026-2027',
+    academicYearHours: mergedHours,
   };
 }
 
-export async function updateSettings(settings: AppSettings): Promise<boolean> {
+export async function updateSettings(
+  settings: AppSettings,
+  options?: { syncAcademicYear?: string; syncHours?: number }
+): Promise<boolean> {
   if (!isSupabaseConfigured()) return false;
+
+  _storesBootstrapCache = { data: null, expiresAt: 0 };
+  _coreBootstrapCache = { data: null, expiresAt: 0 };
+
+  broadcastLiveEvent('settings_updated', {
+    settings,
+    syncAcademicYear: options?.syncAcademicYear,
+    syncHours: options?.syncHours,
+  });
+
+  let savedAcademicStore = false;
+  try {
+    const apiRes = await fetch('/api/documents', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'save-academic-settings',
+        academicYears: settings.academicYears,
+        activeAcademicYear: settings.activeAcademicYear,
+        academicYearHours: settings.academicYearHours,
+        syncAcademicYear: options?.syncAcademicYear,
+        syncHours: options?.syncHours,
+      }),
+    });
+    if (apiRes.ok) {
+      savedAcademicStore = true;
+    } else if (apiRes.status === 404) {
+      const payload = {
+        academicYears: settings.academicYears,
+        activeAcademicYear: settings.activeAcademicYear,
+        academicYearHours: settings.academicYearHours || {},
+        updatedAt: new Date().toISOString(),
+      };
+      const blob = new Blob([JSON.stringify(payload)], { type: 'application/json' });
+      const { error: stErr } = await supabase.storage
+        .from('face-photos')
+        .upload('settings/academic_settings_store.json', blob, {
+          contentType: 'application/json',
+          cacheControl: '60',
+          upsert: true,
+        });
+      if (!stErr) savedAcademicStore = true;
+    }
+  } catch (acErr) {
+    console.warn('updateSettings academic store sync notice:', acErr);
+  }
 
   // Only send verified live columns in public.app_settings
   const supabaseSettings = {
@@ -2769,7 +2899,7 @@ export async function updateSettings(settings: AppSettings): Promise<boolean> {
   if (updateError || count === 0) {
     const { error: insertError } = await supabase.from('app_settings').insert([{ id: 1, ...supabaseSettings }]);
 
-    if (insertError) {
+    if (insertError && !savedAcademicStore) {
       console.error('Error inserting settings in Supabase:', insertError);
       throw new Error(insertError.message || 'Failed to save settings');
     }
@@ -3831,7 +3961,11 @@ export function transformSupabaseEmployee(data: any): Employee {
     course: data.course,
     startDate: data.start_date,
     endDate: data.end_date,
-    requiredHours: isTraineeAccount ? TRAINEE_REQUIRED_HOURS : Number(data.required_hours ?? 0),
+    requiredHours: isTraineeAccount
+      ? Number(data.required_hours) > 0
+        ? Math.round(Number(data.required_hours))
+        : TRAINEE_REQUIRED_HOURS
+      : Number(data.required_hours ?? 0),
     renderedHours: Number(data.rendered_hours ?? regLoc?.renderedHours ?? 0),
     photo: data.photo,
     faceRegistered: data.face_registered,
@@ -4705,6 +4839,13 @@ function slimMonitoringFileItem(f: any): any {
   };
 }
 
+function hasMeaningfulSubmission(s: any): boolean {
+  if (!s || typeof s !== 'object') return false;
+  const hasFiles = Array.isArray(s.files) && s.files.length > 0;
+  const hasNotes = typeof s.notes === 'string' && s.notes.trim().length > 0;
+  return hasFiles || hasNotes;
+}
+
 function slimMonitoringReportList(reports: MonitoringReport[]): MonitoringReport[] {
   if (!Array.isArray(reports)) return [];
   return reports.map((r) => ({
@@ -4712,10 +4853,12 @@ function slimMonitoringReportList(reports: MonitoringReport[]): MonitoringReport
     instructorFiles: Array.isArray(r.instructorFiles) ? r.instructorFiles.map(slimMonitoringFileItem) : r.instructorFiles,
     traineeFiles: Array.isArray(r.traineeFiles) ? r.traineeFiles.map(slimMonitoringFileItem) : r.traineeFiles,
     submissions: Array.isArray(r.submissions)
-      ? r.submissions.map((s) => ({
-          ...s,
-          files: Array.isArray(s.files) ? s.files.map(slimMonitoringFileItem) : s.files,
-        }))
+      ? r.submissions
+          .filter(hasMeaningfulSubmission)
+          .map((s) => ({
+            ...s,
+            files: Array.isArray(s.files) ? s.files.map(slimMonitoringFileItem) : [],
+          }))
       : r.submissions,
   }));
 }
@@ -4724,8 +4867,8 @@ export function mergeMonitoringSubmissionItem(a: any, b: any): any {
   if (!a) return b;
   if (!b) return a;
 
-  const aSubTime = new Date(a.submittedAt || 0).getTime();
-  const bSubTime = new Date(b.submittedAt || 0).getTime();
+  const aSubTime = new Date(a.updatedAt || a.submittedAt || 0).getTime();
+  const bSubTime = new Date(b.updatedAt || b.submittedAt || 0).getTime();
   const newerSub = bSubTime >= aSubTime ? b : a;
   const olderSub = bSubTime >= aSubTime ? a : b;
 
@@ -4756,10 +4899,10 @@ export function mergeMonitoringSubmissionItem(a: any, b: any): any {
       ? 'reviewed'
       : newerSub.status || olderSub.status || 'submitted';
 
-  const filesSource =
-    Array.isArray(newerSub.files) && newerSub.files.length > 0
-      ? newerSub.files
-      : Array.isArray(olderSub.files)
+  // Authoritatively respect newerSub.files so edited/deleted files are NEVER resurrected from olderSub
+  const filesSource = Array.isArray(newerSub.files)
+    ? newerSub.files
+    : Array.isArray(olderSub.files)
       ? olderSub.files
       : [];
 
@@ -4767,17 +4910,51 @@ export function mergeMonitoringSubmissionItem(a: any, b: any): any {
     ...olderSub,
     ...newerSub,
     files: filesSource.map(slimMonitoringFileItem),
-    notes: newerSub.notes || olderSub.notes,
+    notes: newerSub.notes !== undefined ? newerSub.notes : olderSub.notes,
     status,
     instructorRemarks,
     reviewedAt,
   };
 }
 
+export interface MonitoringReportMutationOptions {
+  actorRole?: 'trainee' | 'instructor';
+  actorTraineeId?: string;
+  actorStudentId?: string;
+  reportId?: string;
+  traineeSubmissions?: any[];
+  instructorFiles?: any[];
+  reviewSubmission?: {
+    submissionId: string;
+    status?: 'submitted' | 'reviewed';
+    instructorRemarks?: string;
+    reviewedAt?: string;
+  };
+  newReport?: MonitoringReport;
+  deleteReportId?: string;
+  removedFileUrls?: string[];
+}
+
 export function mergeMonitoringReportsList(
   primaryList: MonitoringReport[],
-  secondaryList: MonitoringReport[] = []
+  secondaryList: MonitoringReport[] = [],
+  options?: { authoritativePrimary?: boolean }
 ): MonitoringReport[] {
+  // When primaryList comes from cloud storage or a live broadcast, deleted reports & deleted submissions
+  // must NOT be resurrected from stale local secondaryList!
+  if (options?.authoritativePrimary) {
+    const validPrimary = (primaryList || []).filter(
+      (r) =>
+        r &&
+        r.id &&
+        (Boolean(r.createdByRole) ||
+          (Array.isArray(r.instructorFiles) && r.instructorFiles.length > 0) ||
+          (Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) ||
+          (Array.isArray(r.submissions) && r.submissions.length > 0))
+    );
+    return slimMonitoringReportList(validPrimary);
+  }
+
   const map = new Map<string, MonitoringReport>();
 
   const addReportToMap = (r: MonitoringReport) => {
@@ -4797,24 +4974,30 @@ export function mergeMonitoringReportsList(
       return;
     }
 
-    const subMap = new Map<string, any>();
-    for (const s of existing.submissions || []) {
-      if (!s) continue;
-      const key = s.id || `${s.traineeId || ''}_${s.studentId || ''}_${s.traineeName || ''}`.toLowerCase();
-      subMap.set(key, mergeMonitoringSubmissionItem(subMap.get(key), s));
-    }
-    for (const s of r.submissions || []) {
-      if (!s) continue;
-      const key = s.id || `${s.traineeId || ''}_${s.studentId || ''}_${s.traineeName || ''}`.toLowerCase();
-      subMap.set(key, mergeMonitoringSubmissionItem(subMap.get(key), s));
-    }
-
     const rTime = new Date(r.updatedAt || r.createdAt || 0).getTime();
     const eTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
+    // Tie goes to `existing` (which came from `primaryList`)
+    const newer = rTime > eTime ? r : existing;
+    const older = rTime > eTime ? existing : r;
+
+    // Authoritative submissions: ONLY keep submissions present in `newer` so deleted submissions never reappear,
+    // while enriching surviving submissions with any review metadata from `older`.
+    const olderSubById = new Map<string, any>();
+    for (const os of older.submissions || []) {
+      if (os?.id) olderSubById.set(os.id, os);
+    }
+    const resolvedSubs = (newer.submissions || [])
+      .filter(hasMeaningfulSubmission)
+      .map((ns) => {
+        const matchOld = ns?.id ? olderSubById.get(ns.id) : undefined;
+        return matchOld ? mergeMonitoringSubmissionItem(matchOld, ns) : ns;
+      });
 
     map.set(r.id, {
-      ...(rTime >= eTime ? { ...existing, ...r } : { ...r, ...existing }),
-      submissions: Array.from(subMap.values()),
+      ...older,
+      ...newer,
+      instructorFiles: Array.isArray(newer.instructorFiles) ? newer.instructorFiles : older.instructorFiles,
+      submissions: resolvedSubs,
     });
   };
 
@@ -4824,29 +5007,31 @@ export function mergeMonitoringReportsList(
   return slimMonitoringReportList(Array.from(map.values()));
 }
 
-export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringReport[]> {
-  if (_storesBootstrapCache.data?.monitoringReports?.length && _storesBootstrapCache.expiresAt > Date.now()) {
+export async function fetchMonitoringReportsFromStorage(forceFresh = false): Promise<MonitoringReport[]> {
+  if (!forceFresh && _storesBootstrapCache.data?.monitoringReports?.length && _storesBootstrapCache.expiresAt > Date.now()) {
     return _storesBootstrapCache.data.monitoringReports;
   }
   try {
-    const apiRes = await fetch('/api/documents?action=get-monitoring-reports');
+    const apiRes = await fetch(`/api/documents?action=get-monitoring-reports${forceFresh ? '&fresh=1' : ''}`, {
+      cache: forceFresh ? 'no-store' : 'default',
+    });
     if (apiRes.ok) {
       const data = await apiRes.json();
       if (Array.isArray(data)) {
-        return mergeMonitoringReportsList(data);
+        return mergeMonitoringReportsList(data, [], { authoritativePrimary: true });
       }
     }
   } catch {}
 
   try {
-    const pubRes = await fetch(
-      'https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json',
-      { signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined }
-    );
+    const pubUrl = `https://wooighmdckuoebsuegzz.supabase.co/storage/v1/object/public/face-photos/settings/monitoring_reports_store.json${forceFresh ? `?t=${Date.now()}` : ''}`;
+    const pubRes = await fetch(pubUrl, {
+      signal: AbortSignal.timeout ? AbortSignal.timeout(5000) : undefined,
+    });
     if (pubRes.ok) {
       const data = await pubRes.json();
       if (Array.isArray(data)) {
-        return mergeMonitoringReportsList(data);
+        return mergeMonitoringReportsList(data, [], { authoritativePrimary: true });
       }
     }
   } catch {}
@@ -4854,23 +5039,48 @@ export async function fetchMonitoringReportsFromStorage(): Promise<MonitoringRep
   return [];
 }
 
-export async function saveMonitoringReportsToStorage(reports: MonitoringReport[]): Promise<boolean> {
+export async function saveMonitoringReportsToStorage(
+  reports: MonitoringReport[],
+  mutationOptions?: MonitoringReportMutationOptions
+): Promise<MonitoringReport[] | null> {
   _storesBootstrapCache = { data: null, expiresAt: 0 };
   const slimmed = slimMonitoringReportList(reports);
-  broadcastLiveEvent('monitoring_updated', { reports: slimmed });
+  broadcastLiveEvent('monitoring_updated', {
+    reports: slimmed,
+    reportId: mutationOptions?.reportId,
+    deleteReportId: mutationOptions?.deleteReportId,
+    authoritative: true,
+  });
 
-  // 1. Try server-side API proxy (service role)
+  // 1. Server-side API proxy (atomic per-trainee / per-report merge in service role)
   try {
     const apiRes = await fetch('/api/documents', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'save-monitoring-reports', reports: slimmed }),
+      body: JSON.stringify({
+        action: 'save-monitoring-reports',
+        reports: slimmed,
+        ...(mutationOptions || {}),
+      }),
     });
-    if (apiRes.ok) return true;
+    if (apiRes.ok) {
+      const json = await apiRes.json().catch(() => null);
+      if (Array.isArray(json?.reports)) {
+        const canonical = slimMonitoringReportList(json.reports);
+        broadcastLiveEvent('monitoring_updated', {
+          reports: canonical,
+          reportId: mutationOptions?.reportId,
+          deleteReportId: mutationOptions?.deleteReportId,
+          authoritative: true,
+        });
+        return canonical;
+      }
+      return slimmed;
+    }
   } catch {}
 
-  // 2. Direct Supabase client upload
-  if (!isSupabaseConfigured()) return false;
+  // 2. Direct Supabase client fallback (only when serverless /api is unavailable)
+  if (!isSupabaseConfigured()) return null;
   try {
     const jsonStr = JSON.stringify(slimmed);
     const blob = new Blob([jsonStr], { type: 'application/json' });
@@ -4880,11 +5090,11 @@ export async function saveMonitoringReportsToStorage(reports: MonitoringReport[]
       cacheControl: '0',
       upsert: true,
     });
-    if (!error) return true;
+    if (!error) return slimmed;
   } catch (err) {
     console.warn('saveMonitoringReportsToStorage notice:', err);
   }
-  return false;
+  return null;
 }
 
 // ─── Evaluations & Questionnaire Cloud Storage Sync ──────────────────────────

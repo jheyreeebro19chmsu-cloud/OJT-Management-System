@@ -12,6 +12,7 @@ import {
   resolveDocumentPreviewUrl,
   formatFileSize,
 } from '../../utils/documentStorage';
+import { fetchMonitoringReportsFromStorage } from '../../services/supabaseService';
 import {
   FileText,
   Plus,
@@ -155,15 +156,26 @@ export function AdminMonitoringReport() {
 
   // Live auto-sync when Instructor opens or focuses Monitoring Report page
   useEffect(() => {
-    refreshData().catch(() => {});
+    const syncFreshReports = () => {
+      fetchMonitoringReportsFromStorage(true)
+        .then((remote) => {
+          if (Array.isArray(remote)) {
+            window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_hydrated', { detail: remote }));
+          }
+        })
+        .catch(() => {});
+    };
+    syncFreshReports();
+    refreshData({ force: true }).catch(() => {});
     const onFocus = () => {
-      refreshData().catch(() => {});
+      syncFreshReports();
+      refreshData({ force: true }).catch(() => {});
     };
     window.addEventListener('focus', onFocus);
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      refreshData().catch(() => {});
-    }, 120000);
+      syncFreshReports();
+    }, 60000);
     return () => {
       window.removeEventListener('focus', onFocus);
       clearInterval(interval);
@@ -221,7 +233,9 @@ export function AdminMonitoringReport() {
       else if (cat === 'weekly') weekly++;
 
       if (Array.isArray(r.submissions)) {
-        totalTraineeSubmissions += r.submissions.length;
+        totalTraineeSubmissions += r.submissions.filter(
+          (s) => (Array.isArray(s.files) && s.files.length > 0) || Boolean(s.notes && s.notes.trim())
+        ).length;
       } else if (r.createdByRole === 'trainee' && Array.isArray(r.traineeFiles) && r.traineeFiles.length > 0) {
         totalTraineeSubmissions += 1;
       }
@@ -428,9 +442,17 @@ export function AdminMonitoringReport() {
     try {
       const newlyUploaded = await processFilesUpload(files, `mr_more_${report.id}`);
       const updatedFiles = [...(report.instructorFiles || []), ...newlyUploaded];
-      await updateMonitoringReport(report.id, {
-        instructorFiles: updatedFiles,
-      });
+      await updateMonitoringReport(
+        report.id,
+        {
+          instructorFiles: updatedFiles,
+        },
+        {
+          actorRole: 'instructor',
+          reportId: report.id,
+          instructorFiles: updatedFiles,
+        }
+      );
       toast.success(`Added ${newlyUploaded.length} file${newlyUploaded.length > 1 ? 's' : ''} to ${report.title || report.periodCovered}.`);
     } catch {
       toast.error('Failed to attach additional file(s).');
@@ -440,12 +462,24 @@ export function AdminMonitoringReport() {
   };
 
   const handleRemoveInstructorFile = async (report: MonitoringReport, fileId?: string, fileName?: string) => {
-    const remaining = (report.instructorFiles || []).filter((f) =>
-      fileId ? f.id !== fileId : f.name !== fileName
-    );
-    await updateMonitoringReport(report.id, {
-      instructorFiles: remaining,
+    const removedUrls: string[] = [];
+    const remaining = (report.instructorFiles || []).filter((f) => {
+      const remove = fileId ? f.id === fileId : f.name === fileName;
+      if (remove && f.fileUrl?.startsWith('http')) removedUrls.push(f.fileUrl);
+      return !remove;
     });
+    await updateMonitoringReport(
+      report.id,
+      {
+        instructorFiles: remaining,
+      },
+      {
+        actorRole: 'instructor',
+        reportId: report.id,
+        instructorFiles: remaining,
+        removedFileUrls: removedUrls,
+      }
+    );
     toast.success('File removed.');
   };
 
@@ -460,20 +494,34 @@ export function AdminMonitoringReport() {
     submission: MonitoringReportSubmission,
     remarks?: string
   ) => {
+    const reviewedAt = new Date().toISOString();
     const updatedSubs = (report.submissions || []).map((s) =>
       s.id === submission.id
         ? {
           ...s,
           status: 'reviewed' as const,
           instructorRemarks: remarks !== undefined ? remarks : s.instructorRemarks,
-          reviewedAt: new Date().toISOString(),
+          reviewedAt,
         }
         : s
     );
-    await updateMonitoringReport(report.id, {
-      submissions: updatedSubs,
-      status: 'reviewed',
-    });
+    await updateMonitoringReport(
+      report.id,
+      {
+        submissions: updatedSubs,
+        status: 'reviewed',
+      },
+      {
+        actorRole: 'instructor',
+        reportId: report.id,
+        reviewSubmission: {
+          submissionId: submission.id,
+          status: 'reviewed',
+          instructorRemarks: remarks !== undefined ? remarks : submission.instructorRemarks,
+          reviewedAt,
+        },
+      }
+    );
     setReviewingSubmissionKey(null);
     setRemarksInput('');
     toast.success(`Reviewed ${submission.traineeName}'s submission!`);
@@ -777,7 +825,9 @@ export function AdminMonitoringReport() {
             const instructorFiles = report.instructorFiles || [];
             const directTraineeFiles = report.traineeFiles || [];
             const submissions: MonitoringReportSubmission[] = [
-              ...(report.submissions || []),
+              ...(report.submissions || []).filter(
+                (s) => (Array.isArray(s.files) && s.files.length > 0) || Boolean(s.notes && s.notes.trim())
+              ),
               ...(report.createdByRole === 'trainee' && directTraineeFiles.length > 0 && !(report.submissions || []).length
                 ? [
                   {

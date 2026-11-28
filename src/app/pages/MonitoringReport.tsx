@@ -11,6 +11,7 @@ import {
   resolveDocumentPreviewUrl,
   formatFileSize,
 } from '../utils/documentStorage';
+import { fetchMonitoringReportsFromStorage } from '../services/supabaseService';
 import {
   FileText,
   Upload,
@@ -149,15 +150,26 @@ export function MonitoringReport() {
 
   // Live auto-sync when Trainee opens or focuses Monitoring Report page
   useEffect(() => {
-    refreshData().catch(() => {});
+    const syncFreshReports = () => {
+      fetchMonitoringReportsFromStorage(true)
+        .then((remote) => {
+          if (Array.isArray(remote)) {
+            window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_hydrated', { detail: remote }));
+          }
+        })
+        .catch(() => {});
+    };
+    syncFreshReports();
+    refreshData({ force: true }).catch(() => {});
     const onFocus = () => {
-      refreshData().catch(() => {});
+      syncFreshReports();
+      refreshData({ force: true }).catch(() => {});
     };
     window.addEventListener('focus', onFocus);
     const interval = setInterval(() => {
       if (typeof document !== 'undefined' && document.hidden) return;
-      refreshData().catch(() => {});
-    }, 120000);
+      syncFreshReports();
+    }, 60000);
     return () => {
       window.removeEventListener('focus', onFocus);
       clearInterval(interval);
@@ -168,6 +180,26 @@ export function MonitoringReport() {
   const traineeId = employee?.id || currentUser?.id || '';
   const studentId = employee?.employeeId || currentUser?.employeeId || '';
   const traineeName = employee?.name || currentUser?.name || 'Trainee';
+
+  // Strict per-account ownership check: matches ONLY this Trainee's unique account/student ID
+  // (never matches by display name so another trainee can NEVER see, edit, or delete this trainee's submission)
+  const isSubmissionOwnedByMe = (s?: MonitoringReportSubmission | null): boolean => {
+    if (!s) return false;
+    const cleanId = traineeId.trim().toLowerCase();
+    const cleanStudentId = studentId.trim().toLowerCase();
+    const sTrainee = (s.traineeId || '').trim().toLowerCase();
+    const sStudent = (s.studentId || '').trim().toLowerCase();
+    if (cleanId && (sTrainee === cleanId || sStudent === cleanId)) return true;
+    if (
+      cleanStudentId &&
+      cleanStudentId !== 'all' &&
+      cleanStudentId !== 'trainee' &&
+      (sTrainee === cleanStudentId || sStudent === cleanStudentId)
+    ) {
+      return true;
+    }
+    return false;
+  };
 
   const [selectedCategory, setSelectedCategory] = useState<'all' | MonitoringReportCategory>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -212,18 +244,11 @@ export function MonitoringReport() {
   }, [monitoringReports, traineeId, studentId]);
 
   const getMySubmissionsForReport = (report: MonitoringReportType): MonitoringReportSubmission[] => {
-    const cleanId = traineeId.toLowerCase();
-    const cleanStudentId = studentId.toLowerCase();
-
-    return (report.submissions || []).filter((s) => {
-      const sTrainee = (s.traineeId || '').toLowerCase();
-      const sStudent = (s.studentId || '').toLowerCase();
-      return (
-        (cleanId && (sTrainee === cleanId || sStudent === cleanId)) ||
-        (cleanStudentId && (sTrainee === cleanStudentId || sStudent === cleanStudentId)) ||
-        s.traineeName.toLowerCase() === traineeName.toLowerCase()
-      );
-    });
+    return (report.submissions || []).filter(
+      (s) =>
+        isSubmissionOwnedByMe(s) &&
+        ((Array.isArray(s.files) && s.files.length > 0) || Boolean(s.notes && s.notes.trim()))
+    );
   };
 
   const getMySubmissionForReport = (report: MonitoringReportType): MonitoringReportSubmission | null => {
@@ -356,19 +381,16 @@ export function MonitoringReport() {
     const currentSubs = report.submissions || [];
     const isWeekly = cat === 'weekly' || Boolean(passedWeek);
 
-    // Look for existing submission for this trainee and specific week/month if weekly
+    // Look for existing submission strictly owned by THIS trainee (and matching week/month if weekly)
     const existingSub = currentSubs.find((s) => {
-      const matchTrainee =
-        (traineeId && s.traineeId?.toLowerCase() === traineeId.toLowerCase()) ||
-        (studentId && s.studentId?.toLowerCase() === studentId.toLowerCase()) ||
-        s.traineeName.toLowerCase() === traineeName.toLowerCase();
-      if (!matchTrainee) return false;
+      if (!isSubmissionOwnedByMe(s)) return false;
       if (isWeekly && passedWeek) {
         return s.week === passedWeek && (!passedMonth || s.month === passedMonth);
       }
       return true;
     });
 
+    const nowIso = new Date().toISOString();
     let updatedSubs: MonitoringReportSubmission[];
     if (existingSub) {
       updatedSubs = currentSubs.map((s) =>
@@ -379,7 +401,7 @@ export function MonitoringReport() {
               notes: notes !== undefined && notes.trim() ? notes.trim() : s.notes,
               month: passedMonth || s.month || report.month,
               week: passedWeek || s.week || report.week,
-              submittedAt: new Date().toISOString(),
+              submittedAt: nowIso,
             }
           : s
       );
@@ -397,20 +419,36 @@ export function MonitoringReport() {
         notes: notes?.trim() || undefined,
         month: passedMonth || report.month,
         week: passedWeek || report.week,
-        submittedAt: new Date().toISOString(),
+        submittedAt: nowIso,
         status: 'submitted',
       };
       updatedSubs = [newSub, ...currentSubs];
     }
 
-    await updateMonitoringReport(report.id, {
-      submissions: updatedSubs,
-    });
+    const myUpdatedSubs = updatedSubs.filter((s) => isSubmissionOwnedByMe(s));
+
+    await updateMonitoringReport(
+      report.id,
+      {
+        submissions: updatedSubs,
+      },
+      {
+        actorRole: 'trainee',
+        actorTraineeId: traineeId,
+        actorStudentId: studentId,
+        reportId: report.id,
+        traineeSubmissions: myUpdatedSubs,
+      }
+    );
   };
 
   const handleSubmitModalForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!targetReportForSubmit) return;
+    if (pendingFiles.length === 0 && !submitNotes.trim()) {
+      toast.error('Please attach at least one file (or enter notes) before submitting.');
+      return;
+    }
 
     setIsSubmitting(true);
     try {
@@ -471,26 +509,55 @@ export function MonitoringReport() {
     fileName?: string,
     submissionId?: string
   ) => {
+    const targetSub = (report.submissions || []).find((s) =>
+      submissionId ? s.id === submissionId : isSubmissionOwnedByMe(s)
+    );
+    if (!targetSub || !isSubmissionOwnedByMe(targetSub)) {
+      toast.error("You can only delete your own submitted files.");
+      return;
+    }
+
+    const removedFileUrls: string[] = [];
+    const nowIso = new Date().toISOString();
+
     const updatedSubs = (report.submissions || [])
       .map((s) => {
         if (submissionId && s.id !== submissionId) return s;
-        const matchTrainee =
-          (traineeId && s.traineeId?.toLowerCase() === traineeId.toLowerCase()) ||
-          (studentId && s.studentId?.toLowerCase() === studentId.toLowerCase()) ||
-          s.traineeName.toLowerCase() === traineeName.toLowerCase();
-        if (!matchTrainee) return s;
+        if (!isSubmissionOwnedByMe(s)) return s;
 
-        const remainingFiles = (s.files || []).filter((f) =>
-          fileId ? f.id !== fileId : f.name !== fileName
-        );
-        return { ...s, files: remainingFiles };
+        const remainingFiles = (s.files || []).filter((f) => {
+          const shouldRemove = fileId ? f.id === fileId : f.name === fileName;
+          if (shouldRemove) {
+            const url = f.fileUrl || f.dataUrl;
+            if (url && url.startsWith('http')) removedFileUrls.push(url);
+          }
+          return !shouldRemove;
+        });
+        return {
+          ...s,
+          files: remainingFiles,
+          submittedAt: nowIso,
+        };
       })
-      .filter((s) => s.files.length > 0);
+      .filter((s) => !isSubmissionOwnedByMe(s) || s.files.length > 0);
 
-    await updateMonitoringReport(report.id, {
-      submissions: updatedSubs,
-    });
-    toast.success('Removed submitted file.');
+    const myRemainingSubs = updatedSubs.filter((s) => isSubmissionOwnedByMe(s));
+
+    await updateMonitoringReport(
+      report.id,
+      {
+        submissions: updatedSubs,
+      },
+      {
+        actorRole: 'trainee',
+        actorTraineeId: traineeId,
+        actorStudentId: studentId,
+        reportId: report.id,
+        traineeSubmissions: myRemainingSubs,
+        removedFileUrls,
+      }
+    );
+    toast.success('Removed your submitted file and synced with Instructor.');
   };
 
   const handleDownloadFile = (file: TraineeDocumentFile) => {

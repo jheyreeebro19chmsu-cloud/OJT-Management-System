@@ -21,6 +21,7 @@ import React, { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useApp } from '../../store/AppContext';
+import { TRAINEE_REQUIRED_HOURS, getAcademicYearRequiredHours } from '../../data/ojtConstants';
 
 export function AcademicYearManagement() {
   const {
@@ -35,6 +36,8 @@ export function AcademicYearManagement() {
   } = useApp();
   const [form, setForm] = useState(settings);
   const [newAcademicYear, setNewAcademicYear] = useState('');
+  const [newAcademicYearHours, setNewAcademicYearHours] = useState<string>(String(TRAINEE_REQUIRED_HOURS));
+  const [hoursDraftByYear, setHoursDraftByYear] = useState<Record<string, string>>({});
   const [isSyncing, setIsSyncing] = useState(false);
   const [isRepairing, setIsRepairing] = useState(false);
 
@@ -51,11 +54,23 @@ export function AcademicYearManagement() {
       '2026-2027',
     ]));
 
+    const resolvedHoursMap: Record<string, number> = {
+      ...(settings.academicYearHours || {}),
+    };
+    const nextDrafts: Record<string, string> = {};
+    for (const yr of allYears) {
+      const hrs = getAcademicYearRequiredHours(yr, settings.academicYearHours);
+      resolvedHoursMap[yr] = hrs;
+      nextDrafts[yr] = String(hrs);
+    }
+
     setForm({
       ...settings,
       academicYears: allYears,
       activeAcademicYear: settings.activeAcademicYear || '2026-2027',
+      academicYearHours: resolvedHoursMap,
     });
+    setHoursDraftByYear(nextDrafts);
   }, [settings, employees]);
 
   const handleAddAcademicYear = () => {
@@ -71,17 +86,32 @@ export function AcademicYearManagement() {
       return;
     }
 
+    const parsedHours = Math.round(Number(newAcademicYearHours));
+    if (!Number.isFinite(parsedHours) || parsedHours < 1 || parsedHours > 3000) {
+      toast.error('Please enter valid Required OJT Hours between 1 and 3000.');
+      return;
+    }
+
     const updatedYears = [...form.academicYears, academicYear];
+    const updatedHoursMap: Record<string, number> = {
+      ...(form.academicYearHours || {}),
+      [academicYear]: parsedHours,
+    };
     const newSettings = {
       ...form,
       academicYears: updatedYears,
       activeAcademicYear: academicYear,
+      academicYearHours: updatedHoursMap,
     };
 
     setForm(newSettings);
-    updateSettings(newSettings);
+    setHoursDraftByYear((prev) => ({ ...prev, [academicYear]: String(parsedHours) }));
+    updateSettings(newSettings, { syncAcademicYear: academicYear, syncHours: parsedHours });
     setNewAcademicYear('');
-    toast.success(`Academic Year ${academicYear} created and activated! Initialized with 0 Trainees and 0 HTEs. Previous academic year accounts remain safely preserved.`);
+    setNewAcademicYearHours(String(TRAINEE_REQUIRED_HOURS));
+    toast.success(
+      `Academic Year ${academicYear} created and activated with ${parsedHours} Required OJT Hours! Other academic years remain unchanged.`
+    );
   };
 
   const handleSwitchEnvironment = (year: string) => {
@@ -94,9 +124,63 @@ export function AcademicYearManagement() {
     toast.success(`Switched active environment to AY ${year}.`);
   };
 
+  const handleSaveYearHours = (year: string) => {
+    const rawVal = hoursDraftByYear[year] ?? String(getAcademicYearRequiredHours(year, form.academicYearHours));
+    const parsedHours = Math.round(Number(rawVal));
+    if (!Number.isFinite(parsedHours) || parsedHours < 1 || parsedHours > 3000) {
+      toast.error(`Please enter valid Required OJT Hours (1–3000) for AY ${year}.`);
+      return;
+    }
+
+    const updatedHoursMap: Record<string, number> = {
+      ...(form.academicYearHours || {}),
+      [year]: parsedHours,
+    };
+    const newSettings = {
+      ...form,
+      academicYearHours: updatedHoursMap,
+    };
+
+    setForm(newSettings);
+    setHoursDraftByYear((prev) => ({ ...prev, [year]: String(parsedHours) }));
+    updateSettings(newSettings, { syncAcademicYear: year, syncHours: parsedHours });
+    toast.success(
+      `Required OJT Hours for AY ${year} updated to ${parsedHours} hours! Applies only to AY ${year} Trainee Registration & trainees.`
+    );
+  };
+
   const handleSave = () => {
-    updateSettings(form);
-    toast.success('Academic environment settings saved successfully.');
+    const updatedHoursMap: Record<string, number> = { ...(form.academicYearHours || {}) };
+    let changedYear: string | undefined;
+    let changedHours: number | undefined;
+
+    for (const yr of form.academicYears) {
+      const raw = hoursDraftByYear[yr];
+      if (raw !== undefined) {
+        const parsed = Math.round(Number(raw));
+        if (!Number.isFinite(parsed) || parsed < 1 || parsed > 3000) {
+          toast.error(`Invalid Required OJT Hours for AY ${yr}. Enter between 1 and 3000.`);
+          return;
+        }
+        const prevHrs = getAcademicYearRequiredHours(yr, settings.academicYearHours);
+        if (parsed !== prevHrs) {
+          changedYear = yr;
+          changedHours = parsed;
+        }
+        updatedHoursMap[yr] = parsed;
+      }
+    }
+
+    const nextSettings = {
+      ...form,
+      academicYearHours: updatedHoursMap,
+    };
+    setForm(nextSettings);
+    updateSettings(
+      nextSettings,
+      changedYear && changedHours ? { syncAcademicYear: changedYear, syncHours: changedHours } : undefined
+    );
+    toast.success('Academic environment & per-year OJT hours saved successfully.');
   };
 
   const handleSyncAllAccounts = async () => {
@@ -311,7 +395,18 @@ export function AcademicYearManagement() {
             All account rosters, daily time records (DTR), and evaluation forms strictly operate under <strong>AY {form.activeAcademicYear}</strong>. Trainee and HTE accounts remain securely bound to the academic year in which they were registered. Newly created academic years initialize cleanly with 0 Trainees and 0 HTE Partners.
           </p>
 
-          <div className="grid grid-cols-4 gap-2.5 pt-2">
+          <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 pt-2">
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
+              <div className="flex items-center justify-center gap-1.5 text-emerald-300 mb-1">
+                <Clock size={14} />
+                <span className="text-xs font-semibold">OJT Hours</span>
+              </div>
+              <p className="text-xl font-extrabold text-white">
+                {getAcademicYearRequiredHours(form.activeAcademicYear, form.academicYearHours)}
+              </p>
+              <p className="text-[10px] text-emerald-200">Required (AY)</p>
+            </div>
+
             <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
               <div className="flex items-center justify-center gap-1.5 text-sky-300 mb-1">
                 <Users size={14} />
@@ -339,7 +434,7 @@ export function AcademicYearManagement() {
               <p className="text-[10px] text-blue-200">Time Entries</p>
             </div>
 
-            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center">
+            <div className="bg-white/10 backdrop-blur-sm rounded-2xl p-3 border border-white/10 text-center col-span-2 sm:col-span-1">
               <div className="flex items-center justify-center gap-1.5 text-sky-300 mb-1">
                 <Award size={14} />
                 <span className="text-xs font-semibold">Evaluations</span>
@@ -451,14 +546,27 @@ export function AcademicYearManagement() {
         </div>
 
         <div className="space-y-4">
-          <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+          <div className="grid gap-3 sm:grid-cols-[1fr_180px_auto]">
             <div>
               <label className="text-xs font-bold text-slate-700 block mb-1.5">New Academic Year Format (YYYY-YYYY)</label>
               <input
                 value={newAcademicYear}
                 onChange={(e) => setNewAcademicYear(e.target.value)}
-                placeholder="e.g. 2026-2027"
+                placeholder="e.g. 2027-2028"
                 className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold text-slate-800 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="text-xs font-bold text-slate-700 block mb-1.5">Required OJT Hours</label>
+              <input
+                type="number"
+                min={1}
+                max={3000}
+                value={newAcademicYearHours}
+                onChange={(e) => setNewAcademicYearHours(e.target.value)}
+                placeholder="600"
+                className="w-full px-4 py-2.5 border border-slate-300 rounded-xl text-sm font-bold text-slate-800 bg-slate-50/50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white transition-all"
               />
             </div>
 
@@ -477,9 +585,9 @@ export function AcademicYearManagement() {
           <div className="rounded-2xl bg-amber-50 border border-amber-200 p-3.5 text-xs text-amber-900 flex items-start gap-2.5">
             <Sparkles size={16} className="text-amber-600 shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold mb-0.5">Environment Isolation Guarantee:</p>
+              <p className="font-bold mb-0.5">Environment & Per-Academic-Year Hours Isolation:</p>
               <p className="text-amber-800 leading-relaxed">
-                Creating a new year automatically sets it as the active workspace. Previous year records remain intact for historical auditing.
+                Creating or editing Required OJT Hours applies strictly to that Academic Year only (default 600 hours) and automatically updates the locked Required OJT Hours shown in Trainee Registration when that Academic Year is active.
               </p>
             </div>
           </div>
@@ -518,6 +626,9 @@ export function AcademicYearManagement() {
           {form.academicYears.map((year) => {
             const isActive = year === form.activeAcademicYear;
             const stats = getEnvStats(year);
+            const savedYearHours = getAcademicYearRequiredHours(year, form.academicYearHours);
+            const draftHours = hoursDraftByYear[year] ?? String(savedYearHours);
+            const isHoursModified = Number(draftHours) !== savedYearHours;
 
             return (
               <div
@@ -544,6 +655,56 @@ export function AcademicYearManagement() {
                       Archived
                     </span>
                   )}
+                </div>
+
+                {/* Editable Per-Academic-Year Required OJT Hours */}
+                <div className="mt-3 rounded-xl bg-white/90 border border-blue-200/70 p-3 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <Clock size={13} className="text-blue-600" />
+                      Required OJT Hours (AY {year} Only)
+                    </label>
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                      {savedYearHours} hrs
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex-1">
+                      <input
+                        type="number"
+                        min={1}
+                        max={3000}
+                        value={draftHours}
+                        onChange={(e) =>
+                          setHoursDraftByYear((prev) => ({
+                            ...prev,
+                            [year]: e.target.value,
+                          }))
+                        }
+                        className="w-full px-3 py-1.5 pr-10 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                      />
+                      <span className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[10px] font-semibold text-slate-400 pointer-events-none">
+                        hrs
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveYearHours(year)}
+                      className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                        isHoursModified
+                          ? 'bg-blue-600 text-white hover:bg-blue-700 shadow-sm'
+                          : 'bg-slate-800 text-white hover:bg-slate-900'
+                      }`}
+                    >
+                      <Check size={12} />
+                      Update Hours
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-slate-500 leading-snug">
+                    {isActive
+                      ? `Displayed as locked ${savedYearHours} hours in Trainee Registration for AY ${year}.`
+                      : `Isolated to AY ${year} only — will apply to Trainee Registration if AY ${year} is activated.`}
+                  </p>
                 </div>
 
                 <div className="mt-3 grid grid-cols-4 gap-1.5 text-center text-xs border-t border-slate-200/60 pt-3">

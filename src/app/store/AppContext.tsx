@@ -35,7 +35,7 @@ import {
 import { GEOFENCE_RADIUS_METERS, getDTRSessionDate, calculateTotalHours, calculate4SlotHours } from '../utils/geo';
 import { getCampusLocation } from '../utils/campusLocations';
 import { resolveHteLocation, isInvalidHteCompany, isTraineeRole, getTraineeGeofenceOverride } from '../utils/hteLocation';
-import { TRAINEE_REQUIRED_HOURS, normalizeTraineeRequiredHours } from '../data/ojtConstants';
+import { TRAINEE_REQUIRED_HOURS, getAcademicYearRequiredHours, normalizeTraineeRequiredHours } from '../data/ojtConstants';
 import { buildDefaultReportsForTrainee } from '../utils/monitoringReportGenerator';
 import { logActivity } from '../services/activityLogService';
 
@@ -68,6 +68,10 @@ const DEFAULT_SETTINGS: AppSettings = {
   facialRecognitionEnabled: true,
   academicYears: ['2025-2026', '2026-2027'],
   activeAcademicYear: '2026-2027',
+  academicYearHours: {
+    '2025-2026': 600,
+    '2026-2027': 600,
+  },
 };
 
 function getCurrentAcademicYear(): string {
@@ -289,7 +293,7 @@ interface AppContextType {
   addGeofenceZone: (zone: Omit<GeofenceZone, 'id'> & { id?: string }) => void;
   updateGeofenceZone: (id: string, data: Partial<GeofenceZone>) => void;
   deleteGeofenceZone: (id: string) => void;
-  updateSettings: (settings: Partial<AppSettings>) => void;
+  updateSettings: (settings: Partial<AppSettings>, options?: { syncAcademicYear?: string; syncHours?: number }) => void;
   getCurrentEmployee: () => Employee | null;
   // Evaluations
   addEvaluation: (data: Omit<Evaluation, 'id'>) => Evaluation;
@@ -381,7 +385,11 @@ interface AppContextType {
   // Official OJT Monitoring Reports (Weekly, Monthly, MidTerm, EndTerm)
   monitoringReports: MonitoringReport[];
   addMonitoringReport: (data: Omit<MonitoringReport, 'id' | 'reportNumber' | 'createdAt'>) => Promise<MonitoringReport>;
-  updateMonitoringReport: (id: string, data: Partial<MonitoringReport>) => Promise<void>;
+  updateMonitoringReport: (
+    id: string,
+    data: Partial<MonitoringReport>,
+    mutationOptions?: supabaseService.MonitoringReportMutationOptions
+  ) => Promise<void>;
   deleteMonitoringReport: (id: string) => Promise<void>;
   reviewMonitoringReport: (id: string, instructorRemarks: string, status?: 'reviewed' | 'acknowledged') => Promise<void>;
   getTraineeMonitoringReports: (traineeId: string) => MonitoringReport[];
@@ -1358,23 +1366,77 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return nextUser;
     });
   }, []);
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const stored = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
+    const currentAcademicYear = '2026-2027';
+    const academicYears = Array.from(new Set([
+      ...(stored.academicYears || DEFAULT_SETTINGS.academicYears),
+      '2025-2026',
+      '2026-2027',
+    ]));
+    const academicYearHours: Record<string, number> = {
+      ...(DEFAULT_SETTINGS.academicYearHours || {}),
+      ...(stored.academicYearHours || {}),
+    };
+    for (const yr of academicYears) {
+      if (!academicYearHours[yr] || Number(academicYearHours[yr]) <= 0) {
+        academicYearHours[yr] = TRAINEE_REQUIRED_HOURS;
+      }
+    }
+    return {
+      ...DEFAULT_SETTINGS,
+      ...stored,
+      academicYears,
+      activeAcademicYear: stored.activeAcademicYear || currentAcademicYear,
+      academicYearHours,
+    };
+  });
+  const settingsRef = useRef<AppSettings>(settings);
+  useEffect(() => {
+    settingsRef.current = settings;
+  }, [settings]);
+
   const [employees, setEmployeesState] = useState<Employee[]>(() => {
     const stored = loadFromStorage<Employee[]>(STORAGE_KEYS.EMPLOYEES, []);
+    const storedSettings = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
     const filtered = stored.filter(
       (e) => !e.name?.toLowerCase().includes('darius') && !e.email?.toLowerCase().includes('benales')
     );
-    const normalized = normalizeTraineeRequiredHours(filtered);
+    const normalized = normalizeTraineeRequiredHours(
+      filtered,
+      storedSettings.academicYearHours,
+      storedSettings.activeAcademicYear || '2026-2027'
+    );
     if (normalized !== stored) {
       saveToStorage(STORAGE_KEYS.EMPLOYEES, normalized);
     }
     return normalized;
   });
-  // All Trainee accounts are enforced to the standard 600 required OJT hours.
+  // Trainee accounts resolve required OJT hours per Academic Year (defaulting to 600 hours).
   const setEmployees = useCallback((action: React.SetStateAction<Employee[]>) => {
     setEmployeesState((prev) =>
-      normalizeTraineeRequiredHours(typeof action === 'function' ? (action as (p: Employee[]) => Employee[])(prev) : action)
+      normalizeTraineeRequiredHours(
+        typeof action === 'function' ? (action as (p: Employee[]) => Employee[])(prev) : action,
+        settingsRef.current?.academicYearHours,
+        settingsRef.current?.activeAcademicYear
+      )
     );
   }, []);
+
+  useEffect(() => {
+    setEmployeesState((prev) => {
+      const normalized = normalizeTraineeRequiredHours(
+        prev,
+        settings.academicYearHours,
+        settings.activeAcademicYear
+      );
+      if (normalized !== prev) {
+        saveToStorage(STORAGE_KEYS.EMPLOYEES, normalized);
+      }
+      return normalized;
+    });
+  }, [settings.academicYearHours, settings.activeAcademicYear]);
+
   const [timeRecords, setTimeRecords] = useState<TimeRecord[]>(() => {
     const stored = loadFromStorage<TimeRecord[]>(STORAGE_KEYS.TIME_RECORDS, []);
     return sanitizeTimeRecords(stored);
@@ -1389,21 +1451,6 @@ export function AppProvider({ children }: { children: ReactNode }) {
       saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, filtered);
     }
     return filtered;
-  });
-  const [settings, setSettings] = useState<AppSettings>(() => {
-    const stored = loadFromStorage<Partial<AppSettings>>(STORAGE_KEYS.SETTINGS, {});
-    const currentAcademicYear = '2026-2027';
-    const academicYears = Array.from(new Set([
-      ...(stored.academicYears || DEFAULT_SETTINGS.academicYears),
-      '2025-2026',
-      '2026-2027',
-    ]));
-    return {
-      ...DEFAULT_SETTINGS,
-      ...stored,
-      academicYears,
-      activeAcademicYear: stored.activeAcademicYear || currentAcademicYear,
-    };
   });
   const [evaluations, setEvaluations] = useState<Evaluation[]>(() => loadFromStorage(STORAGE_KEYS.EVALUATIONS, []));
   function deduplicateComments(list: AnnouncementComment[]): AnnouncementComment[] {
@@ -1751,8 +1798,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
                   }
                 }).catch(() => {})
               : Promise.resolve()),
-            (shouldFetchFullDashboardData
-              ? supabaseService.fetchSettings().then((st) => {
+            (shouldFetchFullDashboardData || isRegisterRoute
+              ? supabaseService.fetchSettings(isRegisterRoute).then((st) => {
                   if (isMounted && st) {
                     setSettings((prev) => {
                       const mergedYears = Array.from(new Set([
@@ -1761,14 +1808,22 @@ export function AppProvider({ children }: { children: ReactNode }) {
                         '2025-2026',
                         '2026-2027',
                       ]));
-                      const activeYear = (st.activeAcademicYear && st.activeAcademicYear !== '2025-2026')
-                        ? st.activeAcademicYear
-                        : (prev.activeAcademicYear || '2026-2027');
+                      const activeYear = st.activeAcademicYear || prev.activeAcademicYear || '2026-2027';
+                      const mergedHours: Record<string, number> = {
+                        ...(prev.academicYearHours || {}),
+                        ...(st.academicYearHours || {}),
+                      };
+                      for (const yr of mergedYears) {
+                        if (!mergedHours[yr] || Number(mergedHours[yr]) <= 0) {
+                          mergedHours[yr] = TRAINEE_REQUIRED_HOURS;
+                        }
+                      }
                       const next = {
                         ...prev,
                         ...st,
                         academicYears: mergedYears,
                         activeAcademicYear: activeYear,
+                        academicYearHours: mergedHours,
                       };
                       saveToStorage(STORAGE_KEYS.SETTINGS, next);
                       return next;
@@ -1848,9 +1903,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
               : Promise.resolve()),
             (shouldFetchFullDashboardData
               ? supabaseService.fetchMonitoringReportsFromStorage().then((remoteReports) => {
-                  if (isMounted && Array.isArray(remoteReports) && remoteReports.length > 0) {
+                  if (isMounted && Array.isArray(remoteReports)) {
                     setMonitoringReports((prev) => {
-                      const merged = supabaseService.mergeMonitoringReportsList(remoteReports, prev);
+                      const merged =
+                        remoteReports.length > 0
+                          ? supabaseService.mergeMonitoringReportsList(remoteReports, [], { authoritativePrimary: true })
+                          : prev;
                       saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
                       return merged;
                     });
@@ -2058,10 +2116,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
         });
       } else if (type === 'monitoring_updated' && Array.isArray(payload.reports)) {
         setMonitoringReports((prev) => {
-          const merged = supabaseService.mergeMonitoringReportsList(payload.reports, prev);
+          const merged = payload.authoritative
+            ? supabaseService.mergeMonitoringReportsList(payload.reports, [], { authoritativePrimary: true })
+            : supabaseService.mergeMonitoringReportsList(payload.reports, prev);
           saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
           return merged;
         });
+        try {
+          window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
+        } catch {}
       } else if (type === 'employee_updated' && payload.id) {
         setEmployees((prev) => {
           const next = prev.map((emp) =>
@@ -2082,10 +2145,85 @@ export function AppProvider({ children }: { children: ReactNode }) {
           saveToStorage(STORAGE_KEYS.EVALUATIONS, merged);
           return merged;
         });
+      } else if (type === 'settings_updated' && payload.settings) {
+        setSettings((prev) => {
+          const incoming = payload.settings as Partial<AppSettings>;
+          const mergedYears = Array.from(new Set([
+            ...(prev.academicYears || ['2025-2026', '2026-2027']),
+            ...(incoming.academicYears || []),
+            '2025-2026',
+            '2026-2027',
+          ]));
+          const mergedHours: Record<string, number> = {
+            ...(prev.academicYearHours || {}),
+            ...(incoming.academicYearHours || {}),
+          };
+          for (const yr of mergedYears) {
+            if (!mergedHours[yr] || Number(mergedHours[yr]) <= 0) {
+              mergedHours[yr] = TRAINEE_REQUIRED_HOURS;
+            }
+          }
+          const next: AppSettings = {
+            ...prev,
+            ...incoming,
+            academicYears: mergedYears,
+            activeAcademicYear: incoming.activeAcademicYear || prev.activeAcademicYear || '2026-2027',
+            academicYearHours: mergedHours,
+          };
+          saveToStorage(STORAGE_KEYS.SETTINGS, next);
+          return next;
+        });
       }
     });
 
-    return unsubscribe;
+    const handleLocalSettingsHydrated = (ev: Event) => {
+      const detail = (ev as CustomEvent<Partial<AppSettings>>)?.detail;
+      if (!detail || typeof detail !== 'object') return;
+      setSettings((prev) => {
+        const mergedYears = Array.from(new Set([
+          ...(prev.academicYears || ['2025-2026', '2026-2027']),
+          ...(detail.academicYears || []),
+          '2025-2026',
+          '2026-2027',
+        ]));
+        const mergedHours: Record<string, number> = {
+          ...(prev.academicYearHours || {}),
+          ...(detail.academicYearHours || {}),
+        };
+        for (const yr of mergedYears) {
+          if (!mergedHours[yr] || Number(mergedHours[yr]) <= 0) {
+            mergedHours[yr] = TRAINEE_REQUIRED_HOURS;
+          }
+        }
+        const next: AppSettings = {
+          ...prev,
+          ...detail,
+          academicYears: mergedYears,
+          activeAcademicYear: detail.activeAcademicYear || prev.activeAcademicYear || '2026-2027',
+          academicYearHours: mergedHours,
+        };
+        saveToStorage(STORAGE_KEYS.SETTINGS, next);
+        return next;
+      });
+    };
+    const handleMonitoringReportsHydrated = (ev: Event) => {
+      const detail = (ev as CustomEvent<MonitoringReport[]>)?.detail;
+      if (!Array.isArray(detail)) return;
+      setMonitoringReports((prev) => {
+        const merged = supabaseService.mergeMonitoringReportsList(detail, [], { authoritativePrimary: true });
+        if (JSON.stringify(merged) === JSON.stringify(prev)) return prev;
+        saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
+        return merged;
+      });
+    };
+    window.addEventListener('ojt_local_settings_hydrated', handleLocalSettingsHydrated);
+    window.addEventListener('ojt_monitoring_reports_hydrated', handleMonitoringReportsHydrated);
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('ojt_local_settings_hydrated', handleLocalSettingsHydrated);
+      window.removeEventListener('ojt_monitoring_reports_hydrated', handleMonitoringReportsHydrated);
+    };
   }, [setEmployees]);
 
   const lastRefreshTimeRef = useRef<number>(0);
@@ -2237,22 +2375,37 @@ export function AppProvider({ children }: { children: ReactNode }) {
         saveToStorage(STORAGE_KEYS.GEOFENCE_ZONES, sanitizedZones);
       }
 
-      if (supabaseSettings) {
+      if (supabaseSettings || stores?.academicSettings) {
+        const cloudAcad = stores?.academicSettings || null;
         setSettings((prev) => {
           const mergedYears = Array.from(new Set([
             ...(prev.academicYears || ['2025-2026', '2026-2027']),
-            ...(supabaseSettings.academicYears || []),
+            ...(supabaseSettings?.academicYears || []),
+            ...(Array.isArray(cloudAcad?.academicYears) ? cloudAcad!.academicYears! : []),
             '2025-2026',
             '2026-2027',
           ]));
-          const activeYear = (supabaseSettings.activeAcademicYear && supabaseSettings.activeAcademicYear !== '2025-2026')
-            ? supabaseSettings.activeAcademicYear
-            : (prev.activeAcademicYear || '2026-2027');
+          const activeYear =
+            cloudAcad?.activeAcademicYear ||
+            (supabaseSettings?.activeAcademicYear && supabaseSettings.activeAcademicYear !== '2025-2026'
+              ? supabaseSettings.activeAcademicYear
+              : prev.activeAcademicYear || '2026-2027');
+          const mergedHours: Record<string, number> = {
+            ...(prev.academicYearHours || {}),
+            ...(supabaseSettings?.academicYearHours || {}),
+            ...(cloudAcad?.academicYearHours || {}),
+          };
+          for (const yr of mergedYears) {
+            if (!mergedHours[yr] || Number(mergedHours[yr]) <= 0) {
+              mergedHours[yr] = TRAINEE_REQUIRED_HOURS;
+            }
+          }
           const next = {
             ...prev,
-            ...supabaseSettings,
+            ...(supabaseSettings || {}),
             academicYears: mergedYears,
             activeAcademicYear: activeYear,
+            academicYearHours: mergedHours,
           };
           saveToStorage(STORAGE_KEYS.SETTINGS, next);
           return next;
@@ -2274,9 +2427,12 @@ export function AppProvider({ children }: { children: ReactNode }) {
             return merged;
           });
         }
-        if (Array.isArray(stores.monitoringReports) && stores.monitoringReports.length > 0) {
+        if (Array.isArray(stores.monitoringReports)) {
           setMonitoringReports((prev) => {
-            const merged = supabaseService.mergeMonitoringReportsList(stores.monitoringReports, prev);
+            const merged =
+              stores.monitoringReports.length > 0
+                ? supabaseService.mergeMonitoringReportsList(stores.monitoringReports, [], { authoritativePrimary: true })
+                : prev;
             saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, merged);
             return merged;
           });
@@ -3649,7 +3805,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       course: employeeData.course || 'N/A',
       startDate: employeeData.startDate || new Date().toISOString().split('T')[0],
       endDate: employeeData.endDate || new Date().toISOString().split('T')[0],
-      requiredHours: isInstructor || isHTE ? (employeeData.requiredHours ?? 0) : TRAINEE_REQUIRED_HOURS,
+      requiredHours:
+        isInstructor || isHTE
+          ? (employeeData.requiredHours ?? 0)
+          : getAcademicYearRequiredHours(
+              employeeData.academicYear || settingsRef.current?.activeAcademicYear || settings.activeAcademicYear,
+              settingsRef.current?.academicYearHours || settings.academicYearHours
+            ),
     };
 
     const newEmp: Employee = {
@@ -5436,14 +5598,24 @@ export function AppProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateSettings = (newSettings: Partial<AppSettings>) => {
+  const updateSettings = (
+    newSettings: Partial<AppSettings>,
+    options?: { syncAcademicYear?: string; syncHours?: number }
+  ) => {
     const previous = settings;
-    const updated = { ...settings, ...newSettings };
+    const updated: AppSettings = {
+      ...settings,
+      ...newSettings,
+      academicYearHours: {
+        ...(settings.academicYearHours || {}),
+        ...(newSettings.academicYearHours || {}),
+      },
+    };
     setSettings(updated);
     saveToStorage(STORAGE_KEYS.SETTINGS, updated);
 
     if (useSupabase) {
-      supabaseService.updateSettings(updated).catch((err) => {
+      supabaseService.updateSettings(updated, options).catch((err) => {
         console.error('[AppContext] Failed to update settings in Supabase:', err);
         setSettings(previous);
         saveToStorage(STORAGE_KEYS.SETTINGS, previous);
@@ -6896,7 +7068,18 @@ export function AppProvider({ children }: { children: ReactNode }) {
       setMonitoringReports((prev) => {
         const next = [newReport, ...prev];
         saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, next);
-        supabaseService.saveMonitoringReportsToStorage(next).catch(() => {});
+        supabaseService
+          .saveMonitoringReportsToStorage(next, {
+            actorRole: 'instructor',
+            newReport,
+          })
+          .then((canonical) => {
+            if (Array.isArray(canonical)) {
+              setMonitoringReports(canonical);
+              saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, canonical);
+            }
+          })
+          .catch(() => {});
         try {
           window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
         } catch {}
@@ -6907,28 +7090,58 @@ export function AppProvider({ children }: { children: ReactNode }) {
     [monitoringReports.length]
   );
 
-  const updateMonitoringReport = useCallback(async (id: string, data: Partial<MonitoringReport>) => {
-    setMonitoringReports((prev) => {
-      const next = prev.map((r) => (r.id === id ? { ...r, ...data, updatedAt: new Date().toISOString() } : r));
-      saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, next);
-      supabaseService.saveMonitoringReportsToStorage(next).catch(() => {});
-      try {
-        window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
-      } catch {}
-      return next;
-    });
-  }, []);
+  const updateMonitoringReport = useCallback(
+    async (
+      id: string,
+      data: Partial<MonitoringReport>,
+      mutationOptions?: supabaseService.MonitoringReportMutationOptions
+    ) => {
+      const nowIso = new Date().toISOString();
+      let snapshotToSave: MonitoringReport[] = [];
+      setMonitoringReports((prev) => {
+        const next = prev.map((r) => (r.id === id ? { ...r, ...data, updatedAt: nowIso } : r));
+        snapshotToSave = next;
+        saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, next);
+        try {
+          window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
+        } catch {}
+        return next;
+      });
+      const canonical = await supabaseService
+        .saveMonitoringReportsToStorage(snapshotToSave, {
+          reportId: id,
+          ...(mutationOptions || {}),
+        })
+        .catch(() => null);
+      if (Array.isArray(canonical)) {
+        setMonitoringReports(canonical);
+        saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, canonical);
+      }
+    },
+    []
+  );
 
   const deleteMonitoringReport = useCallback(async (id: string) => {
+    let snapshotToSave: MonitoringReport[] = [];
     setMonitoringReports((prev) => {
       const next = prev.filter((r) => r.id !== id);
+      snapshotToSave = next;
       saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, next);
-      supabaseService.saveMonitoringReportsToStorage(next).catch(() => {});
       try {
         window.dispatchEvent(new CustomEvent('ojt_monitoring_reports_updated'));
       } catch {}
       return next;
     });
+    const canonical = await supabaseService
+      .saveMonitoringReportsToStorage(snapshotToSave, {
+        actorRole: 'instructor',
+        deleteReportId: id,
+      })
+      .catch(() => null);
+    if (Array.isArray(canonical)) {
+      setMonitoringReports(canonical);
+      saveToStorage(STORAGE_KEYS.MONITORING_REPORTS, canonical);
+    }
   }, []);
 
   const reviewMonitoringReport = useCallback(

@@ -17,6 +17,7 @@ import { downloadDocument, getFileCategory, resolveSafeDocumentViewUrl, dataUrlT
 import { isWithinNegrosOccidental } from '../../utils/geo';
 import { getPaginationWindow } from '../../utils/pagination';
 import { resolveHteLocation, isInvalidHteCompany, hasRealUploadedDocFile } from '../../utils/hteLocation';
+import { getAcademicYearRequiredHours } from '../../data/ojtConstants';
 import { Lock } from 'lucide-react';
 type ModalMode = 'view' | 'add' | 'edit' | 'review' | null;
 
@@ -1548,7 +1549,9 @@ export function AdminEmployees() {
       course: emp.course || '',
       startDate: emp.startDate || '',
       endDate: emp.endDate || '',
-      requiredHours: emp.requiredHours ?? 600,
+      requiredHours:
+        emp.requiredHours ??
+        getAcademicYearRequiredHours(emp.academicYear || settings?.activeAcademicYear, settings?.academicYearHours),
       academicYear: emp.academicYear || settings?.activeAcademicYear || '2026-2027',
       residentialAddress: resolveEmpHomeAddress(emp) || '',
       documentsPassed: (() => {
@@ -1620,7 +1623,10 @@ export function AdminEmployees() {
       course: editForm.course,
       startDate: editForm.startDate,
       endDate: editForm.endDate,
-      requiredHours: 600,
+      requiredHours: getAcademicYearRequiredHours(
+        editForm.academicYear || settings?.activeAcademicYear,
+        settings?.academicYearHours
+      ),
       academicYear: editForm.academicYear,
       residentialAddress: editForm.residentialAddress.trim(),
       address: editForm.residentialAddress.trim(),
@@ -1677,10 +1683,11 @@ export function AdminEmployees() {
   };
 
   const handleAdd = () => {
+    const targetAy = selectedYear === 'all' ? settings.activeAcademicYear : selectedYear;
     registerEmployee({
       ...form,
-      academicYear: selectedYear === 'all' ? settings.activeAcademicYear : selectedYear,
-      requiredHours: 600,
+      academicYear: targetAy,
+      requiredHours: getAcademicYearRequiredHours(targetAy, settings?.academicYearHours),
       faceRegistered: false,
       active: true,
       approvalStatus: 'approved',
